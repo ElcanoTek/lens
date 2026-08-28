@@ -1,6 +1,11 @@
 # Dependabot config — https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 # Weekly version + security updates, all bundled into one PR per ecosystem.
 # Tests gate the merge — review the consolidated diff, don't read every changelog.
+#
+# Each ecosystem declares two groups. A group's `applies-to` defaults to
+# version-updates, so a single catch-all group would leave security updates
+# ungrouped — one PR per advisory, arriving off-schedule. The paired
+# *-security groups keep that traffic bundled too.
 version: 2
 updates:
   - package-ecosystem: pip
@@ -15,6 +20,11 @@ updates:
       prefix: chore(deps)
     groups:
       pip:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      pip-security:
+        applies-to: security-updates
         patterns:
           - "*"
 
@@ -30,5 +40,10 @@ updates:
       prefix: chore(ci)
     groups:
       github-actions:
+        applies-to: version-updates
+        patterns:
+          - "*"
+      github-actions-security:
+        applies-to: security-updates
         patterns:
           - "*"
