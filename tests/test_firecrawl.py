@@ -10,7 +10,6 @@ import pytest
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
 from conftest import make_orchestrator
-
 from scraper_client import ScraperClient, _browser_headers
 
 _make_orchestrator = make_orchestrator
