@@ -91,7 +91,13 @@ def test_verify_input_payload_accepts_plain_csv():
 
 
 @pytest.mark.asyncio
-async def test_cancel_queued_job_marks_cancelled(tmp_path):
+async def test_cancel_queued_job_marks_cancelled(monkeypatch, tmp_path):
+    # JobManager._save_jobs() writes to the module-level OUTPUT_DIR, so without
+    # this redirect the test overwrites the operator's real job history.
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(web_service, "OUTPUT_DIR", output_dir)
+
     manager = web_service.JobManager()
     job = await manager.create_job("sample.csv", "direct")
 
