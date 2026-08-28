@@ -275,6 +275,70 @@ def test_static_version_is_content_derived():
     int(version, 16)  # hex digest prefix
 
 
+def test_every_static_reference_resolves(monkeypatch, tmp_path):
+    """No dead <link>/<script>/<img> in the rendered page.
+
+    A stylesheet or preload pointing at a deleted asset is invisible in the
+    UI and costs a 404 on every page load — exactly the failure mode a font
+    or design-system re-vendor introduces. Fetch every reference instead of
+    only checking that it is versioned.
+    """
+    _client_dirs(monkeypatch, tmp_path)
+
+    with TestClient(web_service.app) as client:
+        client.cookies.set("elcano_auth", _auth_cookie())
+        page = client.get("/")
+        assert page.status_code == 200
+
+        import re
+
+        refs = sorted(set(re.findall(r'(?:href|src)="(/static/[^"]+)', page.text)))
+        assert refs, "expected static asset references in the page"
+        for ref in refs:
+            assert client.get(ref).status_code == 200, ref
+
+
+def test_bundled_fonts_are_the_two_brand_faces():
+    """Elcano ships exactly two typefaces, self-hosted, and nothing else.
+
+    Guards three things at once: no third face creeps back into a @font-face
+    rule (IBM Plex Sans, Share Tech Mono and VT323 all lived here once), no
+    src url() outlives the file it points at, and the OFL / MIT licence text
+    still travels with the binaries as both licences require.
+    """
+    import re
+
+    static_root = web_service.BASE_DIR / "static"
+    sheets = sorted(static_root.rglob("*.css"))
+    assert sheets, "expected stylesheets under static/"
+
+    families: set[str] = set()
+    for sheet in sheets:
+        text = sheet.read_text(encoding="utf-8")
+        for block in re.findall(r"@font-face\s*\{(.*?)\}", text, re.DOTALL):
+            family = re.search(r"font-family:\s*\"([^\"]+)\"", block)
+            assert family, f"@font-face without a quoted family in {sheet}"
+            families.add(family.group(1))
+            for url in re.findall(r'url\(\s*"([^"]+)"', block):
+                target = (sheet.parent / url).resolve()
+                assert target.is_file(), f"{sheet}: src url() misses {url}"
+
+    assert families == {"Nebula Sans", "Hack"}, families
+
+    fonts_dir = static_root / "design-system" / "fonts"
+    assert (fonts_dir / "nebula-sans" / "OFL.txt").is_file()
+    assert (fonts_dir / "hack" / "LICENSE.md").is_file()
+
+    # Self-hosted only: no CDN or Google Fonts request anywhere in the UI.
+    hosts = ("fonts.googleapis.com", "fonts.gstatic.com", "cdn.jsdelivr.net", "unpkg.com")
+    scanned = sheets + sorted((web_service.BASE_DIR / "templates").rglob("*.html"))
+    scanned += sorted(static_root.rglob("*.js"))
+    for path in scanned:
+        text = path.read_text(encoding="utf-8")
+        for host in hosts:
+            assert host not in text, f"{path} loads from {host}"
+
+
 def test_input_files_listed_newest_first(monkeypatch, tmp_path):
     input_dir, _ = _client_dirs(monkeypatch, tmp_path)
     old = input_dir / "old.csv"

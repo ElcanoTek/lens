@@ -141,9 +141,9 @@ See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 ## Third-party components
 
 Lens orchestrates Firecrawl (AGPL-3.0) as a separate service over HTTP, ships
-reference data from IAB Tech Lab and IANA, and bundles IBM Plex Sans
-(SIL OFL 1.1) as its interface typeface. None of that is covered by this
-licence — see [`NOTICE`](../NOTICE).
+reference data from IAB Tech Lab and IANA, and bundles Nebula Sans
+(SIL OFL 1.1) as its interface typeface and Hack (MIT) as its monospace face.
+None of that is covered by this licence — see [`NOTICE`](../NOTICE).
 
 The bundled IAB Tech Lab Content Taxonomy 3.1 is licensed under CC BY 3.0,
 which is permissive and **not copyleft** — it imposes no share-alike
