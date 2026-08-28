@@ -159,6 +159,12 @@ To actually scrape the hardened sites, route Firecrawl's browser through a resid
 
 `aiohttp`'s `StreamReader.read(n)` returns whatever is buffered (typically the first 128 KiB chunk), not the full body. `ScraperClient._read_body` loops until EOF/cap for this reason — a single `read()` call silently truncates modern pages to their `<head>` and made real sites fail validation as "content too short".
 
+### The vendored Flag design system
+
+`static/design-system/` is a **copy** of `ElcanoTek/flag`'s `design-system/` directory, not a package — there is no npm dependency and nothing syncs it automatically. Re-vendor by copying from the flag repo, and never hand-edit a file under it: the next copy silently reverts the edit. Product styling belongs in `static/styles.css`, which reads design tokens and never names a family, colour or radius itself.
+
+Elcano ships exactly **two typefaces**, everywhere: **Nebula Sans** (SIL OFL 1.1) for UI, body and headings, and **Hack** (MIT) for code, logs and tabular output. `static/design-system/fonts/fonts.css` is the one font sheet — it declares every `@font-face` and sets `--font-brand` / `--font-code-brand` / `--font-code-ui-brand`, which `tokens/design-tokens.css` reads. Both licences require the licence text to travel with the binaries, so `fonts/nebula-sans/OFL.txt` and `fonts/hack/LICENSE.md` must be copied with the font files and stay listed in `NOTICE`. Nothing is CDN-loaded; there is no Google Fonts request in the dashboard. `test_bundled_fonts_are_the_two_brand_faces` fails if a third face, a dead `url()`, a missing licence or a CDN host appears.
+
 ### Web UI model picker
 
 The dashboard's Advanced settings populate two model dropdowns from OpenRouter's `/models` endpoint (`_get_model_catalog` in `web_service.py`, cached 1h): the **classification model** (must support tool calling; price-capped by `MODEL_PROMPT_PRICE_CAP`/`MODEL_COMPLETION_PRICE_CAP` — classification is high-volume and doesn't benefit from frontier-priced models) and the **research model** (must advertise `web_search_options`, i.e. built-in web search; capped by `RESEARCH_*_PRICE_CAP`). `~vendor/…-latest` aliases (OpenRouter's self-updating pins) sort first; `~google/gemini-flash-latest` and `perplexity/sonar-pro` are the recommended defaults. Selections reach the job subprocess via `--llm-model` / `--research-model`, choices persist per browser in localStorage, and non-default settings show on the run's row in the Runs table.

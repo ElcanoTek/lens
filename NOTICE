@@ -105,29 +105,33 @@ rather than editing rows by hand.
 5. Fonts — bundled
 ------------------
 
-  static/design-system/fonts/ibm-plex-sans/IBMPlexSans-{400,700}.woff2
+The Flag design system ships exactly two typefaces, and Lens bundles both.
+Nothing else is loaded — there is no CDN or Google Fonts request anywhere in
+the dashboard.
 
-  IBM Plex Sans. Copyright (c) 2017 IBM Corp. with Reserved Font Name "Plex".
-  Licensed under the SIL Open Font License 1.1
-  (https://openfontlicense.org/). The licence text is bundled with the fonts
-  at static/design-system/fonts/ibm-plex-sans/OFL.txt, as OFL 1.1 requires.
-  Upstream: https://github.com/IBM/plex
-  Used as the interface typeface of the Flag design system.
+  static/design-system/fonts/nebula-sans/NebulaSans-{400,500,600,700}.woff2
+  static/design-system/fonts/nebula-sans/NebulaSans-{400,700}-italic.woff2
 
-  static/design-system/fonts/ShareTechMono.ttf
-  static/design-system/fonts/VT323.ttf
+  Nebula Sans. Copyright (c) 2024 Nebula Entertainment & Broadcasting LLC,
+  with Reserved Font Name "Nebula". Based on Source Sans, copyright (c)
+  2010-2024 Adobe, with Reserved Font Name "Source". Licensed under the SIL
+  Open Font License 1.1 (https://openfontlicense.org/). The licence text is
+  bundled with the fonts at static/design-system/fonts/nebula-sans/OFL.txt,
+  as OFL 1.1 requires.
+  Upstream: https://www.nebulasans.com/
+  Used as the interface typeface — UI, body and headings.
 
-  Share Tech Mono. Copyright (c) 2012, Carrois Type Design, Ralph du Carrois
-  (post@carrois.com www.carrois.com), with Reserved Font Name "Share Tech
-  Mono".
+  static/design-system/fonts/hack/hack-{regular,bold,italic,bolditalic}.woff2
+  static/design-system/fonts/hack/hack-{regular,bold,italic,bolditalic}.woff
 
-  VT323. Copyright (c) 2011, The VT323 Project Authors
-  (peter.hull@oikoi.com), with Reserved Font Name "VT323".
-
-  Both are licensed under the SIL Open Font License 1.1
-  (https://openfontlicense.org/). The licence text is bundled with the fonts
-  at static/design-system/fonts/OFL.txt, as OFL 1.1 requires. Used for
-  monospaced and display text.
+  Hack. Copyright (c) 2018 Source Foundry Authors, licensed under the MIT
+  License. Includes Bitstream Vera Sans Mono, copyright (c) 2003 Bitstream
+  Inc., under the Bitstream Vera License; DejaVu contributions are public
+  domain. The full licence text is bundled with the fonts at
+  static/design-system/fonts/hack/LICENSE.md, as the MIT and Bitstream Vera
+  licences require.
+  Upstream: https://sourcefoundry.org/hack/
+  Used for code, logs and tabular output.
 
 
 6. ElcanoTek marks and the Flag design system — not licensed for reuse

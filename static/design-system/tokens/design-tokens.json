@@ -1,30 +1,34 @@
 {
   "font": {
-    "heading": "IBM Plex Sans",
-    "body": "IBM Plex Sans",
-    "code": "Share Tech Mono",
-    "codeUi": "VT323",
+    "brand": "Nebula Sans",
+    "codeBrand": "Hack",
+    "heading": "Nebula Sans",
+    "body": "Nebula Sans",
+    "code": "Hack",
+    "codeUi": "Hack",
     "weight": {
       "regular": 400,
+      "medium": 500,
+      "semibold": 600,
       "bold": 700
     },
     "size": {
       "display": "clamp(2rem, 1.75rem + 0.8vw, 2.5rem)",
       "title": "1.75rem",
       "subtitle": "1.125rem",
-      "bodyLarge": "0.875rem",
-      "body": "0.8125rem",
-      "caption": "0.75rem",
-      "overline": "0.6875rem"
+      "bodyLarge": "1.0625rem",
+      "body": "1rem",
+      "caption": "0.8125rem",
+      "overline": "0.75rem"
     },
     "lineHeight": {
       "display": "1.15",
-      "title": "1.2143",
-      "subtitle": "1.3334",
-      "bodyLarge": "1.4286",
-      "body": "1.3847",
-      "caption": "1.3334",
-      "overline": "1.2728"
+      "title": "1.2",
+      "subtitle": "1.3",
+      "bodyLarge": "1.5",
+      "body": "1.5",
+      "caption": "1.4",
+      "overline": "1.4"
     }
   },
   "color": {
@@ -34,6 +38,11 @@
     "accent": "#9DA7EF",
     "white": "#FFFFFF",
     "black": "#000000",
+    "success": "#50FA7B",
+    "warning": "#FF8847",
+    "danger": "#FF5555",
+    "info": "#8A8BC0",
+    "onSuccess": "#000000",
     "background": "#1A0B1E",
     "surface": {
       "default": "#241B31",
@@ -55,10 +64,6 @@
       "strong": "rgba(0, 0, 0, 0.4)"
     },
     "status": {
-      "success": "#50FA7B",
-      "warning": "#FF8847",
-      "danger": "#FF5555",
-      "info": "#8A8BC0",
       "pending": {
         "fg": "#D3DDE6",
         "bg": "rgba(124, 140, 152, 0.2)",
@@ -174,7 +179,11 @@
       "rootSelector": "html[data-theme='<mode>']",
       "storageKey": "flag-theme-preference",
       "defaultMode": "system",
-      "modes": ["light", "dark", "system"],
+      "modes": [
+        "light",
+        "dark",
+        "system"
+      ],
       "legacyCompatibilitySelector": "body.theme-light"
     },
     "dark": {
@@ -186,6 +195,11 @@
       "color": {
         "background": "#F4F6FB",
         "primaryHover": "#5F5F97",
+        "success": "#1E7A3F",
+        "warning": "#8F3E10",
+        "danger": "#B3261E",
+        "info": "#4F5496",
+        "onSuccess": "#FFFFFF",
         "surface": {
           "default": "#FFFFFF",
           "elevated": "#E9EEFC"
