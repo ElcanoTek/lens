@@ -10,6 +10,7 @@ import pytest
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
 from conftest import make_orchestrator
+
 from scraper_client import ScraperClient, _browser_headers
 
 _make_orchestrator = make_orchestrator
@@ -88,18 +89,14 @@ def test_parse_firecrawl_document_extracts_fields():
 
 def test_parse_firecrawl_document_truncates_long_markdown():
     client = ScraperClient(mode="firecrawl")
-    parsed = client._parse_firecrawl_document(
-        "https://example.com", _document(markdown="x" * 5000)
-    )
+    parsed = client._parse_firecrawl_document("https://example.com", _document(markdown="x" * 5000))
     assert len(parsed["content"]) == 4003  # 4000 chars + "..."
     assert parsed["content"].endswith("...")
 
 
 def test_parse_firecrawl_document_defaults_missing_metadata():
     client = ScraperClient(mode="firecrawl")
-    parsed = client._parse_firecrawl_document(
-        "https://example.com", {"markdown": "content"}
-    )
+    parsed = client._parse_firecrawl_document("https://example.com", {"markdown": "content"})
     assert parsed["title"] == ""
     assert parsed["meta_description"] == ""
     assert parsed["status_code"] == 200
@@ -173,17 +170,13 @@ class _FakeSession:
 
 
 def _firecrawl_client(**kwargs):
-    client = ScraperClient(
-        mode="firecrawl", max_retries=3, retry_delay=0.01, **kwargs
-    )
+    client = ScraperClient(mode="firecrawl", max_retries=3, retry_delay=0.01, **kwargs)
     return client
 
 
 async def test_scrape_with_firecrawl_success():
     client = _firecrawl_client()
-    client._web_session = _FakeSession(
-        [_FakeResponse(200, {"success": True, "data": _document()})]
-    )
+    client._web_session = _FakeSession([_FakeResponse(200, {"success": True, "data": _document()})])
     parsed = await client._scrape_with_firecrawl("https://example.com")
     assert parsed["title"] == "Hello"
 
@@ -259,9 +252,7 @@ async def test_scrape_with_firecrawl_retries_rate_limits():
 
 async def test_scrape_with_firecrawl_exhausted_retries_raise():
     client = _firecrawl_client()
-    client._web_session = _FakeSession(
-        [_FakeResponse(500, {"error": "boom"})] * 3
-    )
+    client._web_session = _FakeSession([_FakeResponse(500, {"error": "boom"})] * 3)
     with pytest.raises(RuntimeError, match="Failed to scrape"):
         await client._scrape_with_firecrawl("https://example.com")
 
@@ -281,9 +272,7 @@ async def test_service_ready_requires_firecrawl_identity():
 
 async def test_scrape_site_dispatches_to_firecrawl():
     client = _firecrawl_client()
-    client._web_session = _FakeSession(
-        [_FakeResponse(200, {"success": True, "data": _document()})]
-    )
+    client._web_session = _FakeSession([_FakeResponse(200, {"success": True, "data": _document()})])
     await client.create_session_pool(1)
     session = await client.get_available_session()
     result = await client.scrape_site(session, "example.com")
@@ -298,9 +287,7 @@ async def test_scrape_site_dispatches_to_firecrawl():
 
 async def test_scrape_with_firecrawl_sends_optional_knobs():
     client = _firecrawl_client(firecrawl_wait_for=1500, firecrawl_max_age_ms=0)
-    client._web_session = _FakeSession(
-        [_FakeResponse(200, {"success": True, "data": _document()})]
-    )
+    client._web_session = _FakeSession([_FakeResponse(200, {"success": True, "data": _document()})])
     await client._scrape_with_firecrawl("https://example.com")
     payload = client._web_session.requests[0][1]
     assert payload["waitFor"] == 1500
@@ -321,10 +308,7 @@ def test_browser_headers_look_like_a_browser():
 
 
 def test_www_fallback_url_for_bare_domain():
-    assert (
-        ScraperClient._www_fallback_url("https://example.com")
-        == "https://www.example.com"
-    )
+    assert ScraperClient._www_fallback_url("https://example.com") == "https://www.example.com"
     assert (
         ScraperClient._www_fallback_url("https://example.com/path?q=1")
         == "https://www.example.com/path?q=1"
@@ -409,9 +393,7 @@ async def test_firecrawl_retry_targets_only_failed_websites(monkeypatch, tmp_pat
     await orchestrator.progress_tracker.mark_domain_processed(
         "example.com", status="retry_pending", error_message="HTTP 403"
     )
-    await orchestrator.progress_tracker.mark_domain_processed(
-        "github.com", status="success"
-    )
+    await orchestrator.progress_tracker.mark_domain_processed("github.com", status="success")
     await orchestrator.progress_tracker.mark_domain_processed(
         "333903271", status="error", error_message="rate limited"
     )
@@ -464,9 +446,7 @@ async def test_firecrawl_retry_failures_terminal_without_deep(monkeypatch, tmp_p
 
     monkeypatch.setattr(orchestrator, "_firecrawl_available", _available)
     monkeypatch.setattr(orchestrator, "_deep_crawl_available", lambda: False)
-    monkeypatch.setattr(
-        orchestrator, "_research_fallback_available", lambda: False
-    )
+    monkeypatch.setattr(orchestrator, "_research_fallback_available", lambda: False)
 
     monkeypatch.setattr(
         type(orchestrator),

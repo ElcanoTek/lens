@@ -26,16 +26,18 @@ def _b64url(raw: bytes) -> str:
 
 
 def _pub_b64(priv: Ed25519PrivateKey) -> str:
-    raw = priv.public_key().public_bytes(
-        serialization.Encoding.Raw, serialization.PublicFormat.Raw
-    )
+    raw = priv.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
     return base64.b64encode(raw).decode()
 
 
 def _mint(priv: Ed25519PrivateKey, **claims) -> str:
     """Mint an elcano_auth token exactly like auth-server does."""
-    payload = {"email": "alice@elcanotek.com", "tenant": "elcanotek.com",
-               "iat": int(time.time()), "exp": int(time.time()) + 3600}
+    payload = {
+        "email": "alice@elcanotek.com",
+        "tenant": "elcanotek.com",
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 3600,
+    }
     payload.update(claims)
     body = _b64url(json.dumps(payload).encode())
     sig = priv.sign(body.encode())
@@ -68,7 +70,11 @@ def test_tampered_payload_rejected(signing_key):
     token = _mint(signing_key)
     body, sig = token.split(".")
     # Flip a byte in the payload; signature no longer matches.
-    bad = base64.urlsafe_b64encode(b'{"email":"mallory@evil.com","exp":9999999999}').decode().rstrip("=")
+    bad = (
+        base64.urlsafe_b64encode(b'{"email":"mallory@evil.com","exp":9999999999}')
+        .decode()
+        .rstrip("=")
+    )
     assert auth.verify_session(f"{bad}.{sig}") is None
 
 

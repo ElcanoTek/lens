@@ -7,17 +7,16 @@ Management utility for Lens.
 
 import argparse
 import asyncio
-import json
-import sys
 from pathlib import Path
 
 from config import config
 from progress_tracker import ProgressTracker
 
+
 def setup_environment():
     """Setup the environment and configuration files."""
     print("🔧 Setting up environment...")
-    
+
     # Copy example files if they don't exist
     if not Path(".env").exists():
         if Path(".env.example").exists():
@@ -29,36 +28,40 @@ def setup_environment():
             with open(".env", "w") as f:
                 f.write("# Add your API keys here\n")
                 f.write("OPENROUTER_API_KEY=\n")
-    
+
     if not Path("config.json").exists():
         if Path("config.json.example").exists():
             print("Creating config.json from config.json.example")
             with open("config.json.example", "r") as src, open("config.json", "w") as dst:
                 dst.write(src.read())
-    
+
     print("✅ Environment setup complete!")
     print("📝 Please edit .env file with your API keys before running the script.")
+
 
 def show_progress():
     """Show current progress."""
     tracker = ProgressTracker(config.PROGRESS_FILE_PATH)
     tracker.print_summary()
-    
+
     # Show recent activity
     processed_domains = tracker.get_processed_domains()
     if processed_domains:
-        print(f"\n📋 Recent activity (last 10 domains):")
+        print("\n📋 Recent activity (last 10 domains):")
         for domain in processed_domains[-10:]:
             domain_data = tracker.progress_data["processed_domains"][domain]
             status = domain_data["status"]
             timestamp = domain_data["timestamp"]
             print(f"   {domain} - {status} ({timestamp})")
 
+
 def reset_progress():
     """Reset progress tracking."""
     if Path(config.PROGRESS_FILE_PATH).exists():
-        response = input(f"Are you sure you want to reset progress? This will delete {config.PROGRESS_FILE_PATH} (y/N): ")
-        if response.lower() == 'y':
+        response = input(
+            f"Are you sure you want to reset progress? This will delete {config.PROGRESS_FILE_PATH} (y/N): "
+        )
+        if response.lower() == "y":
             Path(config.PROGRESS_FILE_PATH).unlink()
             print("✅ Progress reset successfully")
         else:
@@ -66,33 +69,35 @@ def reset_progress():
     else:
         print("ℹ️  No progress file found")
 
+
 async def reset_failed():
     """Reset failed domains for retry."""
     tracker = ProgressTracker(config.PROGRESS_FILE_PATH)
     failed_domains = tracker.get_failed_domains()
-    
+
     if not failed_domains:
         print("ℹ️  No failed domains found")
         return
-    
+
     print(f"Found {len(failed_domains)} failed domains:")
     for domain in failed_domains[:10]:  # Show first 10
         print(f"   {domain}")
-    
+
     if len(failed_domains) > 10:
         print(f"   ... and {len(failed_domains) - 10} more")
-    
+
     response = input(f"Reset {len(failed_domains)} failed domains for retry? (y/N): ")
-    if response.lower() == 'y':
+    if response.lower() == "y":
         await tracker.reset_failed_domains()
         print("✅ Failed domains reset successfully")
     else:
         print("❌ Reset cancelled")
 
+
 def validate_config():
     """Validate configuration and API keys."""
     print("🔍 Validating configuration...")
-    
+
     # Check required environment variables based on enabled integrations
     missing_vars = []
 
@@ -105,14 +110,15 @@ def validate_config():
             print(f"   {var}")
         print("Please update your .env file with the required credentials")
         return False
-    
+
     # Check input file
     if not Path(config.INPUT_CSV_PATH).exists():
         print(f"❌ Input file not found: {config.INPUT_CSV_PATH}")
         return False
-    
+
     print("✅ Configuration validation passed")
     return True
+
 
 def create_sample_input():
     """Create a sample input CSV file."""
@@ -122,18 +128,19 @@ google.com
 cnn.com
 amazon.com
 github.com"""
-    
+
     with open("sample_input.csv", "w") as f:
         f.write(sample_data)
-    
+
     print("✅ Created sample_input.csv")
     print("You can use this as a template for your input file")
+
 
 def show_stats():
     """Show detailed statistics."""
     tracker = ProgressTracker(config.PROGRESS_FILE_PATH)
     summary = tracker.get_summary()
-    
+
     print("📊 Detailed Statistics:")
     print(f"   Total domains: {summary['total_domains']}")
     print(f"   Processed: {summary['processed']}")
@@ -141,13 +148,13 @@ def show_stats():
     print(f"   Errors: {summary['errors']}")
     print(f"   Remaining: {summary['remaining']}")
     print(f"   Completion: {summary['completion_percentage']:.1f}%")
-    
+
     if "elapsed_time" in summary:
         print(f"   Elapsed time: {summary['elapsed_time']}")
-    
+
     if "estimated_time_remaining" in summary:
         print(f"   Estimated remaining: {summary['estimated_time_remaining']}")
-    
+
     # Show error breakdown if any
     failed_domains = tracker.get_failed_domains()
     if failed_domains:
@@ -156,19 +163,30 @@ def show_stats():
             domain_data = tracker.progress_data["processed_domains"][domain]
             error_msg = domain_data.get("error_message", "Unknown error")
             print(f"   {domain}: {error_msg}")
-        
+
         if len(failed_domains) > 5:
             print(f"   ... and {len(failed_domains) - 5} more")
 
+
 def main():
     parser = argparse.ArgumentParser(description="Manage a Lens installation")
-    parser.add_argument("command", choices=[
-        "setup", "progress", "reset", "reset-failed", "validate", 
-        "sample", "stats", "help"
-    ], help="Command to execute")
-    
+    parser.add_argument(
+        "command",
+        choices=[
+            "setup",
+            "progress",
+            "reset",
+            "reset-failed",
+            "validate",
+            "sample",
+            "stats",
+            "help",
+        ],
+        help="Command to execute",
+    )
+
     args = parser.parse_args()
-    
+
     if args.command == "setup":
         setup_environment()
     elif args.command == "progress":
@@ -192,6 +210,7 @@ def main():
         print("  validate    - Validate configuration")
         print("  sample      - Create sample input file")
         print("  stats       - Show detailed statistics")
+
 
 if __name__ == "__main__":
     main()

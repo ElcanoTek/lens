@@ -7,8 +7,6 @@ import csv
 import io
 import os
 
-import pytest
-
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
 from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
@@ -20,8 +18,12 @@ from shared_types import DomainWorkItem  # noqa: E402
 
 
 class _FakeOpenRouter:
-    def __init__(self, research_content="Reuters is a global news agency.",
-                 research_success=True, classify_success=True):
+    def __init__(
+        self,
+        research_content="Reuters is a global news agency.",
+        research_success=True,
+        classify_success=True,
+    ):
         self.research_content = research_content
         self.research_success = research_success
         self.classify_success = classify_success
@@ -34,8 +36,9 @@ class _FakeOpenRouter:
             return {"success": False, "error": "boom", "research_content": ""}
         return {"success": True, "research_content": self.research_content}
 
-    async def classify_site(self, domain, content="", title="",
-                            meta_description="", content_source="scrape"):
+    async def classify_site(
+        self, domain, content="", title="", meta_description="", content_source="scrape"
+    ):
         self.classify_calls.append((domain, content_source))
         if not self.classify_success:
             return {"success": False, "error": "classifier down"}
@@ -76,8 +79,7 @@ async def test_research_success_records_research_scrape_mode(tmp_path):
     await processor.process_domain_research(DomainWorkItem(domain="reuters.com"))
 
     assert openrouter.classify_calls == [("reuters.com", "research")]
-    rows = list(csv.DictReader(io.StringIO(out.getvalue()),
-                               fieldnames=config.CSV_FIELDNAMES))
+    rows = list(csv.DictReader(io.StringIO(out.getvalue()), fieldnames=config.CSV_FIELDNAMES))
     assert rows[0]["Quality"] == "Premium"
     assert rows[0]["Scrape_Mode"] == "research"
     assert tracker.is_domain_processed("reuters.com")
@@ -88,17 +90,15 @@ async def test_research_insufficient_keeps_domain_failed(tmp_path):
     openrouter = _FakeOpenRouter(research_content="")
     processor, tracker, out = _make_processor(tmp_path, openrouter)
     await tracker.mark_domain_processed(
-        "unknownsite.example", status="retry_pending",
+        "unknownsite.example",
+        status="retry_pending",
         error_message="Received HTTP status 403",
     )
 
-    await processor.process_domain_research(
-        DomainWorkItem(domain="unknownsite.example")
-    )
+    await processor.process_domain_research(DomainWorkItem(domain="unknownsite.example"))
 
     assert openrouter.classify_calls == []  # never guessed at
-    rows = list(csv.DictReader(io.StringIO(out.getvalue()),
-                               fieldnames=config.CSV_FIELDNAMES))
+    rows = list(csv.DictReader(io.StringIO(out.getvalue()), fieldnames=config.CSV_FIELDNAMES))
     assert rows[0]["Quality"] == "Failed"
     # The original scrape error stays visible in the failure justification.
     assert "403" in rows[0]["Justification"]
@@ -114,19 +114,13 @@ async def test_research_error_keeps_domain_failed(tmp_path):
     assert "example.com" in tracker.get_failed_domains()
 
 
-async def test_orchestrator_research_pass_processes_failed_websites(
-    monkeypatch, tmp_path
-):
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nblocked.com\nfine.com\n"
-    )
+async def test_orchestrator_research_pass_processes_failed_websites(monkeypatch, tmp_path):
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nblocked.com\nfine.com\n")
     items = orchestrator._load_input_data()
     await orchestrator.progress_tracker.mark_domain_processed(
         "blocked.com", status="error", error_message="Received HTTP status 401"
     )
-    await orchestrator.progress_tracker.mark_domain_processed(
-        "fine.com", status="success"
-    )
+    await orchestrator.progress_tracker.mark_domain_processed("fine.com", status="success")
 
     researched = []
 
@@ -139,9 +133,7 @@ async def test_orchestrator_research_pass_processes_failed_websites(
     assert researched == ["blocked.com"]
 
 
-async def test_orchestrator_research_pass_respects_disable_flag(
-    monkeypatch, tmp_path
-):
+async def test_orchestrator_research_pass_respects_disable_flag(monkeypatch, tmp_path):
     orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nblocked.com\n")
     items = orchestrator._load_input_data()
     await orchestrator.progress_tracker.mark_domain_processed(
@@ -168,9 +160,7 @@ async def test_research_website_detects_insufficient_information():
     class _Msg:
         def model_dump(self):
             return {
-                "choices": [
-                    {"message": {"content": "INSUFFICIENT INFORMATION"}}
-                ],
+                "choices": [{"message": {"content": "INSUFFICIENT INFORMATION"}}],
                 "usage": {"total_tokens": 10},
             }
 

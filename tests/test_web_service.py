@@ -4,7 +4,6 @@
 import json
 import os
 from io import BytesIO
-from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -28,11 +27,16 @@ os.environ["AUTH_SIGNING_PUBKEY"] = _b64.b64encode(
 
 
 def _auth_cookie(email: str = "tester@elcanotek.com") -> str:
-    payload = {"email": email, "tenant": "elcanotek.com",
-               "iat": int(_time.time()), "exp": int(_time.time()) + 3600}
+    payload = {
+        "email": email,
+        "tenant": "elcanotek.com",
+        "iat": int(_time.time()),
+        "exp": int(_time.time()) + 3600,
+    }
     body = _b64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
     sig = _AUTH_PRIV.sign(body.encode())
     return f"{body}.{_b64.urlsafe_b64encode(sig).decode().rstrip('=')}"
+
 
 import web_service
 
@@ -296,7 +300,9 @@ def test_upload_rejects_corrupt_xlsx(monkeypatch, tmp_path):
         response = client.post(
             "/files/upload",
             data={"destination": "inputs"},
-            files={"file": ("broken.xlsx", b"not actually a zip archive", "application/octet-stream")},
+            files={
+                "file": ("broken.xlsx", b"not actually a zip archive", "application/octet-stream")
+            },
             follow_redirects=False,
         )
 
@@ -347,8 +353,8 @@ def test_orchestrator_loads_xlsx_input(monkeypatch, tmp_path):
     monkeypatch.setattr(web_service, "INPUT_DIR", tmp_path)
     monkeypatch.setattr(web_service, "OUTPUT_DIR", tmp_path)
 
-    from orchestration import SiteAnalysisOrchestrator
     from config import config
+    from orchestration import SiteAnalysisOrchestrator
 
     monkeypatch.setattr(config, "INPUT_CSV_PATH", str(input_path))
     monkeypatch.setattr(config, "PROGRESS_FILE_PATH", str(progress_path))
@@ -502,9 +508,7 @@ def test_load_jobs_rejects_traversal_filenames(monkeypatch, tmp_path):
             },
         ],
     }
-    (output_dir / web_service.JOBS_STATE_FILENAME).write_text(
-        json.dumps(state), encoding="utf-8"
-    )
+    (output_dir / web_service.JOBS_STATE_FILENAME).write_text(json.dumps(state), encoding="utf-8")
 
     manager = web_service.JobManager()
     manager._load_jobs()
@@ -528,8 +532,13 @@ def test_enqueue_job_with_model_and_research_options(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [{"id": "cheap/model", "label": "Cheap Model"}],
-                "research": [{"id": "perplexity/sonar", "label": "Sonar"}]}),
+        (
+            1e18,
+            {
+                "classify": [{"id": "cheap/model", "label": "Cheap Model"}],
+                "research": [{"id": "perplexity/sonar", "label": "Sonar"}],
+            },
+        ),
     )
 
     with TestClient(web_service.app) as client:
@@ -575,8 +584,13 @@ def test_enqueue_job_rejects_unknown_model(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [{"id": "cheap/model", "label": "Cheap Model"}],
-                "research": [{"id": "perplexity/sonar", "label": "Sonar"}]}),
+        (
+            1e18,
+            {
+                "classify": [{"id": "cheap/model", "label": "Cheap Model"}],
+                "research": [{"id": "perplexity/sonar", "label": "Sonar"}],
+            },
+        ),
     )
 
     with TestClient(web_service.app) as client:
@@ -628,13 +642,19 @@ def test_index_renders_advanced_model_picker(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [
-            {"id": web_service.RECOMMENDED_MODEL, "label": "Gemini Flash Latest"},
-            {"id": "cheap/model", "label": "Cheap Model · $0.1/M in · $0.4/M out"},
-        ], "research": [
-            {"id": web_service.RECOMMENDED_RESEARCH_MODEL, "label": "Sonar Pro"},
-            {"id": "perplexity/sonar", "label": "Sonar · $1/M in · $1/M out"},
-        ]}),
+        (
+            1e18,
+            {
+                "classify": [
+                    {"id": web_service.RECOMMENDED_MODEL, "label": "Gemini Flash Latest"},
+                    {"id": "cheap/model", "label": "Cheap Model · $0.1/M in · $0.4/M out"},
+                ],
+                "research": [
+                    {"id": web_service.RECOMMENDED_RESEARCH_MODEL, "label": "Sonar Pro"},
+                    {"id": "perplexity/sonar", "label": "Sonar · $1/M in · $1/M out"},
+                ],
+            },
+        ),
     )
 
     with TestClient(web_service.app) as client:
@@ -658,8 +678,7 @@ def test_enqueue_job_with_research_model(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [],
-                "research": [{"id": "perplexity/sonar", "label": "Sonar"}]}),
+        (1e18, {"classify": [], "research": [{"id": "perplexity/sonar", "label": "Sonar"}]}),
     )
 
     with TestClient(web_service.app) as client:

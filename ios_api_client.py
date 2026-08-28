@@ -123,19 +123,25 @@ class iOSAPIClient:
                     last_error = result.get("error", "Unknown error")
                     logger.warning(
                         "Attempt %d/%d for app %s failed: %s",
-                        attempt + 1, self.max_retries, app_id, last_error
+                        attempt + 1,
+                        self.max_retries,
+                        app_id,
+                        last_error,
                     )
 
             except Exception as exc:
                 last_error = str(exc)
                 logger.warning(
                     "Attempt %d/%d for app %s raised exception: %s",
-                    attempt + 1, self.max_retries, app_id, exc
+                    attempt + 1,
+                    self.max_retries,
+                    app_id,
+                    exc,
                 )
 
             # Wait before retry (exponential backoff)
             if attempt < self.max_retries - 1:
-                wait_time = self.retry_delay * (2 ** attempt)
+                wait_time = self.retry_delay * (2**attempt)
                 await asyncio.sleep(wait_time)
 
         self.error_count += 1
@@ -345,7 +351,6 @@ class iOSAPIClient:
             "success_count": self.success_count,
             "error_count": self.error_count,
             "success_rate": (
-                self.success_count / self.request_count * 100
-                if self.request_count > 0 else 0.0
+                self.success_count / self.request_count * 100 if self.request_count > 0 else 0.0
             ),
         }

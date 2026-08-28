@@ -221,9 +221,7 @@ class TerminalReporter:
         """Render retry information in yellow."""
 
         timestamp = datetime.now().strftime("%H:%M:%S")
-        message = (
-            f"[{timestamp}] ⚠️ Retry {attempt}/{total} for {domain} in {delay:.1f}s ({reason})"
-        )
+        message = f"[{timestamp}] ⚠️ Retry {attempt}/{total} for {domain} in {delay:.1f}s ({reason})"
 
         if self.use_rich and self.console:
             target_console = self.progress.console if self.progress else self.console
@@ -312,9 +310,7 @@ class TerminalReporter:
 
         if ok:
             status_text = status_code if status_code is not None else "OK"
-            base_message = (
-                f"[{timestamp}] ✅ Success {domain} ({status_text}) {elapsed:.2f}s"
-            )
+            base_message = f"[{timestamp}] ✅ Success {domain} ({status_text}) {elapsed:.2f}s"
             if self.use_rich and self.console:
                 target_console = self.progress.console if self.progress else self.console
                 rich_message = (
@@ -330,9 +326,7 @@ class TerminalReporter:
                 print(base_message, flush=True)
         else:
             error_text = error or "Unknown error"
-            base_message = (
-                f"[{timestamp}] ❌ Failed {domain} ({error_text}) after {elapsed:.2f}s"
-            )
+            base_message = f"[{timestamp}] ❌ Failed {domain} ({error_text}) after {elapsed:.2f}s"
             if self.use_rich and self.console:
                 target_console = self.progress.console if self.progress else self.console
                 rich_message = (

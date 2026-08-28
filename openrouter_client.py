@@ -6,11 +6,11 @@
 import asyncio
 import csv
 import json
-import time
-import re
-from pathlib import Path
-from typing import Dict, Any, Optional, List, Tuple
 import logging
+import re
+import time
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
@@ -34,43 +34,61 @@ class OpenRouterClient:
                     "quality": {
                         "type": "string",
                         "enum": ["Premium", "Standard", "Long Tail"],
-                        "description": "The quality tier of the website: Premium (best of the best), Standard (acceptable but not elite), or Long Tail (low quality/suspicious)"
+                        "description": "The quality tier of the website: Premium (best of the best), Standard (acceptable but not elite), or Long Tail (low quality/suspicious)",
                     },
                     "justification": {
                         "type": "string",
-                        "description": "Detailed explanation for the quality rating, considering content quality, editorial standards, user experience, and brand recognition"
+                        "description": "Detailed explanation for the quality rating, considering content quality, editorial standards, user experience, and brand recognition",
                     },
                     "vertical": {
                         "type": "string",
-                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories. Examples: 'Sports', 'Puzzle Video Games', 'Technology & Computing'"
+                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories. Examples: 'Sports', 'Puzzle Video Games', 'Technology & Computing'",
                     },
                     "description": {
                         "type": "string",
-                        "description": "A single sentence describing the site's primary content or purpose"
+                        "description": "A single sentence describing the site's primary content or purpose",
                     },
                     "confidence": {
                         "type": "string",
                         "enum": ["High", "Medium", "Low"],
-                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)"
+                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)",
                     },
                     "language": {
                         "type": "string",
-                        "description": "The primary language of the content (e.g., 'English', 'Spanish', 'French', 'Chinese', 'Multilingual', etc.)"
+                        "description": "The primary language of the content (e.g., 'English', 'Spanish', 'French', 'Chinese', 'Multilingual', etc.)",
                     },
                     "political_leaning": {
                         "type": "string",
-                        "enum": ["Far Left", "Left", "Center-Left", "Center", "Center-Right", "Right", "Far Right", "Non-Political"],
-                        "description": "Political orientation of the content for US political context: Far Left (socialist/progressive advocacy), Left (liberal/progressive), Center-Left (moderate liberal), Center (balanced/neutral), Center-Right (moderate conservative), Right (conservative), Far Right (nationalist/hard conservative), Non-Political (no political content)"
+                        "enum": [
+                            "Far Left",
+                            "Left",
+                            "Center-Left",
+                            "Center",
+                            "Center-Right",
+                            "Right",
+                            "Far Right",
+                            "Non-Political",
+                        ],
+                        "description": "Political orientation of the content for US political context: Far Left (socialist/progressive advocacy), Left (liberal/progressive), Center-Left (moderate liberal), Center (balanced/neutral), Center-Right (moderate conservative), Right (conservative), Far Right (nationalist/hard conservative), Non-Political (no political content)",
                     },
                     "audience_size": {
                         "type": "string",
                         "description": "Conservatively estimate the site's relative audience size. You have a strong tendency to overestimate. Be skeptical: high quality or brand recognition does not mean high traffic. Most sites are XS or S. Use L/XL only for globally recognized destinations. Use the following t-shirt sizes: XS, S, M, L, XL.",
-                        "enum": ["XS", "S", "M", "L", "XL"]
-                    }
+                        "enum": ["XS", "S", "M", "L", "XL"],
+                    },
                 },
-                "required": ["quality", "justification", "vertical", "description", "confidence", "language", "political_leaning", "audience_size"]
-            }
-        }
+                "required": [
+                    "quality",
+                    "justification",
+                    "vertical",
+                    "description",
+                    "confidence",
+                    "language",
+                    "political_leaning",
+                    "audience_size",
+                ],
+            },
+        },
     }
 
     def __init__(
@@ -126,7 +144,7 @@ class OpenRouterClient:
             "Authorization": f"Bearer {self.api_key}",
             "HTTP-Referer": "https://github.com/ElcanoTek/lens",
             "X-Title": "Lens",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
     @staticmethod
@@ -177,10 +195,14 @@ class OpenRouterClient:
         if tool_calls:
             try:
                 call = tool_calls[0]
-                if expected_name and call.get("function", {}).get("name") not in (expected_name, None):
+                if expected_name and call.get("function", {}).get("name") not in (
+                    expected_name,
+                    None,
+                ):
                     logger.warning(
                         "Function call name %r did not match expected %r",
-                        call.get("function", {}).get("name"), expected_name,
+                        call.get("function", {}).get("name"),
+                        expected_name,
                     )
                 arguments_raw = call["function"]["arguments"]
                 if isinstance(arguments_raw, dict):
@@ -201,7 +223,9 @@ class OpenRouterClient:
         try:
             parsed = json.loads(content[start : end + 1])
             if isinstance(parsed, dict):
-                logger.info("Recovered classification arguments from message content (no tool_calls present)")
+                logger.info(
+                    "Recovered classification arguments from message content (no tool_calls present)"
+                )
                 return parsed
         except json.JSONDecodeError:
             return None
@@ -237,7 +261,11 @@ class OpenRouterClient:
         if isinstance(err, dict):
             msg = err.get("message") or "unknown error"
             code = err.get("code")
-            return f"OpenRouter body error (code={code}): {msg}" if code is not None else f"OpenRouter body error: {msg}"
+            return (
+                f"OpenRouter body error (code={code}): {msg}"
+                if code is not None
+                else f"OpenRouter body error: {msg}"
+            )
         return f"OpenRouter body error: {err}"
 
     @staticmethod
@@ -258,9 +286,7 @@ class OpenRouterClient:
         # The HTTP layer returns 200 OK so retries don't help — only a model
         # swap will.
         if "openrouter body error" in lowered and (
-            "invalid arguments" in lowered
-            or "code=502" in lowered
-            or "code=400" in lowered
+            "invalid arguments" in lowered or "code=502" in lowered or "code=400" in lowered
         ):
             return True
         return False
@@ -278,7 +304,9 @@ class OpenRouterClient:
                 return False
             logger.warning(
                 "Activating OpenRouter fallback model %r (primary %r failed: %s)",
-                self.fallback_model, self.primary_model, reason,
+                self.fallback_model,
+                self.primary_model,
+                reason,
             )
             self.model = self.fallback_model
             self._fallback_active = True
@@ -291,7 +319,7 @@ class OpenRouterClient:
         max_retries: int = 3,
         base_delay: float = 2.0,
         operation_name: str = "API call",
-        **kwargs
+        **kwargs,
     ):
         """
         Execute an async API call with exponential backoff retry logic.
@@ -332,22 +360,37 @@ class OpenRouterClient:
                     if await self._activate_fallback(error_str):
                         logger.warning(
                             "%s retrying with fallback model after primary unavailable: %s",
-                            operation_name, error_str,
+                            operation_name,
+                            error_str,
                         )
                         continue
 
                 # Check if this is a retryable error
                 retryable_keywords = [
-                    "connection", "timeout", "rate limit", "429", "503", "502",
-                    "500", "network", "reset", "refused", "unavailable", "overloaded"
+                    "connection",
+                    "timeout",
+                    "rate limit",
+                    "429",
+                    "503",
+                    "502",
+                    "500",
+                    "network",
+                    "reset",
+                    "refused",
+                    "unavailable",
+                    "overloaded",
                 ]
                 is_retryable = any(kw in error_str.lower() for kw in retryable_keywords)
 
                 if attempt < max_retries - 1 and is_retryable:
-                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    delay = base_delay * (2**attempt)  # Exponential backoff
                     logger.warning(
                         "%s attempt %d/%d failed: %s. Retrying in %.1fs...",
-                        operation_name, attempt + 1, max_retries, error_str, delay
+                        operation_name,
+                        attempt + 1,
+                        max_retries,
+                        error_str,
+                        delay,
                     )
                     await asyncio.sleep(delay)
                 elif attempt < max_retries - 1:
@@ -355,13 +398,16 @@ class OpenRouterClient:
                     delay = base_delay
                     logger.warning(
                         "%s attempt %d/%d failed (non-retryable): %s. Trying once more in %.1fs...",
-                        operation_name, attempt + 1, max_retries, error_str, delay
+                        operation_name,
+                        attempt + 1,
+                        max_retries,
+                        error_str,
+                        delay,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
-                        "%s failed after %d attempts: %s",
-                        operation_name, max_retries, error_str
+                        "%s failed after %d attempts: %s", operation_name, max_retries, error_str
                     )
 
         if last_exception is None:
@@ -414,13 +460,18 @@ class OpenRouterClient:
                     logger.warning(
                         "%s returned an unparseable response (finish_reason=%s): %s; "
                         "retrying with max_tokens=%d",
-                        operation_name, finish_reason, exc, budget,
+                        operation_name,
+                        finish_reason,
+                        exc,
+                        budget,
                     )
                 else:
                     logger.error(
                         "%s produced no parseable response after %d attempts "
                         "(last finish_reason=%s)",
-                        operation_name, truncation_retries + 1, finish_reason,
+                        operation_name,
+                        truncation_retries + 1,
+                        finish_reason,
                     )
         raise last_exception
 
@@ -442,7 +493,10 @@ class OpenRouterClient:
 
         try:
             prompt = self._build_classification_prompt(
-                domain, content, title, meta_description,
+                domain,
+                content,
+                title,
+                meta_description,
                 content_source=content_source,
             )
 
@@ -473,6 +527,7 @@ class OpenRouterClient:
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
                     )
+
                 return make_api_call
 
             classification, response_data = await self._request_and_parse(
@@ -498,7 +553,7 @@ class OpenRouterClient:
                 "audience_size": classification.get("audience_size", "S"),
                 "processing_time": processing_time,
                 "tokens_used": self._usage_tokens(response_data),
-                "source": "openrouter"
+                "source": "openrouter",
             }
 
         except Exception as exc:
@@ -518,7 +573,7 @@ class OpenRouterClient:
                 "language": "Unknown",
                 "political_leaning": "Non-Political",
                 "audience_size": "Unknown",
-                "source": "openrouter"
+                "source": "openrouter",
             }
 
     def _build_classification_prompt(
@@ -730,9 +785,7 @@ Analyze the website and provide your classification:"""
                 or len(research_content.strip()) < 100
             )
             if insufficient:
-                logger.info(
-                    "Research found no meaningful information for %s", domain
-                )
+                logger.info("Research found no meaningful information for %s", domain)
                 research_content = ""
 
             return {
@@ -823,13 +876,16 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                 # Validate quality
                 valid_qualities = ["Premium", "Standard", "Long Tail"]
                 if result["quality"] not in valid_qualities:
-                    logger.warning(f"Invalid quality value '{result['quality']}', defaulting to 'Standard'")
+                    logger.warning(
+                        f"Invalid quality value '{result['quality']}', defaulting to 'Standard'"
+                    )
                     result["quality"] = "Standard"
 
                 # Format vertical with hierarchy if we have tiers
                 if result["vertical_tier_1"]:
                     result["vertical"] = " > ".join(
-                        tier for tier in (
+                        tier
+                        for tier in (
                             result["vertical_tier_1"],
                             result["vertical_tier_2"],
                             result["vertical_tier_3"],
@@ -842,17 +898,37 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                 # Validate confidence
                 valid_confidences = ["High", "Medium", "Low"]
                 if result["confidence"] not in valid_confidences:
-                    logger.warning(f"Invalid confidence value '{result['confidence']}', defaulting to 'Medium'")
+                    logger.warning(
+                        f"Invalid confidence value '{result['confidence']}', defaulting to 'Medium'"
+                    )
                     result["confidence"] = "Medium"
 
                 # Validate political_leaning
-                valid_political_leanings = ["Far Left", "Left", "Center-Left", "Center", "Center-Right", "Right", "Far Right", "Non-Political"]
+                valid_political_leanings = [
+                    "Far Left",
+                    "Left",
+                    "Center-Left",
+                    "Center",
+                    "Center-Right",
+                    "Right",
+                    "Far Right",
+                    "Non-Political",
+                ]
                 if result["political_leaning"] not in valid_political_leanings:
-                    logger.warning(f"Invalid political_leaning value '{result['political_leaning']}', defaulting to 'Non-Political'")
+                    logger.warning(
+                        f"Invalid political_leaning value '{result['political_leaning']}', defaulting to 'Non-Political'"
+                    )
                     result["political_leaning"] = "Non-Political"
 
                 # Ensure no empty values (except tier fields and fields with sensible defaults)
-                skip_fields = {"vertical_tier_1", "vertical_tier_2", "vertical_tier_3", "language", "political_leaning", "audience_size"}
+                skip_fields = {
+                    "vertical_tier_1",
+                    "vertical_tier_2",
+                    "vertical_tier_3",
+                    "language",
+                    "political_leaning",
+                    "audience_size",
+                }
                 for key, value in result.items():
                     if key in skip_fields:
                         if key.startswith("vertical_tier") and value in {None, "N/A", ""}:
@@ -877,19 +953,24 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
         """Resolve the provided vertical label into taxonomy tiers."""
         if not vertical or vertical.strip().lower() in {"unknown", "n/a", "not provided"}:
             return []
-        
+
         # Check if vertical contains field names (indicates parsing error)
-        if any(field.lower() in vertical.lower() for field in ["description:", "confidence:", "quality:", "justification:"]):
-            logger.warning(f"Vertical field contains other field names: '{vertical}', returning empty")
+        if any(
+            field.lower() in vertical.lower()
+            for field in ["description:", "confidence:", "quality:", "justification:"]
+        ):
+            logger.warning(
+                f"Vertical field contains other field names: '{vertical}', returning empty"
+            )
             return []
 
         taxonomy = self._load_taxonomy()
         first_line = vertical.splitlines()[0].strip()
         if not first_line:
             return []
-        
+
         # If the LLM provided a hierarchy with separators, try to use it directly first
-        if any(sep in first_line for sep in ['>', '|', '/']):
+        if any(sep in first_line for sep in [">", "|", "/"]):
             # Split by common separators and clean up
             tiers = [token.strip() for token in re.split(r"[>\|/]+", first_line) if token.strip()]
             if len(tiers) > 1:
@@ -1003,7 +1084,6 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
             return "Sports\nNews\nEntertainment\nTechnology & Computing\n"
 
         # Build hierarchical structure from TSV
-        categories = []
         tier1_groups = {}
 
         try:
@@ -1059,43 +1139,61 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                     "quality": {
                         "type": "string",
                         "enum": ["Premium", "Standard", "Long Tail"],
-                        "description": "The quality tier of the app: Premium (best of the best), Standard (acceptable but not elite), or Long Tail (low quality/suspicious)"
+                        "description": "The quality tier of the app: Premium (best of the best), Standard (acceptable but not elite), or Long Tail (low quality/suspicious)",
                     },
                     "justification": {
                         "type": "string",
-                        "description": "Detailed explanation for the quality rating, considering app purpose, developer reputation, user reviews, and content quality"
+                        "description": "Detailed explanation for the quality rating, considering app purpose, developer reputation, user reviews, and content quality",
                     },
                     "vertical": {
                         "type": "string",
-                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories. Examples: 'Video Gaming', 'Puzzle Video Games', 'Social Networking'"
+                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories. Examples: 'Video Gaming', 'Puzzle Video Games', 'Social Networking'",
                     },
                     "description": {
                         "type": "string",
-                        "description": "A single sentence describing the app's primary purpose or function"
+                        "description": "A single sentence describing the app's primary purpose or function",
                     },
                     "confidence": {
                         "type": "string",
                         "enum": ["High", "Medium", "Low"],
-                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)"
+                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)",
                     },
                     "language": {
                         "type": "string",
-                        "description": "The primary language of the app content and interface (e.g., 'English', 'Spanish', 'French', 'Chinese', 'Multilingual', etc.)"
+                        "description": "The primary language of the app content and interface (e.g., 'English', 'Spanish', 'French', 'Chinese', 'Multilingual', etc.)",
                     },
                     "political_leaning": {
                         "type": "string",
-                        "enum": ["Far Left", "Left", "Center-Left", "Center", "Center-Right", "Right", "Far Right", "Non-Political"],
-                        "description": "Political orientation of the app content for US political context: Far Left (socialist/progressive advocacy), Left (liberal/progressive), Center-Left (moderate liberal), Center (balanced/neutral), Center-Right (moderate conservative), Right (conservative), Far Right (nationalist/hard conservative), Non-Political (no political content)"
+                        "enum": [
+                            "Far Left",
+                            "Left",
+                            "Center-Left",
+                            "Center",
+                            "Center-Right",
+                            "Right",
+                            "Far Right",
+                            "Non-Political",
+                        ],
+                        "description": "Political orientation of the app content for US political context: Far Left (socialist/progressive advocacy), Left (liberal/progressive), Center-Left (moderate liberal), Center (balanced/neutral), Center-Right (moderate conservative), Right (conservative), Far Right (nationalist/hard conservative), Non-Political (no political content)",
                     },
                     "audience_size": {
                         "type": "string",
                         "description": "Conservatively estimate the app's relative audience size. You have a strong tendency to overestimate. Be skeptical: high quality or brand recognition does not mean high usage. Most apps are XS or S. Use L/XL only for globally recognized apps. Use the following t-shirt sizes: XS, S, M, L, XL.",
-                        "enum": ["XS", "S", "M", "L", "XL"]
-                    }
+                        "enum": ["XS", "S", "M", "L", "XL"],
+                    },
                 },
-                "required": ["quality", "justification", "vertical", "description", "confidence", "language", "political_leaning", "audience_size"]
-            }
-        }
+                "required": [
+                    "quality",
+                    "justification",
+                    "vertical",
+                    "description",
+                    "confidence",
+                    "language",
+                    "political_leaning",
+                    "audience_size",
+                ],
+            },
+        },
     }
 
     async def classify_app(
@@ -1172,6 +1270,7 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
                     )
+
                 return make_api_call
 
             classification, response_data = await self._request_and_parse(
@@ -1199,7 +1298,7 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                 "audience_size": classification.get("audience_size", "S"),
                 "processing_time": processing_time,
                 "tokens_used": self._usage_tokens(response_data),
-                "source": "openrouter"
+                "source": "openrouter",
             }
 
         except Exception as exc:
@@ -1219,7 +1318,7 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                 "language": "Unknown",
                 "political_leaning": "Non-Political",
                 "audience_size": "Unknown",
-                "source": "openrouter"
+                "source": "openrouter",
             }
 
     def _build_app_classification_prompt(
@@ -1269,13 +1368,21 @@ App ID: {app_id}
 App Name: {app_name}
 Developer: {developer}
 Store Category: {store_category}
-Rating: {rating:.1f}/5.0 ({rating_count:,} reviews){"" if not downloads else f'''
-Downloads: {downloads}'''}
+Rating: {rating:.1f}/5.0 ({rating_count:,} reviews){
+            ""
+            if not downloads
+            else f'''
+Downloads: {downloads}'''
+        }
 
 Description:
 {description if description else "(No description available)"}
 
-{f"Additional Context:{chr(10)}{content_for_llm}" if content_for_llm and content_for_llm != description else ""}
+{
+            f"Additional Context:{chr(10)}{content_for_llm}"
+            if content_for_llm and content_for_llm != description
+            else ""
+        }
 
 ANALYSIS REQUIREMENTS:
 1. Evaluate the app's stated purpose and whether it provides genuine value to users
@@ -1383,7 +1490,8 @@ Analyze the app and provide your classification:"""
             choices = response_data.get("choices") if isinstance(response_data, dict) else None
             if choices:
                 logger.info(
-                    "OpenRouter API connection test successful (model=%s)", self.model,
+                    "OpenRouter API connection test successful (model=%s)",
+                    self.model,
                 )
                 return True
 
@@ -1395,7 +1503,8 @@ Analyze the app and provide your classification:"""
         except Exception as exc:
             logger.error(
                 "OpenRouter API connection test failed for model %r: %s",
-                self.model, exc,
+                self.model,
+                exc,
             )
             if self._is_model_unavailable_error(str(exc)) and not self._fallback_active:
                 if await self._activate_fallback(str(exc)):
@@ -1404,7 +1513,8 @@ Analyze the app and provide your classification:"""
                     except Exception as fallback_exc:
                         logger.error(
                             "OpenRouter API fallback connection test failed for model %r: %s",
-                            self.model, fallback_exc,
+                            self.model,
+                            fallback_exc,
                         )
             return False
 
@@ -1415,9 +1525,8 @@ Analyze the app and provide your classification:"""
             "total_tokens_used": self.total_tokens_used,
             "model": self.model,
             "average_tokens_per_request": (
-                self.total_tokens_used / self.request_count
-                if self.request_count > 0 else 0
-            )
+                self.total_tokens_used / self.request_count if self.request_count > 0 else 0
+            ),
         }
 
     async def batch_classify(self, sites: list, max_concurrent: int = 5) -> list:
@@ -1447,56 +1556,88 @@ Analyze the app and provide your classification:"""
                     "quality": {
                         "type": "string",
                         "enum": ["Premium", "Standard", "Long Tail"],
-                        "description": "The quality tier of the CTV app based on RECOGNIZABILITY: Premium (only major nationally/internationally recognizable brands like NBC, ESPN, Peacock, NFL), Standard (default for most CTV apps including local stations, regional networks, niche content), or Long Tail (rarely used for CTV - almost no CTV apps qualify)"
+                        "description": "The quality tier of the CTV app based on RECOGNIZABILITY: Premium (only major nationally/internationally recognizable brands like NBC, ESPN, Peacock, NFL), Standard (default for most CTV apps including local stations, regional networks, niche content), or Long Tail (rarely used for CTV - almost no CTV apps qualify)",
                     },
                     "justification": {
                         "type": "string",
-                        "description": "Detailed explanation for the quality rating, considering content quality, network affiliation, brand recognition, and viewer engagement"
+                        "description": "Detailed explanation for the quality rating, considering content quality, network affiliation, brand recognition, and viewer engagement",
                     },
                     "vertical": {
                         "type": "string",
-                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories."
+                        "description": "A SINGLE category name from the approved IAB taxonomy. Must be an exact match from the taxonomy list. DO NOT use commas or combine categories.",
                     },
                     "description": {
                         "type": "string",
-                        "description": "A single sentence describing the CTV app's primary content or purpose"
+                        "description": "A single sentence describing the CTV app's primary content or purpose",
                     },
                     "target_audience": {
                         "type": "string",
-                        "description": "Description of the target audience (e.g., 'General entertainment seekers', 'Sports enthusiasts', 'News viewers', 'Children and families')"
+                        "description": "Description of the target audience (e.g., 'General entertainment seekers', 'Sports enthusiasts', 'News viewers', 'Children and families')",
                     },
                     "content_type": {
                         "type": "string",
-                        "enum": ["Live TV", "On-Demand Streaming", "Live Sports", "News", "Music/Audio", "Kids Content", "Fitness", "Educational", "Gaming", "Mixed Content"],
-                        "description": "The primary type of content offered by the CTV app"
+                        "enum": [
+                            "Live TV",
+                            "On-Demand Streaming",
+                            "Live Sports",
+                            "News",
+                            "Music/Audio",
+                            "Kids Content",
+                            "Fitness",
+                            "Educational",
+                            "Gaming",
+                            "Mixed Content",
+                        ],
+                        "description": "The primary type of content offered by the CTV app",
                     },
                     "network_affiliation": {
                         "type": "string",
-                        "description": "Network affiliation if any (e.g., 'NBC', 'CBS', 'ABC', 'Fox', 'Independent', 'None')"
+                        "description": "Network affiliation if any (e.g., 'NBC', 'CBS', 'ABC', 'Fox', 'Independent', 'None')",
                     },
                     "confidence": {
                         "type": "string",
                         "enum": ["High", "Medium", "Low"],
-                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)"
+                        "description": "Confidence level in the classification: High (clear signals), Medium (some ambiguity), or Low (minimal/conflicting signals)",
                     },
                     "language": {
                         "type": "string",
-                        "description": "The primary language of the content (e.g., 'English', 'Spanish', 'Multilingual')"
+                        "description": "The primary language of the content (e.g., 'English', 'Spanish', 'Multilingual')",
                     },
                     "political_leaning": {
                         "type": "string",
-                        "enum": ["Far Left", "Left", "Center-Left", "Center", "Center-Right", "Right", "Far Right", "Non-Political"],
-                        "description": "Political orientation of the content"
+                        "enum": [
+                            "Far Left",
+                            "Left",
+                            "Center-Left",
+                            "Center",
+                            "Center-Right",
+                            "Right",
+                            "Far Right",
+                            "Non-Political",
+                        ],
+                        "description": "Political orientation of the content",
                     },
                     "audience_size": {
                         "type": "string",
                         "description": "Conservatively estimate the CTV app's relative audience size. You have a strong tendency to overestimate. Be skeptical: high quality or brand recognition does not mean high viewership. Most CTV apps are XS or S. Use L/XL only for globally recognized streaming services. Use the following t-shirt sizes: XS, S, M, L, XL.",
-                        "enum": ["XS", "S", "M", "L", "XL"]
-                    }
+                        "enum": ["XS", "S", "M", "L", "XL"],
+                    },
                 },
-                "required": ["quality", "justification", "vertical", "description", "target_audience", "content_type", "network_affiliation", "confidence", "language", "political_leaning", "audience_size"]
-            }
-        }
+                "required": [
+                    "quality",
+                    "justification",
+                    "vertical",
+                    "description",
+                    "target_audience",
+                    "content_type",
+                    "network_affiliation",
+                    "confidence",
+                    "language",
+                    "political_leaning",
+                    "audience_size",
+                ],
+            },
+        },
     }
 
     async def research_ctv_app(
@@ -1573,7 +1714,9 @@ Analyze the app and provide your classification:"""
 
             response_data = response.model_dump()
             _research_msg = self._extract_message(response_data) or {}
-            research_content = _research_msg.get("content") if isinstance(_research_msg, dict) else ""
+            research_content = (
+                _research_msg.get("content") if isinstance(_research_msg, dict) else ""
+            )
             research_content = research_content or ""
 
             processing_time = time.time() - start_time
@@ -1716,6 +1859,7 @@ Provide a comprehensive research summary that would help classify this CTV app f
                         temperature=temperature,
                         max_tokens=budget,
                     )
+
                 return make_api_call
 
             classification, response_data = await self._request_and_parse(
@@ -1909,13 +2053,16 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
                 # Validate quality
                 valid_qualities = ["Premium", "Standard", "Long Tail"]
                 if result["quality"] not in valid_qualities:
-                    logger.warning(f"Invalid quality value '{result['quality']}', defaulting to 'Standard'")
+                    logger.warning(
+                        f"Invalid quality value '{result['quality']}', defaulting to 'Standard'"
+                    )
                     result["quality"] = "Standard"
 
                 # Format vertical with hierarchy if we have tiers
                 if result["vertical_tier_1"]:
                     result["vertical"] = " > ".join(
-                        tier for tier in (
+                        tier
+                        for tier in (
                             result["vertical_tier_1"],
                             result["vertical_tier_2"],
                             result["vertical_tier_3"],
@@ -1926,26 +2073,45 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
                 # Validate confidence
                 valid_confidences = ["High", "Medium", "Low"]
                 if result["confidence"] not in valid_confidences:
-                    logger.warning(f"Invalid confidence value '{result['confidence']}', defaulting to 'Medium'")
+                    logger.warning(
+                        f"Invalid confidence value '{result['confidence']}', defaulting to 'Medium'"
+                    )
                     result["confidence"] = "Medium"
 
                 # Validate content_type
                 valid_content_types = [
-                    "Live TV", "On-Demand Streaming", "Live Sports", "News",
-                    "Music/Audio", "Kids Content", "Fitness", "Educational",
-                    "Gaming", "Mixed Content"
+                    "Live TV",
+                    "On-Demand Streaming",
+                    "Live Sports",
+                    "News",
+                    "Music/Audio",
+                    "Kids Content",
+                    "Fitness",
+                    "Educational",
+                    "Gaming",
+                    "Mixed Content",
                 ]
                 if result["content_type"] not in valid_content_types:
-                    logger.warning(f"Invalid content_type value '{result['content_type']}', defaulting to 'Mixed Content'")
+                    logger.warning(
+                        f"Invalid content_type value '{result['content_type']}', defaulting to 'Mixed Content'"
+                    )
                     result["content_type"] = "Mixed Content"
 
                 # Validate political_leaning
                 valid_political_leanings = [
-                    "Far Left", "Left", "Center-Left", "Center",
-                    "Center-Right", "Right", "Far Right", "Non-Political"
+                    "Far Left",
+                    "Left",
+                    "Center-Left",
+                    "Center",
+                    "Center-Right",
+                    "Right",
+                    "Far Right",
+                    "Non-Political",
                 ]
                 if result["political_leaning"] not in valid_political_leanings:
-                    logger.warning(f"Invalid political_leaning value '{result['political_leaning']}', defaulting to 'Non-Political'")
+                    logger.warning(
+                        f"Invalid political_leaning value '{result['political_leaning']}', defaulting to 'Non-Political'"
+                    )
                     result["political_leaning"] = "Non-Political"
 
                 return result
@@ -2008,9 +2174,18 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
         # Check for weather-focused apps ONLY if weather is the PRIMARY purpose
         # This should only match dedicated weather apps, not news apps that mention weather
         weather_app_names = [
-            "weather channel", "accuweather", "weather underground", "weather.com",
-            "weather bug", "weatherbug", "weather network", "weather nation",
-            "local weather", "storm tracker", "radar", "wunderground"
+            "weather channel",
+            "accuweather",
+            "weather underground",
+            "weather.com",
+            "weather bug",
+            "weatherbug",
+            "weather network",
+            "weather nation",
+            "local weather",
+            "storm tracker",
+            "radar",
+            "wunderground",
         ]
         is_weather_app_name = any(name in app_name_lower for name in weather_app_names)
 
@@ -2019,8 +2194,16 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
         if is_weather_app_name:
             # Verify it's not actually a general news app with "weather" in name
             general_news_signals = [
-                "news", "breaking news", "headlines", "current events", "local news",
-                "national news", "world news", "politics", "election", "newscast"
+                "news",
+                "breaking news",
+                "headlines",
+                "current events",
+                "local news",
+                "national news",
+                "world news",
+                "politics",
+                "election",
+                "newscast",
             ]
             news_signal_count = sum(1 for sig in general_news_signals if sig in research_lower)
 
@@ -2030,22 +2213,39 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
                 result["vertical_tier_2"] = "Weather"
                 result["vertical_tier_3"] = ""
                 result["vertical"] = "Science > Weather"
-                result["justification"] = result.get("justification", "") + " (post-routed for CTV weather app)"
+                result["justification"] = (
+                    result.get("justification", "") + " (post-routed for CTV weather app)"
+                )
                 # Weather apps can remain Non-Political
                 return result
 
         # Check for crime-focused apps ONLY if crime is the PRIMARY purpose
         # This should only match dedicated crime/true crime apps
         crime_app_names = [
-            "crime watch", "true crime", "crime tv", "court tv", "crime stories",
-            "crime investigation", "unsolved mysteries", "dateline", "48 hours"
+            "crime watch",
+            "true crime",
+            "crime tv",
+            "court tv",
+            "crime stories",
+            "crime investigation",
+            "unsolved mysteries",
+            "dateline",
+            "48 hours",
         ]
         is_crime_app_name = any(name in app_name_lower for name in crime_app_names)
 
         if is_crime_app_name:
             general_news_signals = [
-                "news", "breaking news", "headlines", "current events", "local news",
-                "national news", "world news", "politics", "election", "newscast"
+                "news",
+                "breaking news",
+                "headlines",
+                "current events",
+                "local news",
+                "national news",
+                "world news",
+                "politics",
+                "election",
+                "newscast",
             ]
             news_signal_count = sum(1 for sig in general_news_signals if sig in research_lower)
 
@@ -2055,22 +2255,38 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
                 result["vertical_tier_2"] = ""
                 result["vertical_tier_3"] = ""
                 result["vertical"] = "Crime"
-                result["justification"] = result.get("justification", "") + " (post-routed for CTV crime app)"
+                result["justification"] = (
+                    result.get("justification", "") + " (post-routed for CTV crime app)"
+                )
                 # Crime apps can remain Non-Political
                 return result
 
         # Check for disaster/emergency-focused apps ONLY if disaster is the PRIMARY purpose
         # This should only match dedicated emergency/disaster apps
         disaster_app_names = [
-            "emergency alert", "fema", "red cross", "disaster", "emergency management",
-            "emergency preparedness", "alert", "warning system"
+            "emergency alert",
+            "fema",
+            "red cross",
+            "disaster",
+            "emergency management",
+            "emergency preparedness",
+            "alert",
+            "warning system",
         ]
         is_disaster_app_name = any(name in app_name_lower for name in disaster_app_names)
 
         if is_disaster_app_name:
             general_news_signals = [
-                "news", "breaking news", "headlines", "current events", "local news",
-                "national news", "world news", "politics", "election", "newscast"
+                "news",
+                "breaking news",
+                "headlines",
+                "current events",
+                "local news",
+                "national news",
+                "world news",
+                "politics",
+                "election",
+                "newscast",
             ]
             news_signal_count = sum(1 for sig in general_news_signals if sig in research_lower)
 
@@ -2080,16 +2296,27 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
                 result["vertical_tier_2"] = ""
                 result["vertical_tier_3"] = ""
                 result["vertical"] = "Disasters"
-                result["justification"] = result.get("justification", "") + " (post-routed for CTV disaster app)"
+                result["justification"] = (
+                    result.get("justification", "") + " (post-routed for CTV disaster app)"
+                )
                 # Disaster apps can remain Non-Political
                 return result
 
         # Check for election-focused news - only if elections are prominently featured
         # Count strong election signals (these indicate election is a major focus)
         strong_election_signals = [
-            "election coverage", "election results", "election night", "vote count",
-            "ballot", "electoral college", "midterm election", "presidential election",
-            "senate race", "house race", "gubernatorial", "primary election"
+            "election coverage",
+            "election results",
+            "election night",
+            "vote count",
+            "ballot",
+            "electoral college",
+            "midterm election",
+            "presidential election",
+            "senate race",
+            "house race",
+            "gubernatorial",
+            "primary election",
         ]
         election_signal_count = sum(1 for sig in strong_election_signals if sig in research_lower)
 
@@ -2103,11 +2330,16 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
             result["vertical_tier_2"] = "Elections"
             result["vertical_tier_3"] = ""
             result["vertical"] = "Politics > Elections"
-            result["justification"] = result.get("justification", "") + " (post-routed for CTV election news)"
+            result["justification"] = (
+                result.get("justification", "") + " (post-routed for CTV election news)"
+            )
             # Apply political_leaning correction
             if result.get("political_leaning") == "Non-Political":
                 result["political_leaning"] = "Center"
-                result["justification"] = result.get("justification", "") + " Political_Leaning set to Center due to Politics vertical."
+                result["justification"] = (
+                    result.get("justification", "")
+                    + " Political_Leaning set to Center due to Politics vertical."
+                )
             return result
 
         # Default: General/mixed news → Politics > Civic Affairs
@@ -2120,7 +2352,10 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
         # Apply political_leaning correction for Politics vertical
         if result.get("political_leaning") == "Non-Political":
             result["political_leaning"] = "Center"
-            result["justification"] = result.get("justification", "") + " Political_Leaning set to Center due to Politics vertical."
+            result["justification"] = (
+                result.get("justification", "")
+                + " Political_Leaning set to Center due to Politics vertical."
+            )
 
         return result
 
@@ -2160,19 +2395,50 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
 
         # Signal 2: Strong news phrases in research_content
         strong_news_phrases = [
-            "news", "breaking news", "live news", "local news", "national news",
-            "headlines", "current events", "news channel", "news network",
-            "24/7 news", "weather forecast", "election coverage", "news station",
-            "news broadcast", "news programming", "newscast"
+            "news",
+            "breaking news",
+            "live news",
+            "local news",
+            "national news",
+            "headlines",
+            "current events",
+            "news channel",
+            "news network",
+            "24/7 news",
+            "weather forecast",
+            "election coverage",
+            "news station",
+            "news broadcast",
+            "news programming",
+            "newscast",
         ]
         news_phrase_count = sum(1 for phrase in strong_news_phrases if phrase in research_lower)
 
         # Signal 3: Major news network names in app_name
         major_news_networks = [
-            "news", "nbc news", "abc news", "cbs news", "fox news", "cnn",
-            "bbc", "al jazeera", "msnbc", "cnbc", "c-span", "pbs newshour",
-            "reuters", "associated press", "ap news", "npr", "bloomberg news",
-            "sky news", "newsmax", "oan", "newsy", "local", "weather"
+            "news",
+            "nbc news",
+            "abc news",
+            "cbs news",
+            "fox news",
+            "cnn",
+            "bbc",
+            "al jazeera",
+            "msnbc",
+            "cnbc",
+            "c-span",
+            "pbs newshour",
+            "reuters",
+            "associated press",
+            "ap news",
+            "npr",
+            "bloomberg news",
+            "sky news",
+            "newsmax",
+            "oan",
+            "newsy",
+            "local",
+            "weather",
         ]
         has_news_name = any(network in app_name_lower for network in major_news_networks)
 
@@ -2200,16 +2466,35 @@ Analyze the CTV app and provide your classification using the classify_ctv_app f
         research_lower = research_content.lower()
 
         entertainment_signals = [
-            "movies", "scripted series", "television series", "streaming service",
-            "original programming", "entertainment platform", "tv shows",
-            "drama series", "comedy series", "reality shows", "on-demand movies",
-            "movie streaming", "binge watch", "netflix original", "amazon original",
-            "hulu original", "streaming content", "video on demand"
+            "movies",
+            "scripted series",
+            "television series",
+            "streaming service",
+            "original programming",
+            "entertainment platform",
+            "tv shows",
+            "drama series",
+            "comedy series",
+            "reality shows",
+            "on-demand movies",
+            "movie streaming",
+            "binge watch",
+            "netflix original",
+            "amazon original",
+            "hulu original",
+            "streaming content",
+            "video on demand",
         ]
 
         news_signals = [
-            "news", "headlines", "breaking news", "current events", "journalism",
-            "newscast", "news programming", "news coverage"
+            "news",
+            "headlines",
+            "breaking news",
+            "current events",
+            "journalism",
+            "newscast",
+            "news programming",
+            "news coverage",
         ]
 
         entertainment_count = sum(1 for signal in entertainment_signals if signal in research_lower)

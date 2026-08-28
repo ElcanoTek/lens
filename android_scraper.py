@@ -143,19 +143,25 @@ class AndroidScraper:
                     last_error = result.get("error", "Unknown error")
                     logger.warning(
                         "Attempt %d/%d for package %s failed: %s",
-                        attempt + 1, self.max_retries, package_name, last_error
+                        attempt + 1,
+                        self.max_retries,
+                        package_name,
+                        last_error,
                     )
 
             except Exception as exc:
                 last_error = str(exc)
                 logger.warning(
                     "Attempt %d/%d for package %s raised exception: %s",
-                    attempt + 1, self.max_retries, package_name, exc
+                    attempt + 1,
+                    self.max_retries,
+                    package_name,
+                    exc,
                 )
 
             # Wait before retry (exponential backoff)
             if attempt < self.max_retries - 1:
-                wait_time = self.retry_delay * (2 ** attempt)
+                wait_time = self.retry_delay * (2**attempt)
                 await asyncio.sleep(wait_time)
 
         self.error_count += 1
@@ -231,9 +237,7 @@ class AndroidScraper:
         )
         return any(phrase in lower_html for phrase in block_phrases)
 
-    def _parse_html(
-        self, package_name: str, html: str, fetched_at: str
-    ) -> Dict[str, Any]:
+    def _parse_html(self, package_name: str, html: str, fetched_at: str) -> Dict[str, Any]:
         """Parse the Play Store HTML page to extract app metadata."""
         try:
             soup = BeautifulSoup(html, "html.parser")
@@ -560,7 +564,6 @@ class AndroidScraper:
             "success_count": self.success_count,
             "error_count": self.error_count,
             "success_rate": (
-                self.success_count / self.request_count * 100
-                if self.request_count > 0 else 0.0
+                self.success_count / self.request_count * 100 if self.request_count > 0 else 0.0
             ),
         }

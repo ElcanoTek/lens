@@ -3,9 +3,10 @@
 
 """Configuration management for Lens."""
 
-import os
 import json
-from typing import Dict, Any
+import os
+from typing import Dict
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -164,7 +165,7 @@ class Config:
         # Load from config file if it exists
         if os.path.exists(self.config_file):
             try:
-                with open(self.config_file, 'r') as f:
+                with open(self.config_file, "r") as f:
                     file_config = json.load(f)
                 default_config.update(file_config)
             except (json.JSONDecodeError, IOError) as e:
@@ -190,94 +191,97 @@ class Config:
         self.OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
         if not self.OPENROUTER_API_KEY:
-            raise ValueError("OPENROUTER_API_KEY environment variable is required for classification")
+            raise ValueError(
+                "OPENROUTER_API_KEY environment variable is required for classification"
+            )
 
         # CSV fieldnames (unified format for websites and apps)
         self.CSV_FIELDNAMES = [
-            "Domain",           # Identifier: domain, app ID, or package name
-            "Type",             # Content type: WEBSITE, IOS, or ANDROID
-            "App_Name",         # App name (empty for websites)
-            "Developer",        # Developer/publisher (empty for websites)
-            "Store_Category",   # App store category (empty for websites)
-            "Rating",           # App rating (empty for websites)
-            "Rating_Count",     # Number of ratings (empty for websites)
-            "Downloads",        # Download count - Android only (empty for others)
-            "Quality",          # Quality tier: Premium, Standard, Long Tail, Failed
-            "Justification",    # Justification for quality rating
-            "IAB Tier 1",       # IAB category tier 1
-            "IAB Tier 2",       # IAB category tier 2
-            "IAB Tier 3",       # IAB category tier 3
-            "Description",      # One-sentence description
-            "Language",         # Primary language of content
-            "Political_Leaning", # Political orientation: Far Left, Left, Center-Left, Center, Center-Right, Right, Far Right, Non-Political
-            "Audience_Size", # Audience size estimate using t-shirt sizing: XS, S, M, L, XL
-            "Bot_Protection",   # Observed bot protection (websites only): None Detected, Moderate, Aggressive, Unknown
-            "Content_Length",   # Content length in characters
+            "Domain",  # Identifier: domain, app ID, or package name
+            "Type",  # Content type: WEBSITE, IOS, or ANDROID
+            "App_Name",  # App name (empty for websites)
+            "Developer",  # Developer/publisher (empty for websites)
+            "Store_Category",  # App store category (empty for websites)
+            "Rating",  # App rating (empty for websites)
+            "Rating_Count",  # Number of ratings (empty for websites)
+            "Downloads",  # Download count - Android only (empty for others)
+            "Quality",  # Quality tier: Premium, Standard, Long Tail, Failed
+            "Justification",  # Justification for quality rating
+            "IAB Tier 1",  # IAB category tier 1
+            "IAB Tier 2",  # IAB category tier 2
+            "IAB Tier 3",  # IAB category tier 3
+            "Description",  # One-sentence description
+            "Language",  # Primary language of content
+            "Political_Leaning",  # Political orientation: Far Left, Left, Center-Left, Center, Center-Right, Right, Far Right, Non-Political
+            "Audience_Size",  # Audience size estimate using t-shirt sizing: XS, S, M, L, XL
+            "Bot_Protection",  # Observed bot protection (websites only): None Detected, Moderate, Aggressive, Unknown
+            "Content_Length",  # Content length in characters
             "Processing_Time",  # Processing time in seconds
-            "Scrape_Mode",      # Scrape mode: direct, deep, ios_api, android_scrape
+            "Scrape_Mode",  # Scrape mode: direct, deep, ios_api, android_scrape
             "Classifier_Mode",  # Classifier mode: openrouter
-            "Scraped_At"        # ISO timestamp of when data was fetched
+            "Scraped_At",  # ISO timestamp of when data was fetched
         ]
 
         # CTV-specific CSV fieldnames
         self.CTV_CSV_FIELDNAMES = [
-            "App_Name",         # CTV app name
-            "Type",             # Content type (CTV)
-            "Bundle_ID",        # App bundle identifier
-            "SSP",              # Supply-side platform source
-            "Publisher",        # Publisher/network name
-            "Platform",         # CTV platform (Roku, Fire TV, Apple TV, etc.)
-            "URL",              # Associated URL
-            "Quality",          # Quality tier: Premium, Standard, Long Tail, Failed
-            "Justification",    # Justification for quality rating
-            "IAB Tier 1",       # IAB category tier 1
-            "IAB Tier 2",       # IAB category tier 2
-            "IAB Tier 3",       # IAB category tier 3
-            "Description",      # One-sentence description
+            "App_Name",  # CTV app name
+            "Type",  # Content type (CTV)
+            "Bundle_ID",  # App bundle identifier
+            "SSP",  # Supply-side platform source
+            "Publisher",  # Publisher/network name
+            "Platform",  # CTV platform (Roku, Fire TV, Apple TV, etc.)
+            "URL",  # Associated URL
+            "Quality",  # Quality tier: Premium, Standard, Long Tail, Failed
+            "Justification",  # Justification for quality rating
+            "IAB Tier 1",  # IAB category tier 1
+            "IAB Tier 2",  # IAB category tier 2
+            "IAB Tier 3",  # IAB category tier 3
+            "Description",  # One-sentence description
             "Target_Audience",  # Target audience description
-            "Content_Type",     # Type of content (streaming, live TV, etc.)
-            "Language",         # Primary language of content
-            "Political_Leaning", # Political orientation
+            "Content_Type",  # Type of content (streaming, live TV, etc.)
+            "Language",  # Primary language of content
+            "Political_Leaning",  # Political orientation
             "Network_Affiliation",  # Network affiliation (e.g., NBC, CBS, ABC)
-            "Audience_Size", # Audience size estimate using t-shirt sizing: XS, S, M, L, XL
+            "Audience_Size",  # Audience size estimate using t-shirt sizing: XS, S, M, L, XL
             "Research_Summary",  # Summary from research step
             "Processing_Time",  # Processing time in seconds
-            "Research_Model",   # Model used for research
-            "Classification_Model", # Model used for classification
-            "Processed_At"      # ISO timestamp of when data was processed
+            "Research_Model",  # Model used for research
+            "Classification_Model",  # Model used for classification
+            "Processed_At",  # ISO timestamp of when data was processed
         ]
-    
+
     def save_config(self):
         """Save current configuration to config file."""
         config_dict = {}
         for attr in dir(self):
-            if not attr.startswith('_') and not callable(getattr(self, attr)):
-                if attr != 'OPENROUTER_API_KEY':
+            if not attr.startswith("_") and not callable(getattr(self, attr)):
+                if attr != "OPENROUTER_API_KEY":
                     config_dict[attr.lower()] = getattr(self, attr)
-        
+
         try:
-            with open(self.config_file, 'w') as f:
+            with open(self.config_file, "w") as f:
                 json.dump(config_dict, f, indent=2)
         except IOError as e:
             print(f"Warning: Could not save config file {self.config_file}: {e}")
-    
+
     def get_openrouter_headers(self) -> Dict[str, str]:
         """Get headers for OpenRouter API requests."""
         return {
             "Authorization": f"Bearer {self.OPENROUTER_API_KEY}",
             "HTTP-Referer": "https://github.com/ElcanoTek/lens",
             "X-Title": "Lens",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-    
+
     def __str__(self) -> str:
         """String representation of config (without sensitive data)."""
         safe_attrs = {}
         for attr in dir(self):
-            if not attr.startswith('_') and not callable(getattr(self, attr)):
-                if 'KEY' not in attr and 'ID' not in attr:
+            if not attr.startswith("_") and not callable(getattr(self, attr)):
+                if "KEY" not in attr and "ID" not in attr:
                     safe_attrs[attr] = getattr(self, attr)
         return json.dumps(safe_attrs, indent=2)
+
 
 # Global config instance
 config = Config()

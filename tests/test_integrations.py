@@ -15,11 +15,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from openrouter_client import OpenRouterClient
 import scraper_client
-from scraper_client import ScraperClient
-from main import SiteAnalysisOrchestrator
 from config import config
+from openrouter_client import OpenRouterClient
+from scraper_client import ScraperClient
 
 
 @pytest.mark.asyncio
@@ -169,9 +168,7 @@ async def test_deep_scrape_recovers_after_invalid_session(monkeypatch):
         def get(self, url):
             if self.owner.fail_next_navigation:
                 self.owner.fail_next_navigation = False
-                raise scraper_client.WebDriverException(
-                    "Cannot find session with id: broken"
-                )
+                raise scraper_client.WebDriverException("Cannot find session with id: broken")
             self.visited_url = url
             self.current_url = url
 
@@ -267,9 +264,7 @@ def test_parse_classification_accepts_matching_tool_name(caplog):
 def test_parse_classification_warns_on_mismatched_tool_name(caplog):
     client = OpenRouterClient(api_key="test-key")
     with caplog.at_level("WARNING", logger="openrouter_client"):
-        result = client._parse_classification_response(
-            _tool_call_response("classify_app")
-        )
+        result = client._parse_classification_response(_tool_call_response("classify_app"))
     assert result["quality"] == "Premium"
     assert "did not match expected" in caplog.text
 

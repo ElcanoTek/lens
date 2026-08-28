@@ -27,6 +27,7 @@ def is_antibot_error(message: Optional[str]) -> bool:
 
 class ContentType(Enum):
     """Enumeration of supported content types."""
+
     IOS_APP = "ios_app"
     ANDROID_APP = "android_app"
     WEBSITE = "website"
@@ -50,6 +51,7 @@ class WorkItem:
         content_type: The type of content (website, iOS app, or Android app)
         original_value: The original value from the input file
     """
+
     identifier: str
     content_type: ContentType
     original_value: Optional[str] = None
@@ -107,7 +109,9 @@ class WorkItem:
         )
 
     @classmethod
-    def from_ctv_app(cls, app_name: str, bundle_id: str = "", original_value: str = None) -> "WorkItem":
+    def from_ctv_app(
+        cls, app_name: str, bundle_id: str = "", original_value: str = None
+    ) -> "WorkItem":
         """Create a WorkItem from a CTV app name and bundle ID."""
         return cls(
             identifier=app_name,
@@ -130,6 +134,7 @@ class CTVWorkItem:
         url: Optional URL associated with the app
         original_row: Optional dictionary containing the original CSV row data
     """
+
     app_name: str
     bundle_id: Optional[str] = None
     ssp: str = ""

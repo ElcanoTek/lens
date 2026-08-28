@@ -170,7 +170,9 @@ class CTVProcessor:
                 processing_time = time.perf_counter() - start_time
                 error_message = f"Classification failed: {classification_error}"
 
-                logger.error("CTV classification failed for %s: %s", item.app_name, classification_error)
+                logger.error(
+                    "CTV classification failed for %s: %s", item.app_name, classification_error
+                )
 
                 await self._record_ctv_failure(
                     item=item,
@@ -308,8 +310,8 @@ class CTVProcessor:
             "App_Name": item.app_name,
             "Type": "CTV",
             "Bundle_ID": item.bundle_id or "",
-            "SSP": getattr(item, 'ssp', '') or "",
-            "Publisher": getattr(item, 'publisher', '') or "",
+            "SSP": getattr(item, "ssp", "") or "",
+            "Publisher": getattr(item, "publisher", "") or "",
             "Platform": item.platform or self._detect_ctv_platform(item.bundle_id),
             "URL": item.url or "",
             "Quality": classification_result["quality"],
@@ -324,7 +326,9 @@ class CTVProcessor:
             "Political_Leaning": classification_result.get("political_leaning", "Non-Political"),
             "Network_Affiliation": classification_result.get("network_affiliation", ""),
             "Audience_Size": classification_result.get("audience_size", "Unknown"),
-            "Research_Summary": self._truncate_research(self._strip_markdown(research_result.get("research_content", ""))),
+            "Research_Summary": self._truncate_research(
+                self._strip_markdown(research_result.get("research_content", ""))
+            ),
             "Processing_Time": round(processing_time, 2),
             "Research_Model": self.research_model,
             "Classification_Model": self.classification_model,
@@ -359,8 +363,8 @@ class CTVProcessor:
             "App_Name": item.app_name,
             "Type": "CTV",
             "Bundle_ID": item.bundle_id or "",
-            "SSP": getattr(item, 'ssp', '') or "",
-            "Publisher": getattr(item, 'publisher', '') or "",
+            "SSP": getattr(item, "ssp", "") or "",
+            "Publisher": getattr(item, "publisher", "") or "",
             "Platform": item.platform or "",
             "URL": item.url or "",
             "Quality": "Failed",
@@ -376,7 +380,9 @@ class CTVProcessor:
             "Network_Affiliation": "N/A",
             "Audience_Size": "Unknown",
             "Research_Summary": self._truncate_research(
-                self._strip_markdown(research_result.get("research_content", "") if research_result else "")
+                self._strip_markdown(
+                    research_result.get("research_content", "") if research_result else ""
+                )
             ),
             "Processing_Time": round(processing_time, 2),
             "Research_Model": self.research_model,
@@ -428,32 +434,32 @@ class CTVProcessor:
         result = text
 
         # Remove header markers (# ## ### etc.) at the start of lines
-        result = re.sub(r'^#{1,6}\s+', '', result, flags=re.MULTILINE)
+        result = re.sub(r"^#{1,6}\s+", "", result, flags=re.MULTILINE)
 
         # Remove link syntax but keep link text: [text](url) -> text
-        result = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', result)
+        result = re.sub(r"\[([^\]]+)\]\([^)]+\)", r"\1", result)
 
         # Remove citation markers like [1], [2], [3] etc.
-        result = re.sub(r'\[\d+\]', '', result)
+        result = re.sub(r"\[\d+\]", "", result)
 
         # Remove bold markers ** and __
-        result = re.sub(r'\*\*([^*]+)\*\*', r'\1', result)
-        result = re.sub(r'__([^_]+)__', r'\1', result)
+        result = re.sub(r"\*\*([^*]+)\*\*", r"\1", result)
+        result = re.sub(r"__([^_]+)__", r"\1", result)
 
         # Remove italic markers * and _ (single)
         # Be careful not to match multiple asterisks
-        result = re.sub(r'(?<!\*)\*([^*]+)\*(?!\*)', r'\1', result)
-        result = re.sub(r'(?<!_)_([^_]+)_(?!_)', r'\1', result)
+        result = re.sub(r"(?<!\*)\*([^*]+)\*(?!\*)", r"\1", result)
+        result = re.sub(r"(?<!_)_([^_]+)_(?!_)", r"\1", result)
 
         # Remove inline code backticks
-        result = re.sub(r'`([^`]+)`', r'\1', result)
+        result = re.sub(r"`([^`]+)`", r"\1", result)
 
         # Collapse multiple newlines into single newlines
-        result = re.sub(r'\n{3,}', '\n\n', result)
+        result = re.sub(r"\n{3,}", "\n\n", result)
 
         # Clean up any extra spaces/tabs at line beginnings (from removed headers)
         # Use [ \t]+ instead of \s+ to preserve newlines
-        result = re.sub(r'^[ \t]+', '', result, flags=re.MULTILINE)
+        result = re.sub(r"^[ \t]+", "", result, flags=re.MULTILINE)
 
         return result.strip()
 
@@ -481,8 +487,9 @@ class CTVProcessor:
 
         # Find the last sentence-ending punctuation followed by a space or end
         import re
+
         # Match sentence endings: . ! ? followed by space, newline, or end
-        sentence_end_pattern = r'[.!?](?=\s|$)'
+        sentence_end_pattern = r"[.!?](?=\s|$)"
         matches = list(re.finditer(sentence_end_pattern, truncated))
 
         if matches:

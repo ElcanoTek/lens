@@ -14,21 +14,23 @@ This test suite covers:
 """
 
 import json
-import pytest
-import pandas as pd
-from unittest.mock import AsyncMock, MagicMock, patch
 
 # Add parent directory to path for imports
 import sys
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pandas as pd
+import pytest
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from shared_types import ContentType, CTVWorkItem, WorkItem
 from input_detector import (
-    is_ctv_input_file,
     detect_ctv_columns,
+    is_ctv_input_file,
     parse_ctv_work_items,
 )
+from shared_types import ContentType, CTVWorkItem, WorkItem
 
 
 class TestCTVWorkItem:
@@ -80,6 +82,7 @@ class TestCTVPlatformDetection:
     def test_detect_roku_numeric_bundle_id(self):
         """Test detection of Roku from numeric-only bundle ID."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("54092") == "Roku"
         assert CTVProcessor._detect_ctv_platform("12345") == "Roku"
         assert CTVProcessor._detect_ctv_platform("999999") == "Roku"
@@ -87,6 +90,7 @@ class TestCTVPlatformDetection:
     def test_detect_fire_tv_b0_prefix(self):
         """Test detection of Fire TV from B0/b0 prefix."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("B091RFCS5V") == "Fire TV"
         assert CTVProcessor._detect_ctv_platform("B0ABCD1234") == "Fire TV"
         assert CTVProcessor._detect_ctv_platform("b0lowercase") == "Fire TV"
@@ -94,6 +98,7 @@ class TestCTVPlatformDetection:
     def test_detect_android_tv_com_prefix(self):
         """Test detection of Android TV from com. prefix."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("com.foxsports.videogo") == "Android TV"
         assert CTVProcessor._detect_ctv_platform("com.netflix.app") == "Android TV"
         assert CTVProcessor._detect_ctv_platform("COM.UPPERCASE.APP") == "Android TV"
@@ -101,18 +106,21 @@ class TestCTVPlatformDetection:
     def test_detect_vizio_prefix(self):
         """Test detection of Vizio from vizio. prefix."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("vizio.app.streaming") == "Vizio"
         assert CTVProcessor._detect_ctv_platform("VIZIO.UPPERCASE") == "Vizio"
 
     def test_detect_apple_tv_prefix(self):
         """Test detection of Apple TV from tv. prefix."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("tv.streaming.app") == "Apple TV"
         assert CTVProcessor._detect_ctv_platform("TV.UPPERCASE.APP") == "Apple TV"
 
     def test_detect_samsung_tv_g_prefix_numeric(self):
         """Test detection of Samsung TV from G followed by numbers."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("G00009197740") == "Samsung TV"
         assert CTVProcessor._detect_ctv_platform("G12345") == "Samsung TV"
         assert CTVProcessor._detect_ctv_platform("g99999") == "Samsung TV"
@@ -120,12 +128,14 @@ class TestCTVPlatformDetection:
     def test_detect_xbox_9_prefix_alphanumeric(self):
         """Test detection of Xbox from 9 prefix with alphanumeric."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("9wzdncrfjv7w") == "Xbox"
         assert CTVProcessor._detect_ctv_platform("9ABCDEF123") == "Xbox"
 
     def test_detect_unknown_for_unmatched_patterns(self):
         """Test Unknown is returned for unmatched patterns."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("randomstring") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("abc123xyz") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("netflix") == "Unknown"
@@ -133,6 +143,7 @@ class TestCTVPlatformDetection:
     def test_detect_unknown_for_empty_bundle_id(self):
         """Test Unknown is returned for empty or None bundle ID."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("   ") == "Unknown"
         assert CTVProcessor._detect_ctv_platform(None) == "Unknown"
@@ -140,6 +151,7 @@ class TestCTVPlatformDetection:
     def test_detect_handles_whitespace(self):
         """Test platform detection handles leading/trailing whitespace."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("  54092  ") == "Roku"
         assert CTVProcessor._detect_ctv_platform(" B091RFCS5V ") == "Fire TV"
         assert CTVProcessor._detect_ctv_platform("  com.test.app  ") == "Android TV"
@@ -147,6 +159,7 @@ class TestCTVPlatformDetection:
     def test_detect_g_prefix_not_numeric_is_unknown(self):
         """Test G prefix without numeric suffix returns Unknown."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("Google") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("G") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("GabcDEF") == "Unknown"
@@ -154,6 +167,7 @@ class TestCTVPlatformDetection:
     def test_detect_9_prefix_non_alphanumeric_is_unknown(self):
         """Test 9 prefix with non-alphanumeric chars returns Unknown."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._detect_ctv_platform("9abc-def") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("9test.app") == "Unknown"
 
@@ -191,51 +205,63 @@ class TestCTVInputFileDetection:
 
     def test_detect_ctv_file_with_app_name_column(self):
         """Test detection with app_name and bundle_id columns (both CTV indicators)."""
-        df = pd.DataFrame({
-            "app_name": ["Netflix", "Hulu"],
-            "bundle_id": ["com.netflix", "com.hulu"],  # Added strong CTV indicator
-            "platform": ["Roku", "Fire TV"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["Netflix", "Hulu"],
+                "bundle_id": ["com.netflix", "com.hulu"],  # Added strong CTV indicator
+                "platform": ["Roku", "Fire TV"],
+            }
+        )
         assert is_ctv_input_file(df) is True
 
     def test_detect_ctv_file_with_bundle_id_column(self):
         """Test detection with bundle_id column."""
-        df = pd.DataFrame({
-            "bundle_id": ["com.netflix", "com.hulu"],
-            "name": ["Netflix", "Hulu"],
-        })
+        df = pd.DataFrame(
+            {
+                "bundle_id": ["com.netflix", "com.hulu"],
+                "name": ["Netflix", "Hulu"],
+            }
+        )
         assert is_ctv_input_file(df) is True
 
     def test_detect_ctv_file_with_ctv_in_column_name(self):
         """Test detection with 'ctv' in column name."""
-        df = pd.DataFrame({
-            "ctv_channel": ["ESPN", "CNN"],
-            "viewers": [1000000, 500000],
-        })
+        df = pd.DataFrame(
+            {
+                "ctv_channel": ["ESPN", "CNN"],
+                "viewers": [1000000, 500000],
+            }
+        )
         assert is_ctv_input_file(df) is True
 
     def test_detect_ctv_file_with_channel_name_column(self):
         """Test detection with channel_name column."""
-        df = pd.DataFrame({
-            "channel_name": ["FOX News", "MSNBC"],
-            "network": ["FOX", "NBC"],
-        })
+        df = pd.DataFrame(
+            {
+                "channel_name": ["FOX News", "MSNBC"],
+                "network": ["FOX", "NBC"],
+            }
+        )
         assert is_ctv_input_file(df) is True
 
     def test_detect_non_ctv_file_with_domain_column(self):
         """Test non-CTV file with domain column."""
-        df = pd.DataFrame({
-            "domain": ["example.com", "test.org"],
-            "category": ["News", "Sports"],
-        })
+        df = pd.DataFrame(
+            {
+                "domain": ["example.com", "test.org"],
+                "category": ["News", "Sports"],
+            }
+        )
         assert is_ctv_input_file(df) is False
 
     def test_detect_non_ctv_file_with_url_column(self):
         """Test non-CTV file with URL column."""
-        df = pd.DataFrame({
-            "pageURL": ["https://example.com", "https://test.org"],
-            "status": ["active", "inactive"],
-        })
+        df = pd.DataFrame(
+            {
+                "pageURL": ["https://example.com", "https://test.org"],
+                "status": ["active", "inactive"],
+            }
+        )
         assert is_ctv_input_file(df) is False
 
 
@@ -244,12 +270,14 @@ class TestCTVColumnDetection:
 
     def test_detect_standard_columns(self):
         """Test detection of standard CTV columns."""
-        df = pd.DataFrame({
-            "app_name": ["Netflix"],
-            "bundle_id": ["com.netflix"],
-            "platform": ["Roku"],
-            "url": ["https://netflix.com"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["Netflix"],
+                "bundle_id": ["com.netflix"],
+                "platform": ["Roku"],
+                "url": ["https://netflix.com"],
+            }
+        )
         columns = detect_ctv_columns(df)
         assert columns["app_name"] == "app_name"
         assert columns["bundle_id"] == "bundle_id"
@@ -258,12 +286,14 @@ class TestCTVColumnDetection:
 
     def test_detect_alternative_column_names(self):
         """Test detection with alternative column names."""
-        df = pd.DataFrame({
-            "channel_name": ["ESPN"],
-            "roku_id": ["12345"],
-            "device": ["Roku"],
-            "website": ["https://espn.com"],
-        })
+        df = pd.DataFrame(
+            {
+                "channel_name": ["ESPN"],
+                "roku_id": ["12345"],
+                "device": ["Roku"],
+                "website": ["https://espn.com"],
+            }
+        )
         columns = detect_ctv_columns(df)
         assert columns["app_name"] == "channel_name"
         assert columns["bundle_id"] == "roku_id"
@@ -272,11 +302,13 @@ class TestCTVColumnDetection:
 
     def test_detect_case_insensitive_columns(self):
         """Test case-insensitive column detection."""
-        df = pd.DataFrame({
-            "App_Name": ["HBO Max"],
-            "BUNDLE_ID": ["com.hbo.max"],
-            "Platform": ["Apple TV"],
-        })
+        df = pd.DataFrame(
+            {
+                "App_Name": ["HBO Max"],
+                "BUNDLE_ID": ["com.hbo.max"],
+                "Platform": ["Apple TV"],
+            }
+        )
         columns = detect_ctv_columns(df)
         assert columns["app_name"] == "App_Name"
         assert columns["bundle_id"] == "BUNDLE_ID"
@@ -284,10 +316,12 @@ class TestCTVColumnDetection:
 
     def test_detect_missing_columns(self):
         """Test handling of missing columns."""
-        df = pd.DataFrame({
-            "app_name": ["Netflix"],
-            "random_column": ["value"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["Netflix"],
+                "random_column": ["value"],
+            }
+        )
         columns = detect_ctv_columns(df)
         assert columns["app_name"] == "app_name"
         assert columns["bundle_id"] is None
@@ -300,10 +334,12 @@ class TestCTVWorkItemParsing:
 
     def test_parse_basic_work_items(self):
         """Test parsing basic CTV work items."""
-        df = pd.DataFrame({
-            "app_name": ["Netflix", "Hulu", "Disney+"],
-            "platform": ["Roku", "Fire TV", "Apple TV"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["Netflix", "Hulu", "Disney+"],
+                "platform": ["Roku", "Fire TV", "Apple TV"],
+            }
+        )
         items = parse_ctv_work_items(df)
         assert len(items) == 3
         assert items[0].app_name == "Netflix"
@@ -313,12 +349,14 @@ class TestCTVWorkItemParsing:
 
     def test_parse_full_work_items(self):
         """Test parsing work items with all fields."""
-        df = pd.DataFrame({
-            "app_name": ["ESPN"],
-            "bundle_id": ["com.espn.score"],
-            "platform": ["Roku"],
-            "url": ["https://espn.com"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["ESPN"],
+                "bundle_id": ["com.espn.score"],
+                "platform": ["Roku"],
+                "url": ["https://espn.com"],
+            }
+        )
         items = parse_ctv_work_items(df)
         assert len(items) == 1
         assert items[0].app_name == "ESPN"
@@ -329,10 +367,12 @@ class TestCTVWorkItemParsing:
 
     def test_parse_skips_empty_app_names(self):
         """Test that empty app names are skipped."""
-        df = pd.DataFrame({
-            "app_name": ["Netflix", "", "   ", "Hulu"],
-            "platform": ["Roku", "Fire TV", "Apple TV", "Roku"],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["Netflix", "", "   ", "Hulu"],
+                "platform": ["Roku", "Fire TV", "Apple TV", "Roku"],
+            }
+        )
         items = parse_ctv_work_items(df)
         assert len(items) == 2
         assert items[0].app_name == "Netflix"
@@ -340,20 +380,24 @@ class TestCTVWorkItemParsing:
 
     def test_parse_with_missing_app_name_column(self):
         """Test parsing when no app_name column exists uses first column."""
-        df = pd.DataFrame({
-            "name": ["Netflix", "Hulu"],
-            "platform": ["Roku", "Fire TV"],
-        })
+        df = pd.DataFrame(
+            {
+                "name": ["Netflix", "Hulu"],
+                "platform": ["Roku", "Fire TV"],
+            }
+        )
         items = parse_ctv_work_items(df)
         assert len(items) == 2
         assert items[0].app_name == "Netflix"
 
     def test_parse_strips_whitespace(self):
         """Test that whitespace is stripped from values."""
-        df = pd.DataFrame({
-            "app_name": ["  Netflix  ", " Hulu "],
-            "platform": [" Roku ", "  Fire TV  "],
-        })
+        df = pd.DataFrame(
+            {
+                "app_name": ["  Netflix  ", " Hulu "],
+                "platform": [" Roku ", "  Fire TV  "],
+            }
+        )
         items = parse_ctv_work_items(df)
         assert items[0].app_name == "Netflix"
         assert items[0].platform == "Roku"
@@ -368,7 +412,8 @@ class TestCTVPromptGeneration:
     def mock_client(self):
         """Create a mock OpenRouterClient for testing."""
         from openrouter_client import OpenRouterClient
-        with patch.object(OpenRouterClient, '__init__', lambda x, **kwargs: None):
+
+        with patch.object(OpenRouterClient, "__init__", lambda x, **kwargs: None):
             client = OpenRouterClient()
             client._taxonomy_cache = {"entertainment": ["Entertainment"]}
             return client
@@ -402,7 +447,9 @@ class TestCTVPromptGeneration:
     def test_build_ctv_classification_prompt(self, mock_client):
         """Test classification prompt generation."""
         # Mock the taxonomy method
-        mock_client._get_taxonomy_list_for_prompt = MagicMock(return_value="Entertainment\nSports\nNews")
+        mock_client._get_taxonomy_list_for_prompt = MagicMock(
+            return_value="Entertainment\nSports\nNews"
+        )
 
         prompt = mock_client._build_ctv_classification_prompt(
             app_name="Hulu",
@@ -426,35 +473,44 @@ class TestCTVResponseParsing:
     def mock_client(self):
         """Create a mock OpenRouterClient for testing."""
         from openrouter_client import OpenRouterClient
-        with patch.object(OpenRouterClient, '__init__', lambda x, **kwargs: None):
+
+        with patch.object(OpenRouterClient, "__init__", lambda x, **kwargs: None):
             client = OpenRouterClient()
             client._taxonomy_cache = {}
-            client._format_vertical_with_taxonomy = MagicMock(return_value=["Entertainment", "Television", ""])
+            client._format_vertical_with_taxonomy = MagicMock(
+                return_value=["Entertainment", "Television", ""]
+            )
             return client
 
     def test_parse_valid_ctv_response(self, mock_client):
         """Test parsing a valid CTV classification response."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "tool_calls": [{
-                        "function": {
-                            "arguments": json.dumps({
-                                "quality": "Premium",
-                                "justification": "Major streaming service with original content.",
-                                "vertical": "Entertainment",
-                                "description": "A subscription streaming service.",
-                                "target_audience": "General entertainment seekers",
-                                "content_type": "On-Demand Streaming",
-                                "confidence": "High",
-                                "language": "English",
-                                "political_leaning": "Non-Political",
-                                "audience_size": "XL",
-                            })
-                        }
-                    }]
+            "choices": [
+                {
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "arguments": json.dumps(
+                                        {
+                                            "quality": "Premium",
+                                            "justification": "Major streaming service with original content.",
+                                            "vertical": "Entertainment",
+                                            "description": "A subscription streaming service.",
+                                            "target_audience": "General entertainment seekers",
+                                            "content_type": "On-Demand Streaming",
+                                            "confidence": "High",
+                                            "language": "English",
+                                            "political_leaning": "Non-Political",
+                                            "audience_size": "XL",
+                                        }
+                                    )
+                                }
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
         result = mock_client._parse_ctv_classification_response(response_data)
         assert result["quality"] == "Premium"
@@ -465,26 +521,32 @@ class TestCTVResponseParsing:
     def test_parse_ctv_response_invalid_quality(self, mock_client):
         """Test parsing response with invalid quality value."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "tool_calls": [{
-                        "function": {
-                            "arguments": json.dumps({
-                                "quality": "InvalidQuality",
-                                "justification": "Test",
-                                "vertical": "Entertainment",
-                                "description": "Test",
-                                "target_audience": "Test",
-                                "content_type": "On-Demand Streaming",
-                                "confidence": "High",
-                                "language": "English",
-                                "political_leaning": "Non-Political",
-                                "audience_size": "XL",
-                            })
-                        }
-                    }]
+            "choices": [
+                {
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "arguments": json.dumps(
+                                        {
+                                            "quality": "InvalidQuality",
+                                            "justification": "Test",
+                                            "vertical": "Entertainment",
+                                            "description": "Test",
+                                            "target_audience": "Test",
+                                            "content_type": "On-Demand Streaming",
+                                            "confidence": "High",
+                                            "language": "English",
+                                            "political_leaning": "Non-Political",
+                                            "audience_size": "XL",
+                                        }
+                                    )
+                                }
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
         result = mock_client._parse_ctv_classification_response(response_data)
         assert result["quality"] == "Standard"  # Should default to Standard
@@ -492,26 +554,32 @@ class TestCTVResponseParsing:
     def test_parse_ctv_response_invalid_content_type(self, mock_client):
         """Test parsing response with invalid content_type value."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "tool_calls": [{
-                        "function": {
-                            "arguments": json.dumps({
-                                "quality": "Premium",
-                                "justification": "Test",
-                                "vertical": "Entertainment",
-                                "description": "Test",
-                                "target_audience": "Test",
-                                "content_type": "InvalidContentType",
-                                "confidence": "High",
-                                "language": "English",
-                                "political_leaning": "Non-Political",
-                                "audience_size": "XL",
-                            })
-                        }
-                    }]
+            "choices": [
+                {
+                    "message": {
+                        "tool_calls": [
+                            {
+                                "function": {
+                                    "arguments": json.dumps(
+                                        {
+                                            "quality": "Premium",
+                                            "justification": "Test",
+                                            "vertical": "Entertainment",
+                                            "description": "Test",
+                                            "target_audience": "Test",
+                                            "content_type": "InvalidContentType",
+                                            "confidence": "High",
+                                            "language": "English",
+                                            "political_leaning": "Non-Political",
+                                            "audience_size": "XL",
+                                        }
+                                    )
+                                }
+                            }
+                        ]
+                    }
                 }
-            }]
+            ]
         }
         result = mock_client._parse_ctv_classification_response(response_data)
         assert result["content_type"] == "Mixed Content"  # Should default to Mixed Content
@@ -520,28 +588,16 @@ class TestCTVResponseParsing:
         """A response without tool_calls or inline JSON raises so the caller
         can retry with a larger budget or record a Failed row — it must not
         be swallowed as a silent Standard default."""
-        response_data = {
-            "choices": [{
-                "message": {
-                    "content": "Some text response"
-                }
-            }]
-        }
+        response_data = {"choices": [{"message": {"content": "Some text response"}}]}
         with pytest.raises(ValueError):
             mock_client._parse_ctv_classification_response(response_data)
 
     def test_parse_ctv_response_malformed_json(self, mock_client):
         """Malformed tool_calls JSON raises instead of returning a default."""
         response_data = {
-            "choices": [{
-                "message": {
-                    "tool_calls": [{
-                        "function": {
-                            "arguments": "not valid json {"
-                        }
-                    }]
-                }
-            }]
+            "choices": [
+                {"message": {"tool_calls": [{"function": {"arguments": "not valid json {"}}]}}
+            ]
         }
         with pytest.raises(ValueError):
             mock_client._parse_ctv_classification_response(response_data)
@@ -568,6 +624,7 @@ class TestCTVClassificationSchema:
     def test_ctv_schema_structure(self):
         """Test CTV classification schema has correct structure."""
         from openrouter_client import OpenRouterClient
+
         schema = OpenRouterClient._CTV_CLASSIFICATION_SCHEMA
 
         assert schema["type"] == "function"
@@ -592,6 +649,7 @@ class TestCTVClassificationSchema:
     def test_ctv_schema_quality_enum(self):
         """Test quality enum values in schema."""
         from openrouter_client import OpenRouterClient
+
         schema = OpenRouterClient._CTV_CLASSIFICATION_SCHEMA
         quality_enum = schema["function"]["parameters"]["properties"]["quality"]["enum"]
         assert "Premium" in quality_enum
@@ -601,6 +659,7 @@ class TestCTVClassificationSchema:
     def test_ctv_schema_content_type_enum(self):
         """Test content_type enum values in schema."""
         from openrouter_client import OpenRouterClient
+
         schema = OpenRouterClient._CTV_CLASSIFICATION_SCHEMA
         content_type_enum = schema["function"]["parameters"]["properties"]["content_type"]["enum"]
         assert "Live TV" in content_type_enum
@@ -764,12 +823,14 @@ class TestStripMarkdown:
     def test_strip_markdown_empty_string(self):
         """Test handling of empty string."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("") == ""
         assert CTVProcessor._strip_markdown(None) is None
 
     def test_strip_markdown_headers(self):
         """Test removal of Markdown headers."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("# Header 1") == "Header 1"
         assert CTVProcessor._strip_markdown("## Header 2") == "Header 2"
         assert CTVProcessor._strip_markdown("### Header 3") == "Header 3"
@@ -784,6 +845,7 @@ class TestStripMarkdown:
     def test_strip_markdown_bold(self):
         """Test removal of bold markers."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("**bold text**") == "bold text"
         assert CTVProcessor._strip_markdown("__bold text__") == "bold text"
         assert CTVProcessor._strip_markdown("Some **bold** word") == "Some bold word"
@@ -791,6 +853,7 @@ class TestStripMarkdown:
     def test_strip_markdown_italic(self):
         """Test removal of italic markers."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("*italic text*") == "italic text"
         assert CTVProcessor._strip_markdown("_italic text_") == "italic text"
         assert CTVProcessor._strip_markdown("Some *italic* word") == "Some italic word"
@@ -798,32 +861,43 @@ class TestStripMarkdown:
     def test_strip_markdown_inline_code(self):
         """Test removal of inline code backticks."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("`code`") == "code"
         assert CTVProcessor._strip_markdown("Use `print()` function") == "Use print() function"
 
     def test_strip_markdown_links(self):
         """Test removal of link syntax, keeping link text."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("[Google](https://google.com)") == "Google"
-        assert CTVProcessor._strip_markdown("Visit [our site](https://example.com) today") == "Visit our site today"
+        assert (
+            CTVProcessor._strip_markdown("Visit [our site](https://example.com) today")
+            == "Visit our site today"
+        )
         assert CTVProcessor._strip_markdown("[Link](url) and [Another](url2)") == "Link and Another"
 
     def test_strip_markdown_citations(self):
         """Test removal of citation markers."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("Text with citation[1]") == "Text with citation"
-        assert CTVProcessor._strip_markdown("Multiple[1] citations[2] here[3]") == "Multiple citations here"
+        assert (
+            CTVProcessor._strip_markdown("Multiple[1] citations[2] here[3]")
+            == "Multiple citations here"
+        )
         assert CTVProcessor._strip_markdown("Reference [12] number") == "Reference  number"
 
     def test_strip_markdown_multiple_newlines(self):
         """Test collapsing multiple newlines."""
         from ctv_processor import CTVProcessor
+
         assert CTVProcessor._strip_markdown("Line 1\n\n\n\nLine 2") == "Line 1\n\nLine 2"
         assert CTVProcessor._strip_markdown("A\n\n\n\n\nB\n\n\n\nC") == "A\n\nB\n\nC"
 
     def test_strip_markdown_combined(self):
         """Test stripping multiple Markdown elements combined."""
         from ctv_processor import CTVProcessor
+
         input_text = """# Research Summary
 
 **Netflix** is a major streaming platform[1]. It offers *premium content* and has a
@@ -858,12 +932,14 @@ The service includes `4K streaming` and multiple profiles[2][3].
     def test_strip_markdown_plain_text_unchanged(self):
         """Test that plain text without Markdown remains unchanged."""
         from ctv_processor import CTVProcessor
+
         plain = "This is plain text with no Markdown formatting."
         assert CTVProcessor._strip_markdown(plain) == plain
 
     def test_strip_markdown_preserves_content(self):
         """Test that actual content is preserved after stripping."""
         from ctv_processor import CTVProcessor
+
         input_text = "# Netflix Overview\n**Netflix** offers streaming content."
         result = CTVProcessor._strip_markdown(input_text)
         assert "Netflix Overview" in result
@@ -877,12 +953,14 @@ class TestTruncateResearch:
     def test_truncate_short_text(self):
         """Test that short text is not truncated."""
         from ctv_processor import CTVProcessor
+
         text = "This is short text."
         assert CTVProcessor._truncate_research(text) == text
 
     def test_truncate_at_sentence_boundary(self):
         """Test truncation at sentence boundary."""
         from ctv_processor import CTVProcessor
+
         # Create text with clear sentence boundaries
         text = "First sentence. " * 50 + "Second sentence. " * 50  # > 1000 chars
         result = CTVProcessor._truncate_research(text, max_length=100)
@@ -894,6 +972,7 @@ class TestTruncateResearch:
     def test_truncate_finds_last_sentence(self):
         """Test that truncation finds the last sentence boundary."""
         from ctv_processor import CTVProcessor
+
         text = "Short. Medium sentence here. This is a much longer sentence that goes on and on. Final."
         result = CTVProcessor._truncate_research(text, max_length=60)
         # Should cut at a sentence boundary
@@ -902,6 +981,7 @@ class TestTruncateResearch:
     def test_truncate_fallback_to_ellipsis(self):
         """Test fallback to ellipsis when no good sentence boundary found."""
         from ctv_processor import CTVProcessor
+
         # Text with no sentence boundaries in first part
         text = "A" * 1500  # No periods at all
         result = CTVProcessor._truncate_research(text, max_length=1000)
@@ -910,6 +990,7 @@ class TestTruncateResearch:
     def test_truncate_respects_exclamation(self):
         """Test that exclamation marks are recognized as sentence boundaries."""
         from ctv_processor import CTVProcessor
+
         text = "Wow! " * 100  # > 1000 chars
         result = CTVProcessor._truncate_research(text, max_length=100)
         # Should end with ! (sentence boundary)
@@ -918,6 +999,7 @@ class TestTruncateResearch:
     def test_truncate_respects_question_mark(self):
         """Test that question marks are recognized as sentence boundaries."""
         from ctv_processor import CTVProcessor
+
         text = "How does this work? " * 100  # > 1000 chars
         result = CTVProcessor._truncate_research(text, max_length=100)
         # Should end with ? (sentence boundary)
@@ -937,7 +1019,8 @@ class TestCTVNewsRouting:
     def mock_client(self):
         """Create a mock OpenRouterClient for testing routing logic."""
         from openrouter_client import OpenRouterClient
-        with patch.object(OpenRouterClient, '__init__', lambda x, **kwargs: None):
+
+        with patch.object(OpenRouterClient, "__init__", lambda x, **kwargs: None):
             client = OpenRouterClient()
             client._taxonomy_cache = {}
             return client
@@ -956,7 +1039,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "Television",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Local news station with regional coverage."
+            "justification": "Local news station with regional coverage.",
         }
         research_content = "This is a local news station providing local news coverage, breaking news, and headlines for the community."
 
@@ -983,7 +1066,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Political news coverage."
+            "justification": "Political news coverage.",
         }
         research_content = "This news app covers election coverage, election results, and presidential election news with ballot tracking and electoral college analysis."
 
@@ -1009,7 +1092,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Weather service with forecasts."
+            "justification": "Weather service with forecasts.",
         }
         research_content = "Weather Channel provides weather forecast, weather radar, storm tracker, severe weather alerts, and meteorologist reports. Track temperature and hurricane updates."
 
@@ -1031,7 +1114,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Crime reporting."
+            "justification": "Crime reporting.",
         }
         research_content = "True crime news reporting. Covers crime reports, police investigations, court cases, criminal arrests, and crime blotter updates."
 
@@ -1052,7 +1135,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Emergency coverage."
+            "justification": "Emergency coverage.",
         }
         research_content = "Emergency alert system providing disaster updates, evacuation notices, wildfire tracking, earthquake reports, and emergency management information."
 
@@ -1073,7 +1156,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "Television",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Cable news network."
+            "justification": "Cable news network.",
         }
         research_content = "Cable television network providing 24-hour coverage of current events and breaking stories."
 
@@ -1095,7 +1178,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "Television",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Streaming service with original content."
+            "justification": "Streaming service with original content.",
         }
         research_content = "Netflix is a streaming service offering movies, scripted series, comedy series, drama series, reality shows, and Netflix original programming. The platform offers video on demand and binge watch capabilities. Some news documentaries available."
 
@@ -1115,7 +1198,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "Football",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Sports streaming app."
+            "justification": "Sports streaming app.",
         }
         research_content = "ESPN provides live sports coverage including football, basketball, baseball, and other athletic events."
 
@@ -1135,7 +1218,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Right",  # Explicit leaning from model
-            "justification": "Conservative news network."
+            "justification": "Conservative news network.",
         }
         research_content = "Conservative news network providing right-leaning news coverage and political commentary."
 
@@ -1153,14 +1236,22 @@ class TestCTVNewsRouting:
 
         # Test news phrases in research
         result_other = {"content_type": "Live TV"}
-        assert mock_client._is_ctv_news_app("TestApp", "breaking news and headlines coverage", result_other) is True
+        assert (
+            mock_client._is_ctv_news_app(
+                "TestApp", "breaking news and headlines coverage", result_other
+            )
+            is True
+        )
 
         # Test major network name
         assert mock_client._is_ctv_news_app("CBS News", "general content", result_other) is True
 
         # Test non-news
         result_sports = {"content_type": "Live Sports"}
-        assert mock_client._is_ctv_news_app("ESPN", "sports coverage and games", result_sports) is False
+        assert (
+            mock_client._is_ctv_news_app("ESPN", "sports coverage and games", result_sports)
+            is False
+        )
 
     def test_is_primarily_entertainment_helper(self, mock_client):
         """Test the _is_primarily_entertainment helper."""
@@ -1186,7 +1277,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Local news station."
+            "justification": "Local news station.",
         }
         # This research content mentions weather but is clearly a general news station
         research_content = """Local news station providing breaking news, headlines, weather forecast,
@@ -1211,7 +1302,7 @@ class TestCTVNewsRouting:
             "vertical_tier_2": "",
             "vertical_tier_3": "",
             "political_leaning": "Non-Political",
-            "justification": "Regional news coverage."
+            "justification": "Regional news coverage.",
         }
         research_content = """WCCO is a CBS affiliate providing local news, weather, sports,
         and community coverage for the Minneapolis-St. Paul metro area. Features breaking news,
