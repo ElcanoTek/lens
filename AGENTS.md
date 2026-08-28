@@ -200,6 +200,22 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 - **Test pattern**: Set `OPENROUTER_API_KEY=test-key` via `os.environ.setdefault()` before any project imports
 - **OpenRouter integration test**: Uses `pytest.mark.skipif` to skip when no real API key is available
 - **CTV tests**: Comprehensive mocking of the two-step pipeline; tests platform detection, news routing, markdown stripping, research truncation
+- **Filesystem isolation is automatic**: an autouse fixture in
+  `tests/conftest.py` (`isolate_managed_paths`) repoints every module global and
+  `config` attribute that names a real on-disk location — `web_service.INPUT_DIR`
+  / `OUTPUT_DIR`, and `config.INPUT_CSV_PATH` / `OUTPUT_CSV_PATH` /
+  `PROGRESS_FILE_PATH` / `LOG_FILE_PATH` — at a per-test `tmp_path` sandbox, for
+  every test. A test that forgets to redirect therefore *cannot* write into the
+  gitignored `managed-files/` tree, which is what let a test silently replace a
+  real operator's job history for months. **Register any new path global** in
+  `_MODULE_PATH_GLOBALS` / `_CONFIG_PATH_ATTRS`; `tests/test_path_isolation.py`
+  fails if one is neither isolated nor recorded as deliberately read-only. A test
+  that genuinely needs the real paths must say so with
+  `@pytest.mark.real_managed_files` — nothing in the suite does today. This is
+  prevention, not detection: do not replace it with a fixture that inspects
+  `managed-files/` afterwards and fails whoever dirtied it (that reports damage
+  instead of stopping it, and false-positives whenever a local dev server is
+  running).
 
 ## Deployment
 
