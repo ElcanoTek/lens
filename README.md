@@ -308,7 +308,7 @@ Issues and pull requests are welcome. Start with
 The test suite is hermetic — no API key, no network:
 
 ```bash
-pip install -r requirements.txt pytest httpx
+pip install -r requirements-dev.txt
 python -m pytest -q
 ```
 

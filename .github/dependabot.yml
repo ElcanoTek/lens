@@ -8,6 +8,11 @@
 # *-security groups keep that traffic bundled too.
 version: 2
 updates:
+  # Dependencies are locked with pip-tools. Dependabot recognises the
+  # requirements.in / requirements.txt pairing, so it edits the .in floor and
+  # recompiles the pinned .txt in the same PR. Because the locks pin every
+  # transitive dependency, these PRs are now the only way a version moves —
+  # which is the point.
   - package-ecosystem: pip
     directory: /
     schedule:

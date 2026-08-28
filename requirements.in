@@ -1,0 +1,28 @@
+# Runtime dependencies — the declared intent. Edit THIS file, never
+# requirements.txt, then recompile:
+#
+#     pip-compile requirements.in
+#     pip-compile requirements-dev.in
+#
+# The `>=` floors below are the minimum versions this code is known to work
+# against. pip-compile resolves them into the exact, fully transitive pins in
+# requirements.txt, which is what actually gets installed.
+
+# Core dependencies
+aiohttp>=3.14.3
+pandas>=3.0.5
+openpyxl>=3.1.5
+python-dotenv>=1.2.3
+
+# OpenAI SDK for OpenRouter compatibility
+openai>=3.3.1
+
+# Utilities
+beautifulsoup4>=4.15.0
+rich>=15.0.0
+selenium>=4.47.0
+fastapi>=0.141.1
+uvicorn>=0.52.4
+jinja2>=3.1.6
+python-multipart>=0.0.32
+cryptography>=50.0.0
