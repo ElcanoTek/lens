@@ -16,9 +16,8 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from conftest import make_orchestrator as _make_orchestrator
-
 from config import config
+from conftest import make_orchestrator as _make_orchestrator
 from domain_processing import DomainProcessor, derive_bot_protection
 from progress_tracker import ProgressTracker
 from shared_types import DomainWorkItem

@@ -9,9 +9,8 @@ import os
 
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
-from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
-
 from config import config  # noqa: E402
+from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
 from domain_processing import DomainProcessor  # noqa: E402
 from progress_tracker import ProgressTracker  # noqa: E402
 from shared_types import DomainWorkItem  # noqa: E402

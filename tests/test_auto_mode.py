@@ -41,10 +41,10 @@ def _auth_cookie(email: str = "tester@elcanotek.com") -> str:
 
 os.environ["AUTH_SIGNING_PUBKEY"] = _AUTH_PUB_B64
 
-from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
 import web_service  # noqa: E402
+from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
 
 
 def test_auto_mode_resolves_to_fast_first_pass(monkeypatch, tmp_path):
