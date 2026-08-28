@@ -1,0 +1,235 @@
+name: Test Classification
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:  # Allow manual trigger
+
+# The live classification steps call the OpenRouter API and need
+# OPENROUTER_API_KEY. Dependabot PRs run with an empty secrets context, so that
+# key is absent — instead of failing every Dependabot run, the API-backed steps
+# self-skip when the key is missing (guarded on `env.OPENROUTER_API_KEY != ''`).
+# Dependency installs still run, so a pip / github-actions bump is still
+# exercised (the suite proves requirements.txt installs); only the live
+# classification is skipped. Human PRs and pushes have the secret and run fully.
+
+jobs:
+  test-urls:
+    name: Test Website Classification
+    runs-on: ubuntu-latest
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Note skipped live run (no API key)
+        if: env.OPENROUTER_API_KEY == ''
+        run: |
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. Dependencies still installed successfully."
+
+      - name: Create test input (10 URLs)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          # Extract header and first 10 data rows from url_master.csv
+          head -n 1 test-input/url_master.csv > input.csv
+          tail -n +2 test-input/url_master.csv | head -n 10 >> input.csv
+          echo "Created test input with $(wc -l < input.csv) lines (including header)"
+          cat input.csv
+
+      - name: Run classification (simple scraper)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          python main.py --scrape-mode direct --quiet
+        timeout-minutes: 15
+
+      - name: Upload classification results
+        if: always() && env.OPENROUTER_API_KEY != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: classification-results-urls
+          path: |
+            output.csv
+            progress.json
+            site_analysis.log
+          retention-days: 7
+
+      - name: Display results summary
+        if: always() && env.OPENROUTER_API_KEY != ''
+        run: |
+          if [ -f output.csv ]; then
+            echo "✅ Classification completed!"
+            echo "Total rows in output: $(wc -l < output.csv)"
+            echo ""
+            echo "First 5 results:"
+            head -n 6 output.csv | column -t -s ','
+          else
+            echo "❌ No output file generated"
+          fi
+
+  test-apps:
+    name: Test App Classification
+    runs-on: ubuntu-latest
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Note skipped live run (no API key)
+        if: env.OPENROUTER_API_KEY == ''
+        run: |
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. Dependencies still installed successfully."
+
+      - name: Create test input (10 apps)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          # Extract header and first 10 data rows from app_list_master.csv
+          head -n 1 test-input/app_list_master.csv > input.csv
+          tail -n +2 test-input/app_list_master.csv | head -n 10 >> input.csv
+          echo "Created test input with $(wc -l < input.csv) lines (including header)"
+          cat input.csv
+
+      - name: Run classification (simple scraper)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          python main.py --scrape-mode direct --quiet
+        timeout-minutes: 15
+
+      - name: Upload classification results
+        if: always() && env.OPENROUTER_API_KEY != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: classification-results-apps
+          path: |
+            output.csv
+            progress.json
+            site_analysis.log
+          retention-days: 7
+
+      - name: Display results summary
+        if: always() && env.OPENROUTER_API_KEY != ''
+        run: |
+          if [ -f output.csv ]; then
+            echo "✅ Classification completed!"
+            echo "Total rows in output: $(wc -l < output.csv)"
+            echo ""
+            echo "First 5 results:"
+            head -n 6 output.csv | column -t -s ','
+          else
+            echo "❌ No output file generated"
+          fi
+
+  test-ctv:
+    name: Test CTV Classification
+    runs-on: ubuntu-latest
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Note skipped live run (no API key)
+        if: env.OPENROUTER_API_KEY == ''
+        run: |
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live CTV classification run is skipped. Dependencies still installed successfully."
+
+      - name: Create test input (10 CTV apps)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          # Extract header and first 10 data rows from CTV_Master.csv
+          head -n 1 test-input/CTV_Master.csv > input.csv
+          tail -n +2 test-input/CTV_Master.csv | head -n 10 >> input.csv
+          echo "Created test input with $(wc -l < input.csv) lines (including header)"
+          cat input.csv
+
+      - name: Run classification (simple scraper)
+        if: env.OPENROUTER_API_KEY != ''
+        run: |
+          python main.py --ctv --scrape-mode direct --quiet
+        timeout-minutes: 15
+
+      - name: Validate CTV output labels
+        if: always() && env.OPENROUTER_API_KEY != ''
+        run: |
+          python - <<'PY'
+          import csv
+          import sys
+
+          with open("output.csv", newline="") as handle:
+              reader = csv.DictReader(handle)
+              if "Type" not in (reader.fieldnames or []):
+                  print("Missing Type column in output.csv")
+                  sys.exit(1)
+              rows = list(reader)
+              if not rows:
+                  print("No rows found in output.csv")
+                  sys.exit(1)
+              wrong = [row for row in rows if row.get("Type") != "CTV"]
+              if wrong:
+                  print(f"Found non-CTV Type values: {wrong[:3]}")
+                  sys.exit(1)
+          print("CTV output validation passed.")
+          PY
+
+      - name: Upload classification results
+        if: always() && env.OPENROUTER_API_KEY != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: classification-results-ctv
+          path: |
+            output.csv
+            progress.json
+            site_analysis.log
+          retention-days: 7
+
+      - name: Display results summary
+        if: always() && env.OPENROUTER_API_KEY != ''
+        run: |
+          if [ -f output.csv ]; then
+            echo "✅ Classification completed!"
+            echo "Total rows in output: $(wc -l < output.csv)"
+            echo ""
+            echo "First 5 results:"
+            head -n 6 output.csv | column -t -s ','
+          else
+            echo "❌ No output file generated"
+          fi

@@ -1,0 +1,168 @@
+NOTICE
+======
+
+Lens
+Copyright (c) 2026 ElcanoTek, Inc.
+
+This product is licensed under the Business Source License 1.1. See the
+LICENSE file for terms and docs/LICENSING.md for a plain-English summary.
+
+The attributions below cover third-party material that Lens bundles or
+orchestrates. None of it is covered by Lens's own licence; each item remains
+under the terms of its own licence.
+
+
+1. Firecrawl — orchestrated, not bundled
+----------------------------------------
+
+Lens can use Firecrawl as one rung of its website scrape ladder. Firecrawl is
+independent third-party software licensed under the GNU Affero General Public
+License v3.0 (with additional terms for its enterprise features).
+
+  Project: https://github.com/firecrawl/firecrawl
+  Licence: AGPL-3.0
+
+No Firecrawl source code is vendored into this repository. Lens communicates
+with a Firecrawl instance over HTTP (by default http://127.0.0.1:3002) and is
+an independent program that merely uses that service; the AGPL's requirements
+attach to Firecrawl itself and to anyone who modifies and offers it.
+
+`firecrawl/docker-compose.yaml` is an ElcanoTek-authored deployment
+description, adapted from the upstream reference compose file at
+https://github.com/firecrawl/firecrawl/blob/main/docker-compose.yaml
+(FoundationDB services omitted). It pulls, and does not redistribute, the
+following published container images, each governed by its own licence:
+
+  ghcr.io/firecrawl/firecrawl            (Firecrawl, AGPL-3.0)
+  ghcr.io/firecrawl/playwright-service   (Firecrawl, AGPL-3.0)
+  ghcr.io/firecrawl/nuq-postgres         (Firecrawl / PostgreSQL)
+  docker.io/library/redis:alpine         (Redis, RSALv2 / SSPLv1)
+  docker.io/library/rabbitmq:3-alpine    (RabbitMQ, MPL-2.0)
+
+If you self-host Firecrawl and offer it to others over a network, the AGPL's
+network-use provisions apply to your Firecrawl deployment. Consult its
+licence.
+
+
+2. Selenium standalone Chrome — orchestrated, not bundled
+---------------------------------------------------------
+
+The deep-scrape rung runs the upstream Selenium image under Podman:
+
+  docker.io/selenium/standalone-chrome   (SeleniumHQ, Apache-2.0;
+                                          bundles Google Chrome, which is
+                                          subject to Google's own terms)
+
+The image is pulled at runtime and is not redistributed here.
+
+
+3. IAB Tech Lab Content Taxonomy — bundled reference data
+---------------------------------------------------------
+
+  File:    content_taxonomy.tsv
+  Work:    IAB Tech Lab Content Taxonomy 3.1
+  Rights:  Copyright (c) IAB Technology Laboratory, Inc.
+  Source:  Obtained unmodified from
+           https://github.com/InteractiveAdvertisingBureau/Taxonomies
+           ("Content Taxonomies/Content Taxonomy 3.1.tsv")
+  Licence: Creative Commons Attribution 3.0 License
+           https://creativecommons.org/licenses/by/3.0/
+  Changes: Not modified.
+
+The taxonomy is included as the category vocabulary the classifier must
+select from. It is a byte-identical copy of the official file (706 rows,
+md5 3e29abbc41f3c33c490d03b963223673). "IAB Tech Lab" and the taxonomy names
+are the property of their owners and no affiliation or endorsement is
+implied.
+
+  Maintainers: the "Not modified" statement above is a licence condition, not
+  a description. CC BY 3.0 section 4(c) requires the attribution notice to
+  indicate that the work has been modified if you change it. If you ever edit
+  content_taxonomy.tsv in place — adding, removing or renaming rows — you must
+  update the "Changes:" line to say so (for example: "Modified by ElcanoTek,
+  Inc.: <what changed>") and drop the byte-identical claim above. Prefer
+  refreshing from upstream over hand-editing rows.
+
+  CC BY 3.0 is a permissive, non-copyleft licence: it carries no share-alike
+  obligation, so bundling this file does not affect the licence of the rest of
+  this repository. The taxonomy stays under CC BY 3.0; Lens stays under BSL
+  1.1.
+
+
+4. IANA Top-Level Domain list — bundled reference data
+------------------------------------------------------
+
+  File:   iana_tlds.txt
+  Source: IANA Root Zone Database
+          https://data.iana.org/TLD/tlds-alpha-by-domain.txt
+
+Public reference data published by the Internet Assigned Numbers Authority.
+Used to distinguish Android reverse-DNS package names from web domains. The
+file carries a header comment describing its role; refresh it from upstream
+rather than editing rows by hand.
+
+
+5. Fonts — bundled
+------------------
+
+  static/design-system/fonts/ibm-plex-sans/IBMPlexSans-{400,700}.woff2
+
+  IBM Plex Sans. Copyright (c) 2017 IBM Corp. with Reserved Font Name "Plex".
+  Licensed under the SIL Open Font License 1.1
+  (https://openfontlicense.org/). The licence text is bundled with the fonts
+  at static/design-system/fonts/ibm-plex-sans/OFL.txt, as OFL 1.1 requires.
+  Upstream: https://github.com/IBM/plex
+  Used as the interface typeface of the Flag design system.
+
+  static/design-system/fonts/ShareTechMono.ttf
+  static/design-system/fonts/VT323.ttf
+
+  Share Tech Mono. Copyright (c) 2012, Carrois Type Design, Ralph du Carrois
+  (post@carrois.com www.carrois.com), with Reserved Font Name "Share Tech
+  Mono".
+
+  VT323. Copyright (c) 2011, The VT323 Project Authors
+  (peter.hull@oikoi.com), with Reserved Font Name "VT323".
+
+  Both are licensed under the SIL Open Font License 1.1
+  (https://openfontlicense.org/). The licence text is bundled with the fonts
+  at static/design-system/fonts/OFL.txt, as OFL 1.1 requires. Used for
+  monospaced and display text.
+
+
+6. ElcanoTek marks and the Flag design system — not licensed for reuse
+---------------------------------------------------------------------
+
+  static/design-system/logos/*
+  static/design-system/icons/*
+  static/favicon.svg
+
+The ElcanoTek name, the Elcano mark, the Victoria ship device and the product
+logos in this repository are trademarks and trade dress of ElcanoTek, Inc.
+They are included so the application renders as intended. BSL 1.1 grants no
+trademark rights: a fork or derivative work must replace these assets with
+its own branding.
+
+
+7. Python dependencies — not bundled
+------------------------------------
+
+Runtime and development dependencies are declared in requirements.txt and
+installed from PyPI at build time. They are not redistributed here. Each
+carries its own licence, principally Apache-2.0, BSD and MIT:
+
+  aiohttp, beautifulsoup4, cryptography, fastapi, jinja2, openai, openpyxl,
+  pandas, python-dotenv, python-multipart, rich, selenium, uvicorn,
+  and for development: black, flake8, pytest, pytest-asyncio
+
+Review the licences of your resolved dependency tree before redistributing a
+built artifact.
+
+
+8. Sample data — synthetic
+--------------------------
+
+The fixtures in test-input/ are synthetic. App names, publisher names, SSP
+names, bundle identifiers, request counts and eCPM figures are invented; the
+website domains are long-lived public sites. No customer, client or partner
+data is included. See test-input/README.md.

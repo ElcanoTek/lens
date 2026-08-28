@@ -1,0 +1,139 @@
+# Self-hosted Firecrawl stack for the Lens "firecrawl" scrape mode.
+#
+# Runs entirely on this box via podman-compose (no managed service):
+#   podman-compose -f firecrawl/docker-compose.yaml up -d
+# or use the helper: scripts/firecrawl.sh up
+#
+# The API listens on 127.0.0.1:3002 only. Auth is disabled
+# (USE_DB_AUTHENTICATION=false), which is safe because the port is never
+# exposed off-host.
+#
+# Sizing note: limits below are tuned for a small host (2 vCPU / 8 GB) that
+# also runs the Lens web service. Raise them on bigger machines.
+#
+# Upstream compose reference:
+# https://github.com/firecrawl/firecrawl/blob/main/docker-compose.yaml
+# (FoundationDB services omitted — only needed when NUQ_BACKEND=fdb.)
+
+name: elcano-firecrawl
+
+x-common-env: &common-env
+  REDIS_URL: redis://redis:6379
+  REDIS_RATE_LIMIT_URL: redis://redis:6379
+  PLAYWRIGHT_MICROSERVICE_URL: http://playwright-service:3000/scrape
+  POSTGRES_USER: ${POSTGRES_USER:-postgres}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+  POSTGRES_DB: ${POSTGRES_DB:-postgres}
+  POSTGRES_HOST: nuq-postgres
+  POSTGRES_PORT: 5432
+  USE_DB_AUTHENTICATION: "false"
+  # Keep worker fan-out modest: this host is small and Lens itself only
+  # requests a handful of concurrent scrapes.
+  NUM_WORKERS_PER_QUEUE: ${NUM_WORKERS_PER_QUEUE:-2}
+  CRAWL_CONCURRENT_REQUESTS: ${CRAWL_CONCURRENT_REQUESTS:-5}
+  MAX_CONCURRENT_JOBS: ${MAX_CONCURRENT_JOBS:-5}
+  BROWSER_POOL_SIZE: ${BROWSER_POOL_SIZE:-2}
+  LOGGING_LEVEL: ${LOGGING_LEVEL:-info}
+
+services:
+  playwright-service:
+    image: ghcr.io/firecrawl/playwright-service:${PLAYWRIGHT_SERVICE_TAG:-latest}
+    environment:
+      PORT: 3000
+      # Explicit values: empty strings trip the service's env validation.
+      BLOCK_MEDIA: "true"
+      MAX_CONCURRENT_PAGES: ${MAX_CONCURRENT_PAGES:-3}
+      # Optional upstream proxy for the headless browser. Self-hosted Firecrawl
+      # renders from this host's IP, which datacenter-IP-blocking sites
+      # (Cloudflare/DataDome, e.g. reuters/bloomberg/wsj) reject outright. Point
+      # these at a residential/ISP proxy to reach those sites; left empty
+      # (the default), the browser connects directly. `${VAR:-}` expands to an
+      # empty string when unset, which the service reads as "no proxy".
+      PROXY_SERVER: ${PROXY_SERVER:-}
+      PROXY_USERNAME: ${PROXY_USERNAME:-}
+      PROXY_PASSWORD: ${PROXY_PASSWORD:-}
+    networks:
+      - backend
+    # No cpus: limits anywhere in this file — rootless podman needs cpu
+    # controller delegation that older systemd (RHEL 9) doesn't grant to
+    # user slices; memory limits work everywhere.
+    mem_limit: 1500m
+    memswap_limit: 1500m
+    tmpfs:
+      - /tmp/.cache:noexec,nosuid,size=512m
+    restart: unless-stopped
+
+  api:
+    # Tracks latest by design: queue state is disposable (all real output
+    # lives in Lens's CSVs), `lens update` refreshes and restarts the stack,
+    # and firecrawl.sh up self-heals a bad upgrade by rebuilding state.
+    # Pin a release in firecrawl/.env if a deployment ever needs to.
+    image: ghcr.io/firecrawl/firecrawl:${FIRECRAWL_TAG:-latest}
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    environment:
+      <<: *common-env
+      HOST: "0.0.0.0"
+      PORT: 3002
+      EXTRACT_WORKER_PORT: 3004
+      WORKER_PORT: 3005
+      NUQ_RABBITMQ_URL: amqp://rabbitmq:5672
+      HARNESS_STARTUP_TIMEOUT_MS: ${HARNESS_STARTUP_TIMEOUT_MS:-120000}
+      ENV: local
+    depends_on:
+      - redis
+      - playwright-service
+      - rabbitmq
+      - nuq-postgres
+    ports:
+      - "127.0.0.1:${FIRECRAWL_PORT:-3002}:3002"
+    command: node dist/src/harness.js --start-docker
+    networks:
+      - backend
+    mem_limit: 2048m
+    memswap_limit: 2048m
+    restart: unless-stopped
+
+  redis:
+    image: docker.io/library/redis:alpine
+    networks:
+      - backend
+    command: redis-server --bind 0.0.0.0 --maxmemory 256mb --maxmemory-policy allkeys-lru
+    mem_limit: 384m
+    restart: unless-stopped
+
+  rabbitmq:
+    image: docker.io/library/rabbitmq:3-alpine
+    networks:
+      - backend
+    command: rabbitmq-server
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
+      interval: 30s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    mem_limit: 512m
+    restart: unless-stopped
+
+  nuq-postgres:
+    image: ghcr.io/firecrawl/nuq-postgres:${NUQ_POSTGRES_TAG:-latest}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+    networks:
+      - backend
+    volumes:
+      - nuq-postgres-data:/var/lib/postgresql/data
+    mem_limit: 512m
+    restart: unless-stopped
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  nuq-postgres-data:

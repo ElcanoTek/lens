@@ -1,0 +1,39 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  pytest:
+    name: pytest
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # httpx backs fastapi's TestClient used by the web-service tests.
+          pip install -r requirements.txt pytest httpx
+
+      - name: Run tests
+        # Hermetic: the suite self-stubs OPENROUTER_API_KEY and mints its own
+        # Ed25519 keys, so no secrets are needed. Covers the unified-auth
+        # cookie verifier (tests/test_auth.py) + the web service.
+        run: python -m pytest -q

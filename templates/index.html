@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lens — Elcano</title>
+  <script>
+    (function () {
+      var storageKey = "flag-theme-preference";
+      var preferredTheme = null;
+
+      try {
+        preferredTheme = window.localStorage.getItem(storageKey);
+      } catch (error) {
+        preferredTheme = null;
+      }
+
+      var resolvedTheme;
+      if (preferredTheme === "light" || preferredTheme === "dark") {
+        resolvedTheme = preferredTheme;
+      } else {
+        var isSystemDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+        resolvedTheme = isSystemDark ? "dark" : "light";
+      }
+
+      document.documentElement.setAttribute("data-theme", resolvedTheme);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ static_url('design-system/fonts/fonts.css') }}">
+  <link rel="stylesheet" href="{{ static_url('design-system/fonts/code-fonts.css') }}">
+  <link rel="stylesheet" href="{{ static_url('design-system/tokens/design-tokens.css') }}">
+  <link rel="stylesheet" href="{{ static_url('styles.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ static_url('design-system/logos/lens-favicon.svg') }}">
+  <script src="{{ static_url('design-system/theme/theme-controller.js') }}"></script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="page-header" role="banner">
+      <div class="ds-app-header">
+        <div class="ds-app-header__brand">
+          <img class="ds-app-header__mark" src="{{ static_url('design-system/logos/elcano-mark-primary.svg') }}" alt="Elcano">
+          <div class="ds-app-header__text">
+            <p class="ds-app-header__eyebrow">Elcano Internal</p>
+            <h1 class="ds-app-header__title">Lens</h1>
+          </div>
+        </div>
+        <div class="ds-app-header__actions">
+          <button data-flag-theme-toggle class="icon-action theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+            <span class="theme-toggle__icon-wrap" aria-hidden="true">
+              <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#sun"></use></svg>
+              <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#moon"></use></svg>
+            </span>
+          </button>
+          <form method="post" action="/logout" class="header-action-form">
+            <button class="icon-action" type="submit" aria-label="Log out" title="Log out">
+              <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#logout"></use></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+      <p class="page-header__intro">Upload a list and Lens does the rest — it detects websites, iOS &amp; Android apps, and CTV channels automatically and rates each one for advertising quality.</p>
+    </header>
+
+    <div id="toast-root" class="toast-root" aria-live="polite"></div>
+    <div
+      id="flash-data"
+      data-message="{{ message }}"
+      data-error="{{ error }}"
+      data-files-message="{{ files_message }}"
+      data-files-error="{{ files_error }}"
+      data-files-scope="{{ files_scope }}"
+      hidden
+    ></div>
+
+    <main class="dashboard-grid">
+
+      <!-- ── Your files ───────────────────────────────────────────── -->
+      <section class="panel panel-new-run">
+        <h2>Your files</h2>
+
+        <form method="post" action="/files/upload" enctype="multipart/form-data" id="input-upload-form">
+          <input type="hidden" name="destination" value="inputs">
+          <div class="dropzone thin" id="fileDropzone" tabindex="0" role="button" aria-label="Upload input files">
+            <svg class="dropzone-icon" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#paperclip"></use></svg>
+            <p class="dropzone-text">Drop a CSV or Excel file here, or click to browse</p>
+            <p class="dropzone-subtext" id="dropzone-status">Uploads start automatically · mixed lists welcome</p>
+            <input id="input-file-native" type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="file-input-hidden" tabindex="-1" aria-hidden="true">
+          </div>
+          <div class="validation-error" id="fileError" aria-live="polite" aria-atomic="true"></div>
+        </form>
+
+        {% if input_files %}
+        <div class="lib-subhead-row">
+          <h3 class="lib-subhead">Uploaded files <span class="ws-count">({{ input_files | length }})</span></h3>
+          {% if input_files | length > 2 %}
+          <div class="searchbox">
+            <svg class="searchbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="11" cy="11" r="7"></circle>
+              <path d="M20 20l-3.5-3.5"></path>
+            </svg>
+            <input type="text" id="file-search" placeholder="Search files" autocomplete="off" aria-label="Search uploaded files">
+          </div>
+          {% endif %}
+        </div>
+
+        <div class="ws-files" id="ws-files">
+          {% for file in input_files %}
+          <div class="filecard" data-filename="{{ file.name }}" data-size="{{ file.size }}" data-uploaded="{{ file.uploaded }}" data-breakdown='{{ {"total": file.breakdown_total, "types": file.breakdown_chips} | tojson }}'>
+            <div class="fc-top">
+              <input class="fc-radio" type="radio" name="input_file" form="queue-job-form" value="{{ file.name }}" id="file-radio-{{ loop.index }}" required aria-label="Select {{ file.name }}">
+              <label class="fc-name" for="file-radio-{{ loop.index }}">
+                <svg class="fc-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <path d="M14 2v6h6"></path>
+                </svg>
+                <span class="nm" title="{{ file.name }}">{{ file.name }}</span>
+              </label>
+              <span class="fc-actions">
+                <button class="icon-action js-rename-input" type="button" data-filename="{{ file.name }}" aria-label="Rename {{ file.name }}" title="Rename">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path>
+                  </svg>
+                </button>
+                <a class="icon-action" href="/files/download/inputs/{{ file.name }}" aria-label="Download {{ file.name }}" title="Download">
+                  <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#download"></use></svg>
+                </a>
+                <button class="icon-action danger js-delete-input" type="button" data-filename="{{ file.name }}" aria-label="Delete {{ file.name }}" title="Delete">
+                  <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                </button>
+              </span>
+            </div>
+            <div class="fc-meta-row">
+              {% if file.breakdown_chips %}
+              <span class="comp-bar" title="Detected composition" aria-label="{{ file.breakdown_label }}">
+                {% for chip in file.breakdown_chips %}
+                <span class="comp-seg {{ chip.seg }}" style="width: {{ chip.pct }}%;"></span>
+                {% endfor %}
+              </span>
+              <span class="metanum"><strong>{{ file.breakdown_total }}</strong> rows</span>
+              {% for chip in file.breakdown_chips %}
+              <span class="tchip"><span class="tdot {{ chip.seg }}"></span>{{ chip.label }} <b>{{ chip.count }}</b></span>
+              {% endfor %}
+              {% endif %}
+              <span class="metanum"><span class="meta-sep">·</span> {{ file.size }} <span class="meta-sep">·</span> {{ file.uploaded }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        <p class="empty-state lib-empty" id="files-no-match" hidden>No files match your search.</p>
+
+        <div class="format-key">
+          <span class="tchip"><span class="tdot seg-site"></span>Websites</span>
+          <span class="tchip"><span class="tdot seg-ios"></span>iOS apps</span>
+          <span class="tchip"><span class="tdot seg-android"></span>Android apps</span>
+          <span class="tchip"><span class="tdot seg-ctv"></span>CTV channels</span>
+        </div>
+
+        {% else %}
+        <p class="empty-state lib-empty">No files yet — upload one above to get started.</p>
+        {% endif %}
+      </section>
+
+      <!-- ── Ready to analyze ─────────────────────────────────────── -->
+      <section class="panel panel-ready">
+        <h2>Ready to analyze</h2>
+
+        <div class="launch-empty" id="ready-empty">
+          <div class="empty-state">
+            <b>No file selected</b>
+            <span>Select a file from your library above and its details will appear here, ready to run.</span>
+          </div>
+        </div>
+
+        <div id="ready-content" class="ready-content" hidden>
+          <div class="ls-summary">
+            <span class="ls-file">
+              <svg class="ls-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                <path d="M14 2v6h6"></path>
+              </svg>
+              <span id="ready-file-name"></span>
+            </span>
+            <span class="comp-bar" id="ready-comp-bar" title="Detected composition" aria-hidden="true" hidden></span>
+            <span class="metanum" id="ready-rows" hidden></span>
+            <span class="ls-types" id="ready-file-types"></span>
+          </div>
+          <form method="post" action="/jobs" id="queue-job-form" class="run-form">
+            <div class="run-controls">
+              <input id="job-name" name="name" type="text" maxlength="120" placeholder="Job name (optional)" autocomplete="off">
+              <button type="submit" id="queue-job-btn" class="btn btn-primary" disabled>Analyze</button>
+            </div>
+            <details class="run-advanced">
+              <summary class="caption">Advanced settings</summary>
+              <div class="run-advanced-body">
+                <label class="run-advanced-field">
+                  <span class="run-advanced-label">Classification model</span>
+                  <select name="llm_model" id="llm-model-select">
+                    <option value="{{ recommended_model }}" selected>Google Gemini Flash (latest) — recommended</option>
+                    {% for option in model_catalog.classify %}
+                    {% if option.id != recommended_model %}
+                    <option value="{{ option.id }}">{{ option.label }}</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                  <span class="caption">Only cost-effective models are listed — classification doesn't benefit from frontier-priced models. “Latest” aliases track each vendor's current release automatically.</span>
+                </label>
+                <input type="hidden" name="research_fallback" value="off">
+                <label class="run-advanced-field run-advanced-check">
+                  <input type="checkbox" id="research-fallback-check" name="research_fallback" value="on" checked>
+                  <span>
+                    <span class="run-advanced-label">Research unscrapeable sites</span>
+                    <span class="caption">Sites that block every crawler (e.g. wsj.com, reuters.com) are classified from a web-search research summary instead of failing. Never contacts the blocked site.</span>
+                  </span>
+                </label>
+                <label class="run-advanced-field" id="research-model-field">
+                  <span class="run-advanced-label">Research model</span>
+                  <select name="research_model" id="research-model-select">
+                    <option value="{{ recommended_research_model }}" selected>Perplexity Sonar Pro — recommended</option>
+                    {% for option in model_catalog.research %}
+                    {% if option.id != recommended_research_model %}
+                    <option value="{{ option.id }}">{{ option.label }}</option>
+                    {% endif %}
+                    {% endfor %}
+                  </select>
+                  <span class="caption">Used only for the research pass above. All listed models have built-in web search.</span>
+                </label>
+              </div>
+            </details>
+            <p class="caption run-hint">Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research.</p>
+          </form>
+        </div>
+      </section>
+
+      <!-- ── Runs ─────────────────────────────────────────────────── -->
+      <section class="panel panel-runs">
+        <h2>Runs</h2>
+        {% if runs %}
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Run</th>
+                <th>Started</th>
+                <th>Status</th>
+                <th>Progress</th>
+                <th>Results</th>
+                <th><span class="visually-hidden">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for run in runs %}
+              <tr data-job-id="{{ run.id }}" data-status="{{ run.status }}">
+                <td data-label="Run">
+                  <span class="run-title" title="{{ run.title }}">{{ run.title }}</span>
+                  {% if run.input_file %}<span class="caption run-input" title="{{ run.input_file }}">{{ run.input_file }}</span>{% endif %}
+                  {% if run.settings_summary %}<span class="caption run-settings" title="{{ run.settings_summary }}">{{ run.settings_summary }}</span>{% endif %}
+                </td>
+                <td data-label="Started">
+                  {% if run.created_at_iso %}
+                  <time class="js-local-timestamp" datetime="{{ run.created_at_iso }}" data-utc-timestamp="{{ run.created_at_iso }}">{{ run.created_at_display }}</time>
+                  {% else %}{{ run.created_at_display }}{% endif %}
+                </td>
+                <td data-label="Status"><span class="status-badge status-{{ run.status }}"><span class="status-dot"></span>{{ run.status }}</span></td>
+                <td data-label="Progress">
+                  <div class="queue-progress">
+                    <div class="queue-progress-bar" title="green: classified · amber: queued for retry · red: failed">
+                      <span class="bar-seg bar-seg--ok" style="width: {{ run.progress.ok_pct }}%;"></span>
+                      <span class="bar-seg bar-seg--retry" style="width: {{ run.progress.retry_pct }}%;"></span>
+                      <span class="bar-seg bar-seg--fail" style="width: {{ run.progress.fail_pct }}%;"></span>
+                    </div>
+                    <div class="queue-progress-meta">
+                      <span class="queue-progress-text">{{ run.progress.text }}</span>
+                      <span class="queue-progress-eta">{{ run.progress.eta }}</span>
+                    </div>
+                  </div>
+                </td>
+                <td data-label="Results">
+                  <span class="input-file-actions">
+                    {% if run.output_file %}
+                    <a class="icon-action" href="/files/download/outputs/{{ run.output_file }}" aria-label="Download results for {{ run.title }}" title="Download results (CSV)">
+                      <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#download"></use></svg>
+                    </a>
+                    {% endif %}
+                    {% if run.log_file %}
+                    <a class="icon-action subtle" href="/files/download/outputs/{{ run.log_file }}" aria-label="Download log for {{ run.title }}" title="Download log">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <path d="M14 2v6h6"></path>
+                        <path d="M9 13h6M9 17h6"></path>
+                      </svg>
+                    </a>
+                    {% endif %}
+                  </span>
+                </td>
+                <td data-label="Actions">
+                  <span class="input-file-actions">
+                    {% if not run.is_archived %}
+                    <button type="button" class="icon-action js-view-job" data-job-id="{{ run.id }}" data-job-name="{{ run.title if run.has_name else '' }}" aria-label="Watch {{ run.title }} live" title="Watch live">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    </button>
+                    {% endif %}
+                    {% if run.is_active %}
+                    <form method="post" action="/jobs/{{ run.id }}/cancel" class="js-confirm-cancel" data-job-id="{{ run.title }}">
+                      <button class="icon-action danger" type="submit" aria-label="Cancel {{ run.title }}" title="Cancel">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
+                        </svg>
+                      </button>
+                    </form>
+                    {% elif run.is_archived %}
+                    <form method="post" action="/files/batch-delete" class="js-confirm-job-delete" data-job-id="{{ run.title }}">
+                      <input type="hidden" name="destination" value="outputs">
+                      {% if run.output_file %}<input type="hidden" name="filenames" value="{{ run.output_file }}">{% endif %}
+                      {% if run.progress_file %}<input type="hidden" name="filenames" value="{{ run.progress_file }}">{% endif %}
+                      {% if run.log_file %}<input type="hidden" name="filenames" value="{{ run.log_file }}">{% endif %}
+                      <button class="icon-action danger" type="submit" aria-label="Delete artifacts for {{ run.title }}" title="Delete run and results">
+                        <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                      </button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="/jobs/{{ run.id }}/delete" class="js-confirm-job-delete" data-job-id="{{ run.title }}">
+                      <button class="icon-action danger" type="submit" aria-label="Delete {{ run.title }}" title="Delete run and results">
+                        <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                      </button>
+                    </form>
+                    {% endif %}
+                  </span>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <p class="empty-state">No runs yet. Select a file above and hit Analyze.</p>
+        {% endif %}
+      </section>
+    </main>
+
+    <dialog class="confirm-modal" id="confirm-delete-modal">
+      <form method="dialog" class="confirm-modal-inner">
+        <h3 id="confirm-modal-title">Are you sure?</h3>
+        <p id="confirm-delete-text">This action cannot be undone.</p>
+        <div class="confirm-modal-actions">
+          <button value="cancel" class="btn btn-ghost" type="submit">Keep</button>
+          <button value="confirm" class="btn btn-danger" type="submit" id="confirm-modal-action">Delete</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="monitor-modal" id="monitor-modal">
+      <div class="monitor-modal-inner">
+        <div class="monitor-modal-head">
+          <div>
+            <h3 id="monitor-job-id">Run</h3>
+            <p class="caption" id="monitor-job-input">Input: —</p>
+            <p class="caption" id="monitor-job-timing">Elapsed — · ETA —</p>
+          </div>
+          <div class="monitor-modal-actions">
+            <span class="status-badge" id="monitor-job-status"><span class="status-dot"></span>idle</span>
+            <button type="button" class="icon-action" id="monitor-modal-close" aria-label="Close live view">
+              <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#close"></use></svg>
+            </button>
+          </div>
+        </div>
+        <div class="live-progress" id="live-progress">
+          <div class="live-progress-bar" title="green: classified · amber: queued for retry · red: failed">
+            <span class="bar-seg bar-seg--ok" id="live-seg-ok"></span>
+            <span class="bar-seg bar-seg--retry" id="live-seg-retry"></span>
+            <span class="bar-seg bar-seg--fail" id="live-seg-fail"></span>
+          </div>
+          <p class="live-progress-summary" id="live-progress-summary">No progress data yet.</p>
+          <p class="caption bar-legend"><span class="legend-dot legend-ok"></span>classified <span class="legend-dot legend-retry"></span>retry queue <span class="legend-dot legend-fail"></span>failed</p>
+        </div>
+        <div id="monitor-completion-banner" class="completion-banner" hidden></div>
+        <pre class="log-preview" id="live-log">No log output yet.</pre>
+      </div>
+    </dialog>
+
+    <form method="post" action="/files/delete" id="delete-input-form" hidden>
+      <input type="hidden" name="destination" value="inputs">
+      <input type="hidden" name="filename" id="delete-input-filename" value="">
+    </form>
+
+    <dialog class="confirm-modal" id="rename-modal">
+      <form method="post" action="/files/rename" class="confirm-modal-inner" id="rename-form">
+        <h3>Rename file</h3>
+        <input type="hidden" name="destination" value="inputs">
+        <input type="hidden" name="filename" id="rename-old-name" value="">
+        <input type="text" name="new_name" id="rename-new-name" maxlength="120" required autocomplete="off" placeholder="New file name">
+        <div class="confirm-modal-actions">
+          <button type="button" class="btn btn-ghost" id="rename-cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Rename</button>
+        </div>
+      </form>
+    </dialog>
+  </div>
+  <script src="{{ static_url('main.js') }}"></script>
+</body>
+</html>

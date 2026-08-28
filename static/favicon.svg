@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Lens favicon">
+  <rect width="128" height="128" rx="20" fill="#1A0B1E"/>
+  <g fill="none" stroke="#FFFFFF" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M20 84l24-14" stroke-width="8"/>
+    <path d="M42 71l38-23" stroke-width="12"/>
+    <path d="M79 49l24-14" stroke-width="14"/>
+    <circle cx="106" cy="33" r="7" stroke-width="4"/>
+    <path d="M48 73l14 9" stroke-width="6"/>
+    <path d="M37 88h30" stroke-width="6"/>
+  </g>
+</svg>

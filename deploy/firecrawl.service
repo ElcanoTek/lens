@@ -1,0 +1,19 @@
+[Unit]
+Description=Firecrawl — local scraping service for Lens
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=lens
+Group=lens
+WorkingDirectory=/opt/lens
+# firecrawl.sh derives XDG_RUNTIME_DIR itself; lingering must be enabled for
+# the lens user (bootstrap/update handle that).
+ExecStart=/opt/lens/scripts/firecrawl.sh up
+ExecStop=/opt/lens/scripts/firecrawl.sh down
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# /usr/local/bin/lens — operator entry point for the Elcano Lens scraper UI.
+
+set -euo pipefail
+
+SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
+APP_DIR="${LENS_APP_DIR:-/opt/lens}"
+ENV_FILE="$APP_DIR/.env"
+SERVICE="lens.service"
+
+cmd="${1:-}"; shift || true
+
+case "$cmd" in
+  start)    exec sudo systemctl start "$SERVICE" ;;
+  stop)     exec sudo systemctl stop "$SERVICE" ;;
+  restart)  exec sudo systemctl restart "$SERVICE" ;;
+  status)   exec sudo systemctl status "$SERVICE" ;;
+  logs)
+    if [[ $# -gt 0 ]]; then exec sudo journalctl -u "$SERVICE" "$@"; fi
+    exec sudo journalctl -fu "$SERVICE"
+    ;;
+  update)
+    [[ -d "$SRC_DIR/.git" ]] || { echo "no source checkout at $SRC_DIR" >&2; exit 1; }
+    exec sudo bash "$SRC_DIR/scripts/update.sh" "$@"
+    ;;
+  rebuild)
+    # Rebuild and restart whatever is currently checked out, without
+    # fetching or fast-forwarding the branch.  Useful after a manual
+    # rollback or when you know the checkout is already correct.
+    [[ -d "$SRC_DIR/.git" ]] || { echo "no source checkout at $SRC_DIR" >&2; exit 1; }
+    exec sudo env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 bash "$SRC_DIR/scripts/update.sh"
+    ;;
+  env)
+    sub="${1:-show}"; shift || true
+    case "$sub" in
+      edit)
+        # bootstrap.sh / update.sh point operators here to paste
+        # AUTH_SIGNING_PUBKEY or the OpenRouter key.
+        [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
+        exec sudo "${EDITOR:-vi}" "$ENV_FILE"
+        ;;
+      show|"")
+        [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
+        sudo awk -F= '
+          /^[[:space:]]*#/    { next }
+          /TOKEN|KEY|SECRET|PASSWORD|PUBKEY/ { printf "%s=[REDACTED]\n", $1; next }
+          NF>=2                { print }
+        ' "$ENV_FILE"
+        ;;
+      *)
+        echo "usage: lens env [show|edit]" >&2; exit 1
+        ;;
+    esac
+    ;;
+  tls)
+    sub="${1:-status}"; shift || true
+    snippet="/etc/caddy/conf.d/lens.caddy"
+    if ! command -v caddy >/dev/null 2>&1; then
+      echo "Caddy not installed — re-run bootstrap with a hostname to set up TLS" >&2; exit 1
+    fi
+    case "$sub" in
+      status)
+        if [[ -f "$snippet" ]]; then
+          host=$(awk '/^[^[:space:]{}#]/ && /{/ {sub(" {",""); print; exit}' "$snippet" 2>/dev/null)
+          echo "Host: ${host:-<unconfigured>}"
+          if [[ -n "$host" ]]; then
+            echo | openssl s_client -servername "$host" -connect "${host}:443" 2>/dev/null \
+              | openssl x509 -noout -subject -issuer -dates 2>/dev/null \
+              || echo "(could not reach ${host}:443 — check DNS + firewall)"
+          fi
+        else
+          echo "No Caddy site block at $snippet"
+        fi
+        sudo systemctl is-active caddy.service 2>&1 || true
+        ;;
+      reload)   exec sudo caddy reload --config /etc/caddy/Caddyfile ;;
+      restart)  exec sudo systemctl restart caddy.service ;;
+      help|--help|-h|*)
+        cat <<EOF
+lens tls status     show hostname + cert expiry + Caddy state
+lens tls reload     reload /etc/caddy/Caddyfile
+lens tls restart    restart Caddy
+EOF
+        ;;
+    esac
+    ;;
+  help|-h|--help|"")
+    cat <<'EOF'
+lens — scraper web UI operator CLI
+
+  lens start | stop | restart | status
+  lens logs [journalctl args...]
+  lens update                   git pull + rebuild + restart
+                                (use LENS_UPDATE_YES=1 to skip the prompt)
+  lens rebuild                  rebuild + restart current checkout
+                                (skip fetch — useful after a manual rollback)
+  lens env [show]               print /opt/lens/.env (secrets redacted)
+  lens env edit                 edit /opt/lens/.env in $EDITOR, then: lens restart
+  lens tls status|reload|restart   Caddy controls (if installed)
+EOF
+    ;;
+  *)
+    echo "unknown command: $cmd" >&2
+    exec "$0" --help
+    ;;
+esac

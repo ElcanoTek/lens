@@ -1,0 +1,33 @@
+[Unit]
+Description=Lens — domain/app scraper web UI
+After=network.target
+
+[Service]
+Type=simple
+User=lens
+Group=lens
+WorkingDirectory=/opt/lens
+EnvironmentFile=/opt/lens/.env
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/lens/.venv/bin/python -m uvicorn web_service:app --host 127.0.0.1 --port 8808 --proxy-headers --forwarded-allow-ips=127.0.0.1
+Restart=always
+RestartSec=5
+
+# Hardening — trimmed to what rootless podman (the deep-scrape Chrome
+# container) tolerates. Verified empirically; each removed directive broke a
+# different layer of rootless podman:
+#   NoNewPrivileges=true        blocks the setuid newuidmap/newgidmap helpers
+#                               (user-namespace setup fails)
+#   ProtectControlGroups=true   blocks creating container cgroups
+#   ProtectKernelTunables=true  blocks crun writing net sysctls in the netns
+#   PrivateTmp=true             podman's pause process pins the mount ns to a
+#                               per-start /var/tmp that dies on restart
+#   ProtectHome=true            hides /run/user (rootless runtime root)
+ProtectKernelModules=true
+ProtectSystem=full
+ReadWritePaths=/opt/lens
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
