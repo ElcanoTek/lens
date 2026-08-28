@@ -298,6 +298,56 @@ def test_every_static_reference_resolves(monkeypatch, tmp_path):
             assert client.get(ref).status_code == 200, ref
 
 
+def test_numeric_readouts_request_tabular_figures():
+    """Columnar numbers must ask for tabular figures explicitly.
+
+    Nebula Sans defaults to PROPORTIONAL figures — its `1` is 407 units wide
+    against 625 for `8` at unitsPerEm 1000 — so a column of numbers renders
+    ragged and a live counter shifts sideways as it ticks. IBM Plex Sans, which
+    it replaced, was uniform-width by default, so this only became true when
+    the faces changed.
+
+    Two rot modes are checked, both cheap:
+      - the base-layer `table` rule still exists. It is the entire reason a
+        numeric column added later cannot land ragged purely by omission, so
+        losing it is the failure that would go unnoticed longest.
+      - every other selector in the tabular rules still matches something in
+        the markup, so renaming a class cannot quietly take the rule out of
+        play while leaving valid-looking CSS behind.
+
+    Rendered widths are not measured here — that needs a real browser and is
+    done by hand (the numbers are in the PR that added this rule).
+    """
+    import re
+
+    css = (web_service.BASE_DIR / "static" / "styles.css").read_text(encoding="utf-8")
+
+    # Nothing may re-enable proportional figures further down the cascade.
+    assert "proportional-nums" not in css
+
+    # Strip comments first, or the prose above a rule is read as part of its
+    # selector list.
+    css = re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
+
+    blocks = re.findall(r"([^{}]+)\{([^{}]*font-variant-numeric\s*:\s*tabular-nums[^{}]*)\}", css)
+    assert blocks, "no rule asks for tabular-nums"
+
+    selectors = {part.strip() for group, _ in blocks for part in group.split(",") if part.strip()}
+    assert "table" in selectors, "the base-layer table rule is gone"
+
+    markup = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (
+            web_service.BASE_DIR / "templates" / "index.html",
+            web_service.BASE_DIR / "static" / "main.js",
+        )
+    )
+    for selector in sorted(selectors - {"table"}):
+        # Simple class/id selectors only; a compound one is checked token-wise.
+        for token in re.findall(r"[.#][A-Za-z0-9_-]+", selector) or [selector]:
+            assert token[1:] in markup, f"{selector}: {token} matches nothing in the markup"
+
+
 def test_bundled_fonts_are_the_two_brand_faces():
     """Elcano ships exactly two typefaces, self-hosted, and nothing else.
 

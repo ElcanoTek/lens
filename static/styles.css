@@ -97,6 +97,49 @@ select {
   border: 0;
 }
 
+/* ── Numeric alignment ──────────────────────────────────────────────── */
+
+/* Nebula Sans ships PROPORTIONAL figures by default: at unitsPerEm 1000 its
+   digit advances run from 407 (`1`) to 625 (`8`) — a 53% spread — so a column
+   of numbers renders visibly ragged and a live counter shifts sideways as it
+   ticks. The face carries the `tnum` OpenType feature, so asking for tabular
+   figures is enough; nothing about the font changes. IBM Plex Sans, which
+   Nebula Sans replaced, had uniform 600-unit digits by default, which is why
+   none of this was needed before.
+
+   `font-variant-numeric` inherits, so each selector below also covers the
+   `strong`/`b`/`span` wrappers its numbers actually sit in.
+
+   Hack (`--font-code`, the run-log preview) is already monospaced at a
+   uniform 0.602em and needs nothing — it does not even ship `tnum`.
+
+   This gets within a sub-pixel of true alignment, not exactly to it: Nebula
+   Sans's own tabular glyphs are slightly unequal (`five.tf` is the outlier in
+   every weight, and the spread grows with weight — 0.007em at 400 up to
+   0.017em at 700). Measured in Chromium at the sizes this UI actually uses,
+   worst-case drift across eight digits falls from 23–29px to 0.7–2.2px, a
+   13–32x improvement. Closing the last fraction would mean re-spacing the
+   font binary, which belongs upstream in flag, not here. */
+
+/* Every table, at the base layer, so a numeric column added later cannot land
+   ragged by omission. */
+table {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The numeric readouts that are not in a table: the file count, the row/size/
+   timestamp and per-type counts stacked down the file cards, the stat grid in
+   the completion banner, and the two live readouts that rewrite themselves on
+   every poll while a run is in flight. */
+.ws-count,
+.metanum,
+.tchip,
+.completion-value,
+.live-progress-summary,
+#monitor-job-timing {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Layout ─────────────────────────────────────────────────────────── */
 
 .page-shell {
