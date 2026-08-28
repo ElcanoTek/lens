@@ -200,17 +200,29 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 - **Test pattern**: Set `OPENROUTER_API_KEY=test-key` via `os.environ.setdefault()` before any project imports
 - **OpenRouter integration test**: Uses `pytest.mark.skipif` to skip when no real API key is available
 - **CTV tests**: Comprehensive mocking of the two-step pipeline; tests platform detection, news routing, markdown stripping, research truncation
-- **Filesystem isolation is automatic**: an autouse fixture in
-  `tests/conftest.py` (`isolate_managed_paths`) repoints every module global and
-  `config` attribute that names a real on-disk location — `web_service.INPUT_DIR`
-  / `OUTPUT_DIR`, and `config.INPUT_CSV_PATH` / `OUTPUT_CSV_PATH` /
-  `PROGRESS_FILE_PATH` / `LOG_FILE_PATH` — at a per-test `tmp_path` sandbox, for
-  every test. A test that forgets to redirect therefore *cannot* write into the
-  gitignored `managed-files/` tree, which is what let a test silently replace a
-  real operator's job history for months. **Register any new path global** in
-  `_MODULE_PATH_GLOBALS` / `_CONFIG_PATH_ATTRS`; `tests/test_path_isolation.py`
-  fails if one is neither isolated nor recorded as deliberately read-only. A test
-  that genuinely needs the real paths must say so with
+- **Filesystem isolation is automatic**: an autouse fixture in the
+  **repo-root** `conftest.py` (`isolate_managed_paths`) repoints every module
+  global and `config` attribute that names a real on-disk location —
+  `web_service.INPUT_DIR` / `OUTPUT_DIR`, and `config.INPUT_CSV_PATH` /
+  `OUTPUT_CSV_PATH` / `PROGRESS_FILE_PATH` / `LOG_FILE_PATH` — at a per-test
+  `tmp_path` sandbox, for every test. A test that forgets to redirect therefore
+  *cannot* write into the gitignored `managed-files/` tree, which is what let a
+  test silently replace a real operator's job history for months. **The root is
+  load-bearing**: a conftest applies to its own directory and below, and pytest
+  collects test modules from the root (`test_script.py`, `test_config.py`) as
+  well as from `tests/`, so from `tests/conftest.py` the fixture protected
+  `tests/` only. `test_root_level_isolation.py` (at the root, deliberately) is
+  the regression guard for that and fails if the fixture moves back down.
+  Because the root conftest is loaded before any test module is imported, it
+  also stubs `OPENROUTER_API_KEY` suite-wide. **Register any new path global**
+  in `_MODULE_PATH_GLOBALS` / `_CONFIG_PATH_ATTRS`;
+  `tests/test_path_isolation.py` fails if one is neither isolated nor recorded
+  as deliberately read-only (it reads the registry through the
+  `path_isolation_registry` fixture, because the module name `conftest` is
+  ambiguous with two conftest layers on `sys.path`). `tests/conftest.py` keeps
+  only `tests/`-local helpers (`make_orchestrator`) and must never redefine the
+  fixture — a same-named fixture there would shadow the root one. A test that
+  genuinely needs the real paths must say so with
   `@pytest.mark.real_managed_files` — nothing in the suite does today. This is
   prevention, not detection: do not replace it with a fixture that inspects
   `managed-files/` afterwards and fails whoever dirtied it (that reports damage

@@ -73,11 +73,13 @@ python -m pytest tests/test_ctv_functionality.py -k news_routing -v
 
 Two things to know about the suite:
 
-- It is **hermetic**. `tests/conftest.py` (and each test module) calls
+- It is **hermetic**. The repo-root `conftest.py` (and each test module) calls
   `os.environ.setdefault("OPENROUTER_API_KEY", ...)` *before* importing project
   modules, because `config.py` builds its singleton at import and raises
-  without the key. Tests that touch auth mint their own throwaway Ed25519
-  keypair. No network, no secrets.
+  without the key. That same root conftest sandboxes every filesystem path at a
+  per-test `tmp_path`, for every test pytest collects — under `tests/` or beside
+  it. Tests that touch auth mint their own throwaway Ed25519 keypair. No
+  network, no secrets.
 - Because of that ordering requirement, test modules legitimately have imports
   below the top of the file. Don't "fix" them.
 
