@@ -1,0 +1,21 @@
+# Development and testing dependencies.
+#
+# Pulls in the runtime set so requirements-dev.txt is self-contained: one
+# `pip install -r requirements-dev.txt` gives a complete dev environment, and
+# the two lock files cannot drift apart because both compile from
+# requirements.in.
+#
+# Production installs requirements.txt only, so none of this ships to servers.
+-r requirements.in
+
+pytest>=9.1.1
+pytest-asyncio>=1.4.0
+
+# httpx backs FastAPI's TestClient, used by the web-service tests. It was
+# previously installed ad hoc by CI and the docs without ever being declared.
+httpx>=0.28.1
+
+# Ruff is pinned exactly, unlike the floors above: a linter that floats can
+# turn CI red on a release that merely adds a rule, with no change to this
+# repo. Dependabot bumps it as a reviewable PR instead.
+ruff==0.16.5

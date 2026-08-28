@@ -16,7 +16,8 @@ Two runtime modes: **CLI** (`main.py`) and **web dashboard** (`web_service.py`),
 ## Essential Commands
 
 ```bash
-# Install dependencies
+# Install dependencies (runtime only; use requirements-dev.txt for tests).
+# Both are pip-compile lock files — edit requirements.in, not the .txt.
 pip install -r requirements.txt
 
 # Run website analysis (default scrape mode)
@@ -186,7 +187,9 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 
 - **Framework**: pytest + pytest-asyncio
 - **CI**: GitHub Actions (`.github/workflows/test-classification.yml`) — 3 parallel jobs (test-urls, test-apps, test-ctv) on push/PR to main/master
-- **CI Python**: 3.11; uses `pip install -r requirements.txt` (not uv)
+- **CI Python**: 3.11; uses `pip install -r requirements.txt` (not uv). The
+  pytest job uses 3.12 and installs `requirements-dev.txt`. Both lock files
+  are verified against 3.11 and 3.12.
 - **CI runs**: `python main.py --scrape-mode direct --quiet` with 10 sample items per content type
 - **Test pattern**: Set `OPENROUTER_API_KEY=test-key` via `os.environ.setdefault()` before any project imports
 - **OpenRouter integration test**: Uses `pytest.mark.skipif` to skip when no real API key is available

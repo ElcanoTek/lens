@@ -39,8 +39,7 @@ With [uv](https://docs.astral.sh/uv/) — what the deploy scripts use:
 git clone https://github.com/ElcanoTek/lens.git
 cd lens
 uv venv
-uv pip install -r requirements.txt
-uv pip install pytest httpx        # httpx backs FastAPI's TestClient
+uv pip install -r requirements-dev.txt
 source .venv/bin/activate
 ```
 
@@ -48,7 +47,7 @@ Or plain venv:
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt pytest httpx
+pip install -r requirements-dev.txt
 ```
 
 You do **not** need an OpenRouter key to run the tests — the suite stubs it.
@@ -119,6 +118,43 @@ Because formatting is now automatic and enforced, it no longer bloats diffs the
 way an ad-hoc `black` run once did — so the old advice to avoid reformatting is
 gone. Do still keep unrelated refactors out of functional PRs. The test suite
 remains the gate on behavior; the linter is the gate on style.
+
+## Dependencies
+
+Dependencies are locked with [pip-tools](https://pip-tools.readthedocs.io/).
+Four files, two of which are generated:
+
+| File | Role |
+|---|---|
+| `requirements.in` | Runtime dependencies you edit, as `>=` floors |
+| `requirements-dev.in` | Test/lint dependencies you edit; pulls in `requirements.in` |
+| `requirements.txt` | **Generated.** Exact runtime pins, fully transitive |
+| `requirements-dev.txt` | **Generated.** Exact pins for runtime + dev |
+
+**Never edit a `.txt` by hand.** Change the matching `.in`, then recompile
+*both* — `requirements-dev.txt` is built from `requirements.in`, so a runtime
+change that skips the second command leaves the two locks disagreeing:
+
+```bash
+pip install pip-tools
+pip-compile --strip-extras --allow-unsafe --output-file requirements.txt requirements.in
+pip-compile --strip-extras --allow-unsafe --output-file requirements-dev.txt requirements-dev.in
+```
+
+Commit the regenerated `.txt` files with your change.
+
+Why locks: every install — CI, a fresh clone, a production deploy — resolves
+to byte-identical versions. Previously the floors were `>=` with nothing
+pinned, so `pip` picked the newest release at install time and an upstream
+change could break CI with no commit in this repo. Now a dependency moves only
+when a Dependabot PR moves it, which is reviewable and revertable.
+
+Production installs `requirements.txt` only, so pytest and ruff never ship to
+servers. The deploy scripts are unchanged — `uv pip install -r
+requirements.txt` reads a pinned file exactly as it read a floating one.
+
+The locks are resolved on Python 3.11 (the lower of the two versions CI uses)
+and verified to install and pass the suite on both 3.11 and 3.12.
 
 ## Branches and pull requests
 
