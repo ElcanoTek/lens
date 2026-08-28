@@ -1,0 +1,70 @@
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 ElcanoTek, Inc.
+
+# Ruff replaces the black + flake8 pair this project previously declared but
+# never ran. One tool covers both jobs: `ruff format` is black-compatible, and
+# `ruff check` is a superset of the pycodestyle/pyflakes rules flake8 provided.
+
+[tool.ruff]
+# CI runs the classification workflow on 3.11 and the test suite on 3.12.
+# Target the lower of the two so no 3.12-only syntax slips in.
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes — unused imports/variables, undefined names
+    "I",  # isort — import ordering
+    "B",  # flake8-bugbear — likely bugs
+    "C4", # flake8-comprehensions
+]
+
+ignore = [
+    # `ruff format` owns line length. It already wraps everything it safely
+    # can, so E501 only ever fires on what it deliberately leaves alone —
+    # here that is overwhelmingly the LLM prompt literals in
+    # openrouter_client.py. Hand-wrapping those would edit prompt text and
+    # change classification behavior, so the formatter is the line-length
+    # authority and E501 stays off.
+    "E501",
+]
+
+# Two rule sets were measured against this tree and deferred rather than
+# enabled, each for its own reason:
+#
+#   UP  (pyupgrade)      ~350 hits — typing modernization across every module.
+#                        That is a rewrite, not a lint pass; it deserves its
+#                        own reviewable commit.
+#   SIM (flake8-simplify) ~19 hits, mostly noise here: 4 SIM115 reports are
+#                        false positives against long-lived CSV/JSONL handles
+#                        that are opened in setup and closed in teardown by
+#                        design, and SIM103 argues against a deliberately
+#                        uniform `if cond: return True` guard chain. A rule
+#                        set that needs a suppression at most call sites is
+#                        not yet earning its place.
+
+[tool.ruff.lint.per-file-ignores]
+# The suites stub OPENROUTER_API_KEY and prepend the project root to sys.path
+# before importing any project module, so their imports cannot sit at the top.
+"tests/*" = ["E402"]
+"test_script.py" = ["E402"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's parameter markers are *meant* to be called in argument defaults —
+# that call is how a route declares its dependencies. They return singleton
+# markers, not the mutable shared state B008 exists to catch.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.format]
+docstring-code-format = true

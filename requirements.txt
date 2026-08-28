@@ -20,5 +20,9 @@ cryptography>=50.0.0
 # Development and testing (optional)
 pytest>=9.1.1
 pytest-asyncio>=1.4.0
-black>=26.5.1
-flake8>=7.3.0
+# Ruff replaces black + flake8: `ruff format` is black-compatible and
+# `ruff check` covers the pycodestyle/pyflakes rules flake8 provided.
+# Pinned exactly, unlike the runtime deps above: a linter that floats can
+# turn CI red on a release that merely adds a rule, with no change to this
+# repo. Dependabot bumps it as a reviewable PR instead.
+ruff==0.16.5

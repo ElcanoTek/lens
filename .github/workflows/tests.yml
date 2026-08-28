@@ -15,6 +15,35 @@ permissions:
   contents: read
 
 jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+
+      # Ruff is a static analyser, so it needs no project dependencies —
+      # installing it alone keeps this job to a few seconds. The version is
+      # pinned in requirements.txt so local and CI runs agree; grep it out
+      # rather than duplicating the number here.
+      - name: Install ruff
+        run: pip install "$(grep -m1 '^ruff==' requirements.txt)"
+
+      # `--output-format=github` turns findings into inline PR annotations
+      # instead of burying them in the log.
+      - name: Lint
+        run: ruff check --output-format=github .
+
+      # Runs even if the lint step failed, so a contributor sees formatting
+      # and rule violations in one pass rather than one per push.
+      - name: Format check
+        if: always()
+        run: ruff format --check --diff .
+
   pytest:
     name: pytest
     runs-on: ubuntu-latest
