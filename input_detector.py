@@ -8,8 +8,8 @@ This module provides functionality to auto-detect:
 2. The content type for each row (iOS app, Android app, or Website)
 """
 
-import re
 import logging
+import re
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -58,13 +58,24 @@ _PACKAGE_MIN_LABELS_WHEN_TLD_LEAF = 5
 
 # CTV-specific column names that indicate a CTV input file
 CTV_COLUMN_INDICATORS = [
-    "app_name", "appname", "app name",
-    "bundle_id", "bundleid", "bundle id",
-    "ctv_app", "ctvapp", "ctv app",
-    "channel_name", "channelname", "channel name",
-    "roku_id", "rokuid",
-    "fire_tv_id", "firetvid",
-    "apple_tv_id", "appletvid",
+    "app_name",
+    "appname",
+    "app name",
+    "bundle_id",
+    "bundleid",
+    "bundle id",
+    "ctv_app",
+    "ctvapp",
+    "ctv app",
+    "channel_name",
+    "channelname",
+    "channel name",
+    "roku_id",
+    "rokuid",
+    "fire_tv_id",
+    "firetvid",
+    "apple_tv_id",
+    "appletvid",
     "SSP",
     "App, Account or Network Name",
     "Bundle ID",
@@ -83,13 +94,18 @@ CTV_COLUMN_MAPPINGS = {
 
 # CTV platform indicators in column names
 CTV_PLATFORM_COLUMNS = [
-    "platform", "ctv_platform", "streaming_platform",
-    "device", "device_type",
+    "platform",
+    "ctv_platform",
+    "streaming_platform",
+    "device",
+    "device_type",
 ]
 
 # CTV network indicators in column names (deprecated - network column removed)
 CTV_NETWORK_COLUMNS = [
-    "network", "network_affiliation", "broadcaster",
+    "network",
+    "network_affiliation",
+    "broadcaster",
     "content_owner",
 ]
 
@@ -123,36 +139,108 @@ URL_INDICATOR_CHARS = frozenset("/:?#&=@!$'()*+,;[]%")
 # Primary/core TLDs that are ALWAYS websites when they appear at the end
 # These are the classic TLDs that almost never appear as Android package suffixes
 PRIMARY_WEB_TLDS = (
-    ".com", ".org", ".net", ".edu", ".gov", ".mil", ".int",
+    ".com",
+    ".org",
+    ".net",
+    ".edu",
+    ".gov",
+    ".mil",
+    ".int",
 )
 
 # Country code TLDs - when at end, definitely a website
 COUNTRY_TLDS = (
-    ".us", ".uk", ".de", ".fr", ".es", ".it", ".nl", ".au", ".ca",
-    ".jp", ".cn", ".ru", ".br", ".in", ".kr", ".mx", ".pl", ".se",
-    ".ch", ".at", ".be", ".dk", ".fi", ".no", ".nz", ".za", ".ie",
-    ".pt", ".cz", ".hu", ".gr", ".ro", ".il", ".sg", ".hk", ".tw",
-    ".th", ".my", ".ph", ".vn", ".id", ".ar", ".cl",
+    ".us",
+    ".uk",
+    ".de",
+    ".fr",
+    ".es",
+    ".it",
+    ".nl",
+    ".au",
+    ".ca",
+    ".jp",
+    ".cn",
+    ".ru",
+    ".br",
+    ".in",
+    ".kr",
+    ".mx",
+    ".pl",
+    ".se",
+    ".ch",
+    ".at",
+    ".be",
+    ".dk",
+    ".fi",
+    ".no",
+    ".nz",
+    ".za",
+    ".ie",
+    ".pt",
+    ".cz",
+    ".hu",
+    ".gr",
+    ".ro",
+    ".il",
+    ".sg",
+    ".hk",
+    ".tw",
+    ".th",
+    ".my",
+    ".ph",
+    ".vn",
+    ".id",
+    ".ar",
+    ".cl",
 )
 
 # Compound TLDs - when at end, definitely a website
 COMPOUND_TLDS = (
-    ".co.uk", ".com.au", ".com.br", ".co.jp", ".co.kr", ".co.nz",
-    ".co.za", ".com.mx", ".com.ar", ".org.uk", ".net.au",
+    ".co.uk",
+    ".com.au",
+    ".com.br",
+    ".co.jp",
+    ".co.kr",
+    ".co.nz",
+    ".co.za",
+    ".com.mx",
+    ".com.ar",
+    ".org.uk",
+    ".net.au",
 )
 
 # Semi-primary TLDs - these are newer but commonly used as actual domain TLDs
 # When at end, usually a website unless there's strong evidence otherwise
 SEMI_PRIMARY_TLDS = (
-    ".io", ".co",  # Very commonly used as domain TLDs for tech companies
+    ".io",
+    ".co",  # Very commonly used as domain TLDs for tech companies
 )
 
 # Ambiguous TLDs - these can be either website TLDs OR Android package suffixes
 # When these appear at the END, context matters (prefix, structure, etc.)
 AMBIGUOUS_TLDS = (
-    ".me", ".tv", ".ai", ".app", ".dev", ".tech",
-    ".info", ".biz", ".xyz", ".online", ".site", ".website",
-    ".gg", ".fm", ".ly", ".to", ".cc", ".ws", ".so", ".ac", ".sh",
+    ".me",
+    ".tv",
+    ".ai",
+    ".app",
+    ".dev",
+    ".tech",
+    ".info",
+    ".biz",
+    ".xyz",
+    ".online",
+    ".site",
+    ".website",
+    ".gg",
+    ".fm",
+    ".ly",
+    ".to",
+    ".cc",
+    ".ws",
+    ".so",
+    ".ac",
+    ".sh",
 )
 
 # All web TLDs combined for simple checks
@@ -260,11 +348,7 @@ def detect_input_column_by_content(
     best_col: Optional[str] = None
     best_ratio = 0.0
     for col in df.columns:
-        values = [
-            v.strip()
-            for v in df[col].dropna().astype(str).tolist()
-            if v and v.strip()
-        ]
+        values = [v.strip() for v in df[col].dropna().astype(str).tolist() if v and v.strip()]
         if not values:
             continue
         sample = values[:sample_size]
@@ -298,10 +382,20 @@ def _is_url_or_website(value: str) -> bool:
     value_lower = value.lower()
 
     # 1. Check for URL protocol schemes (definitive URL indicator)
-    if any(value_lower.startswith(proto) for proto in (
-        "http://", "https://", "ftp://", "ftps://", "file://",
-        "mailto:", "tel:", "sms:", "//",
-    )):
+    if any(
+        value_lower.startswith(proto)
+        for proto in (
+            "http://",
+            "https://",
+            "ftp://",
+            "ftps://",
+            "file://",
+            "mailto:",
+            "tel:",
+            "sms:",
+            "//",
+        )
+    ):
         return True
 
     # 2. Check for URL indicator characters (never in Android packages)
@@ -313,11 +407,11 @@ def _is_url_or_website(value: str) -> bool:
         return True
 
     # 4. Check for port numbers (e.g., example.com:8080)
-    if re.search(r':\d{1,5}(?:/|$)', value):
+    if re.search(r":\d{1,5}(?:/|$)", value):
         return True
 
     # 5. Check for IP addresses (v4)
-    if re.match(r'^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:/.*)?$', value):
+    if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?(?:/.*)?$", value):
         return True
 
     # 6. Check for localhost
@@ -326,8 +420,8 @@ def _is_url_or_website(value: str) -> bool:
 
     # 7. Check for hyphens in domain segments - common in domains, rare in packages
     # e.g., "my-website.com" - hyphens are invalid in Java package names
-    parts = value.split('.')
-    if any('-' in part for part in parts):
+    parts = value.split(".")
+    if any("-" in part for part in parts):
         return True
 
     # 8. Check if it ends with a PRIMARY web TLD (.com, .org, .net, etc.)
@@ -360,15 +454,15 @@ def _is_url_or_website(value: str) -> bool:
             prefix = None
             for p in ANDROID_PACKAGE_PREFIXES:
                 if value_lower.startswith(p):
-                    prefix = p.rstrip('.')
+                    prefix = p.rstrip(".")
                     break
 
-            tld_name = tld.lstrip('.')
+            tld_name = tld.lstrip(".")
 
             # If prefix is a PRIMARY TLD (com, org, net), treat the ambiguous ending
             # as a package segment, not a website TLD
             # e.g., "com.example.app" -> prefix is "com" (primary TLD), so ".app" is package segment
-            if prefix in ('com', 'org', 'net'):
+            if prefix in ("com", "org", "net"):
                 # Don't classify as website - let Android detection handle it
                 continue
 
@@ -378,7 +472,14 @@ def _is_url_or_website(value: str) -> bool:
             # e.g., "me.developer.app" -> likely an Android package
             # BUT: "app." and "dev." are also common subdomains, so don't bypass for those
             # e.g., "app.startup.dev" -> likely a website (app subdomain of startup.dev)
-            if tld_name in ('app', 'tech', 'ai') and prefix not in ('app', 'dev', 'api', 'cdn', 'www', 'm'):
+            if tld_name in ("app", "tech", "ai") and prefix not in (
+                "app",
+                "dev",
+                "api",
+                "cdn",
+                "www",
+                "m",
+            ):
                 # These are common Android package suffixes - let Android detection handle
                 continue
 
@@ -416,15 +517,15 @@ def _is_valid_android_package(value: str) -> bool:
         return False
 
     # Must not contain hyphens (invalid in Java identifiers)
-    if '-' in value:
+    if "-" in value:
         return False
 
     # Must have at least one dot
-    if '.' not in value:
+    if "." not in value:
         return False
 
     # Split into segments
-    segments = value_lower.split('.')
+    segments = value_lower.split(".")
 
     # Must have at least 2 segments (e.g., com.example)
     if len(segments) < 2:
@@ -437,7 +538,7 @@ def _is_valid_android_package(value: str) -> bool:
         if not segment[0].isalpha():
             return False
         # Segment can only contain letters, numbers, and underscores
-        if not re.match(r'^[a-z][a-z0-9_]*$', segment):
+        if not re.match(r"^[a-z][a-z0-9_]*$", segment):
             return False
 
     return True
@@ -575,8 +676,11 @@ def detect_batch_type(values: List[str]) -> Optional[ContentType]:
 
     for content_type, count in stats.items():
         if count / total >= 0.9:
-            logger.info("Batch detected as predominantly %s (%d%%)",
-                       content_type.value, int(count / total * 100))
+            logger.info(
+                "Batch detected as predominantly %s (%d%%)",
+                content_type.value,
+                int(count / total * 100),
+            )
             return content_type
 
     logger.info("Mixed batch detected - will process each item by type")
@@ -588,8 +692,13 @@ def detect_batch_type(values: List[str]) -> Optional[ContentType]:
 # leaf collides with a real TLD). CTV is intentionally excluded here: CTV inputs
 # are routed as a whole file by is_ctv_input_file(), not per row.
 TYPE_COLUMN_CANDIDATES = (
-    "type", "content_type", "content type", "contenttype",
-    "media_type", "media type", "platform",
+    "type",
+    "content_type",
+    "content type",
+    "contenttype",
+    "media_type",
+    "media type",
+    "platform",
 )
 
 # Normalized cell value -> ContentType. Only the three types the app/website
@@ -657,9 +766,7 @@ def detect_type_column(
         if input_lower is not None and name == input_lower:
             continue
 
-        values = [
-            v for v in df[col].dropna().astype(str).tolist() if v.strip()
-        ]
+        values = [v for v in df[col].dropna().astype(str).tolist() if v.strip()]
         if not values:
             continue
         recognized = sum(1 for v in values if parse_content_type_hint(v) is not None)
@@ -693,11 +800,22 @@ def is_ctv_input_file(df: pd.DataFrame) -> bool:
     # Strong CTV-specific indicators that are unlikely to appear in generic app/website lists
     # Note: 'app name' and 'publisher' are too generic - they also appear in app lists
     strong_ctv_indicators = [
-        "bundle_id", "bundleid", "bundle id",
-        "ssp", "ctv_app", "ctvapp", "ctv app",
-        "channel_name", "channelname", "channel name",
-        "roku_id", "rokuid", "fire_tv_id", "firetvid",
-        "apple_tv_id", "appletvid",
+        "bundle_id",
+        "bundleid",
+        "bundle id",
+        "ssp",
+        "ctv_app",
+        "ctvapp",
+        "ctv app",
+        "channel_name",
+        "channelname",
+        "channel name",
+        "roku_id",
+        "rokuid",
+        "fire_tv_id",
+        "firetvid",
+        "apple_tv_id",
+        "appletvid",
         "app, account or network name",  # Specific to CTV_Master.csv format
     ]
 
@@ -709,7 +827,9 @@ def is_ctv_input_file(df: pd.DataFrame) -> bool:
 
     # If we find at least one strong CTV indicator, it's likely a CTV file
     if strong_indicator_count >= 1:
-        logger.info("Detected CTV input file (found %d strong CTV indicators)", strong_indicator_count)
+        logger.info(
+            "Detected CTV input file (found %d strong CTV indicators)", strong_indicator_count
+        )
         return True
 
     # Also check if file has "ctv" or "connected tv" in any column name
@@ -721,7 +841,7 @@ def is_ctv_input_file(df: pd.DataFrame) -> bool:
     has_ssp = any("ssp" in col for col in columns_lower)
     has_bundle_id = any("bundle" in col and "id" in col for col in columns_lower)
     has_app_network_name = any("app" in col and "network" in col for col in columns_lower)
-    
+
     if has_ssp and has_bundle_id and has_app_network_name:
         logger.info("Detected CTV input file (SSP + Bundle ID + App/Network Name columns)")
         return True
@@ -760,30 +880,51 @@ def detect_ctv_columns(df: pd.DataFrame) -> dict:
 
     # Detect app_name column
     # First try exact matches, then try partial matches (for columns like "App, Account or Network Name")
-    app_name_candidates = ["app_name", "appname", "app name", "app", "name",
-                           "channel_name", "channelname", "channel name",
-                           "ctv_app", "ctvapp", "ctv app",
-                           "app, account or network name"]  # Added explicit match for CTV_Master.csv
-    
+    app_name_candidates = [
+        "app_name",
+        "appname",
+        "app name",
+        "app",
+        "name",
+        "channel_name",
+        "channelname",
+        "channel name",
+        "ctv_app",
+        "ctvapp",
+        "ctv app",
+        "app, account or network name",
+    ]  # Added explicit match for CTV_Master.csv
+
     # Try exact match first
     for candidate in app_name_candidates:
         if candidate in columns_lower:
             result["app_name"] = columns_lower[candidate]
             break
-    
+
     # If no exact match, try partial match (column name contains candidate)
     if not result["app_name"]:
         for col_lower, col_original in columns_lower.items():
             # Check if column contains 'app' and 'name' (but not 'app_id' or similar)
-            if 'app' in col_lower and 'name' in col_lower and 'id' not in col_lower:
+            if "app" in col_lower and "name" in col_lower and "id" not in col_lower:
                 result["app_name"] = col_original
                 break
 
     # Detect bundle_id column
-    for candidate in ["bundle_id", "bundleid", "bundle id", "bundle",
-                       "app_id", "appid", "app id",
-                       "roku_id", "rokuid", "fire_tv_id", "firetvid",
-                       "apple_tv_id", "appletvid"]:
+    for candidate in [
+        "bundle_id",
+        "bundleid",
+        "bundle id",
+        "bundle",
+        "app_id",
+        "appid",
+        "app id",
+        "roku_id",
+        "rokuid",
+        "fire_tv_id",
+        "firetvid",
+        "apple_tv_id",
+        "appletvid",
+    ]:
         if candidate in columns_lower:
             result["bundle_id"] = columns_lower[candidate]
             break
@@ -839,7 +980,7 @@ def parse_ctv_work_items(df: pd.DataFrame) -> List[CTVWorkItem]:
 
     work_items = []
 
-    for idx, row in df.iterrows():
+    for _idx, row in df.iterrows():
         app_name = str(row.get(columns["app_name"], "")).strip()
         if not app_name:
             continue
@@ -859,27 +1000,29 @@ def parse_ctv_work_items(df: pd.DataFrame) -> List[CTVWorkItem]:
         ssp = ""
         if columns["ssp"]:
             ssp = str(row.get(columns["ssp"], "")).strip()
-            if ssp.lower() == 'nan':
+            if ssp.lower() == "nan":
                 ssp = ""
 
         publisher = ""
         if columns["publisher"]:
             publisher = str(row.get(columns["publisher"], "")).strip()
-            if publisher.lower() == 'nan':
+            if publisher.lower() == "nan":
                 publisher = ""
 
         # Store original row data for reference
         original_row = {str(k): str(v) for k, v in row.to_dict().items() if pd.notna(v)}
 
-        work_items.append(CTVWorkItem(
-            app_name=app_name,
-            bundle_id=bundle_id,
-            ssp=ssp,
-            publisher=publisher,
-            platform=platform,
-            url=url,
-            original_row=original_row,
-        ))
+        work_items.append(
+            CTVWorkItem(
+                app_name=app_name,
+                bundle_id=bundle_id,
+                ssp=ssp,
+                publisher=publisher,
+                platform=platform,
+                url=url,
+                original_row=original_row,
+            )
+        )
 
     logger.info("Parsed %d CTV work items from input file", len(work_items))
     return work_items
@@ -1005,6 +1148,7 @@ class InputDetector:
             return False
         return self.batch_type is None
 
+
 def _find_ctv_column(df: pd.DataFrame, key: str) -> Optional[str]:
     """
     Find a CTV column in the DataFrame by key.
@@ -1034,10 +1178,14 @@ def parse_ctv_input(df: pd.DataFrame) -> List[CTVWorkItem]:
         List of CTVWorkItem objects
     """
     # Find the relevant columns
-    ssp_col = _find_ctv_column(df, 'ssp')
-    publisher_col = _find_ctv_column(df, 'publisher')
-    app_name_col = _find_ctv_column(df, 'app') or _find_ctv_column(df, 'account') or _find_ctv_column(df, 'network')
-    bundle_id_col = _find_ctv_column(df, 'bundle')
+    ssp_col = _find_ctv_column(df, "ssp")
+    publisher_col = _find_ctv_column(df, "publisher")
+    app_name_col = (
+        _find_ctv_column(df, "app")
+        or _find_ctv_column(df, "account")
+        or _find_ctv_column(df, "network")
+    )
+    bundle_id_col = _find_ctv_column(df, "bundle")
 
     if not app_name_col:
         logger.error("Could not find app name column in CTV input")
@@ -1045,34 +1193,37 @@ def parse_ctv_input(df: pd.DataFrame) -> List[CTVWorkItem]:
 
     logger.info(
         "CTV column mapping: ssp=%s, publisher=%s, app_name=%s, bundle_id=%s",
-        ssp_col, publisher_col, app_name_col, bundle_id_col
+        ssp_col,
+        publisher_col,
+        app_name_col,
+        bundle_id_col,
     )
 
     # Create work items - group by app name to avoid duplicates
     app_items: dict[str, CTVWorkItem] = {}
 
     for _, row in df.iterrows():
-        app_name = str(row.get(app_name_col, '')).strip() if app_name_col else ''
+        app_name = str(row.get(app_name_col, "")).strip() if app_name_col else ""
 
         # Skip empty app names
-        if not app_name or app_name.lower() in ('nan', '', 'none'):
+        if not app_name or app_name.lower() in ("nan", "", "none"):
             continue
 
         # Skip if we already have this app
         if app_name in app_items:
             continue
 
-        ssp = str(row.get(ssp_col, '')).strip() if ssp_col else ''
-        publisher = str(row.get(publisher_col, '')).strip() if publisher_col else ''
-        bundle_id = str(row.get(bundle_id_col, '')).strip() if bundle_id_col else ''
+        ssp = str(row.get(ssp_col, "")).strip() if ssp_col else ""
+        publisher = str(row.get(publisher_col, "")).strip() if publisher_col else ""
+        bundle_id = str(row.get(bundle_id_col, "")).strip() if bundle_id_col else ""
 
         # Clean up nan values
-        if ssp.lower() == 'nan':
-            ssp = ''
-        if publisher.lower() == 'nan':
-            publisher = ''
-        if bundle_id.lower() == 'nan':
-            bundle_id = ''
+        if ssp.lower() == "nan":
+            ssp = ""
+        if publisher.lower() == "nan":
+            publisher = ""
+        if bundle_id.lower() == "nan":
+            bundle_id = ""
 
         app_items[app_name] = CTVWorkItem(
             app_name=app_name,

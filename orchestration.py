@@ -9,16 +9,15 @@ import signal
 import time
 from contextlib import AsyncExitStack
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Union
+from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
+
+from android_scraper import AndroidScraper
+from app_processor import AppProcessor
 from config import config
+from ctv_processor import CTVProcessor
 from domain_processing import DomainProcessor
-from shared_types import DomainWorkItem, WorkItem, ContentType, CTVWorkItem, is_antibot_error
-from openrouter_client import OpenRouterClient
-from progress_tracker import ProgressTracker
-from reporting import TerminalReporter
-from scraper_client import ScraperClient, firecrawl_service_ready
 
 # App processing imports
 from input_detector import (
@@ -26,15 +25,17 @@ from input_detector import (
     InputDetector,
     detect_content_type,
     detect_type_column,
-    parse_content_type_hint,
     is_ctv_input_file,
-    parse_ctv_work_items,
+    parse_content_type_hint,
     parse_ctv_input,
+    parse_ctv_work_items,
 )
 from ios_api_client import iOSAPIClient
-from android_scraper import AndroidScraper
-from app_processor import AppProcessor
-from ctv_processor import CTVProcessor
+from openrouter_client import OpenRouterClient
+from progress_tracker import ProgressTracker
+from reporting import TerminalReporter
+from scraper_client import ScraperClient, firecrawl_service_ready
+from shared_types import ContentType, CTVWorkItem, DomainWorkItem, WorkItem, is_antibot_error
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,7 @@ def _maybe_resniff_delimiter(df: pd.DataFrame, path: Path) -> pd.DataFrame:
     except Exception:
         return df
     if len(sniffed.columns) > 1:
-        logger.info(
-            "Re-read %s with sniffed delimiter (%d columns)", path, len(sniffed.columns)
-        )
+        logger.info("Re-read %s with sniffed delimiter (%d columns)", path, len(sniffed.columns))
         return sniffed
     return df
 
@@ -135,17 +134,13 @@ def _normalize_headerless_input_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         return df
 
     column_values = [
-        value.strip()
-        for value in df.iloc[:, 0].dropna().astype(str).tolist()
-        if value.strip()
+        value.strip() for value in df.iloc[:, 0].dropna().astype(str).tolist() if value.strip()
     ]
     if not column_values:
         return df
 
     website_like_rows = sum(
-        1
-        for value in column_values
-        if detect_content_type(value) == ContentType.WEBSITE
+        1 for value in column_values if detect_content_type(value) == ContentType.WEBSITE
     )
     if website_like_rows / len(column_values) < 0.8:
         return df
@@ -277,9 +272,7 @@ class SiteAnalysisOrchestrator:
                 logger.error("No valid items to process")
                 self.progress_tracker.print_summary()
                 if self.reporter:
-                    self.reporter.render_summary(
-                        summary_before, time.perf_counter() - run_start
-                    )
+                    self.reporter.render_summary(summary_before, time.perf_counter() - run_start)
                 return
 
             items_to_process = list(self._filter_unprocessed_items(domains_data))
@@ -315,13 +308,9 @@ class SiteAnalysisOrchestrator:
                     )
                     await self._process_items_concurrently(items_to_process)
                     if self.auto_mode and not self.shutdown_requested:
-                        await self._retry_failed_websites_firecrawl(
-                            exit_stack, items_to_process
-                        )
+                        await self._retry_failed_websites_firecrawl(exit_stack, items_to_process)
                     if self.auto_mode and not self.shutdown_requested:
-                        await self._retry_failed_websites_deep(
-                            exit_stack, items_to_process
-                        )
+                        await self._retry_failed_websites_deep(exit_stack, items_to_process)
                     if self.auto_mode and not self.shutdown_requested:
                         await self._research_failed_websites(items_to_process)
                     if self.auto_mode:
@@ -364,16 +353,12 @@ class SiteAnalysisOrchestrator:
                 # Set total for progress tracking
                 self.progress_tracker.set_total_domains(len(self.ctv_items))
 
-                logger.info(
-                    f"Prepared {len(self.ctv_items)} unique CTV apps for processing"
-                )
+                logger.info(f"Prepared {len(self.ctv_items)} unique CTV apps for processing")
                 return []  # Return empty list since we use ctv_items instead
 
             if is_ctv_input_file(df):
                 if self.auto_mode:
-                    logger.info(
-                        "Auto-detected a CTV app list; routing to the CTV workflow"
-                    )
+                    logger.info("Auto-detected a CTV app list; routing to the CTV workflow")
                     self.is_ctv_input = True
                     return []
                 logger.warning(
@@ -414,6 +399,7 @@ class SiteAnalysisOrchestrator:
             for value, hint_value in zip(
                 df[input_column],
                 df[type_column] if type_column else [None] * len(df),
+                strict=True,
             ):
                 content_type = parse_content_type_hint(hint_value) if type_column else None
                 if content_type is None:
@@ -463,9 +449,7 @@ class SiteAnalysisOrchestrator:
             logger.error(f"Failed to load input data: {e}")
             raise
 
-    def _filter_unprocessed_items(
-        self, work_items: Iterable[WorkItem]
-    ) -> Iterable[WorkItem]:
+    def _filter_unprocessed_items(self, work_items: Iterable[WorkItem]) -> Iterable[WorkItem]:
         """Filter out items that have already been successfully processed."""
         return (
             item
@@ -545,9 +529,7 @@ class SiteAnalysisOrchestrator:
 
         # Open file for appending
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")
-        self.results_writer = csv.DictWriter(
-            self.output_file, fieldnames=config.CSV_FIELDNAMES
-        )
+        self.results_writer = csv.DictWriter(self.output_file, fieldnames=config.CSV_FIELDNAMES)
 
     def _migrate_output_csv_schema(self) -> None:
         """Rewrite an output CSV left by an older version to the current schema.
@@ -565,14 +547,11 @@ class SiteAnalysisOrchestrator:
                 rows = list(reader)
 
             logger.info(
-                "Output CSV uses an older column layout; rewriting %d row(s) "
-                "to the current schema",
+                "Output CSV uses an older column layout; rewriting %d row(s) to the current schema",
                 len(rows),
             )
             with open(output_path, "w", newline="") as f:
-                writer = csv.DictWriter(
-                    f, fieldnames=config.CSV_FIELDNAMES, extrasaction="ignore"
-                )
+                writer = csv.DictWriter(f, fieldnames=config.CSV_FIELDNAMES, extrasaction="ignore")
                 writer.writeheader()
                 writer.writerows(rows)
         except Exception as exc:
@@ -588,9 +567,7 @@ class SiteAnalysisOrchestrator:
 
         # Open file for appending
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")
-        self.results_writer = csv.DictWriter(
-            self.output_file, fieldnames=config.CTV_CSV_FIELDNAMES
-        )
+        self.results_writer = csv.DictWriter(self.output_file, fieldnames=config.CTV_CSV_FIELDNAMES)
 
     def _teardown_output_file(self) -> None:
         """Close the output file and reset writer state."""
@@ -599,9 +576,7 @@ class SiteAnalysisOrchestrator:
         self.output_file = None
         self.results_writer = None
 
-    async def _process_items_concurrently(
-        self, items_to_process: List[WorkItem]
-    ) -> None:
+    async def _process_items_concurrently(self, items_to_process: List[WorkItem]) -> None:
         """Process items concurrently with rate limiting and content type routing."""
         semaphore = asyncio.Semaphore(config.CONCURRENT_SESSIONS)
 
@@ -653,9 +628,7 @@ class SiteAnalysisOrchestrator:
                         if app_processor:
                             coro = app_processor.process_ios_app(item)
                         else:
-                            logger.error(
-                                "iOS client not initialized for %s", item.identifier
-                            )
+                            logger.error("iOS client not initialized for %s", item.identifier)
                             return
                     elif item.is_android_app:
                         if app_processor:
@@ -685,9 +658,7 @@ class SiteAnalysisOrchestrator:
                 return
 
         # Create tasks for all items
-        task_set = {
-            asyncio.create_task(process_single_item(item)) for item in items_to_process
-        }
+        task_set = {asyncio.create_task(process_single_item(item)) for item in items_to_process}
 
         if not task_set:
             return
@@ -719,9 +690,7 @@ class SiteAnalysisOrchestrator:
                 await asyncio.gather(*pending_tasks, return_exceptions=True)
 
             if self.running_tasks:
-                logger.info(
-                    f"Waiting for {len(self.running_tasks)} remaining tasks to complete..."
-                )
+                logger.info(f"Waiting for {len(self.running_tasks)} remaining tasks to complete...")
                 if self.shutdown_requested:
                     for task in list(self.running_tasks):
                         if not task.done():
@@ -787,9 +756,7 @@ class SiteAnalysisOrchestrator:
         # errors too for resumed runs with older state.
         failed = set(self.progress_tracker.get_retry_pending_domains())
         failed.update(self.progress_tracker.get_failed_domains())
-        return [
-            item for item in items if item.is_website and item.identifier in failed
-        ]
+        return [item for item in items if item.is_website and item.identifier in failed]
 
     async def _run_retry_pass(
         self,
@@ -809,15 +776,11 @@ class SiteAnalysisOrchestrator:
         )
 
         try:
-            scraper = self._build_scraper_client(
-                mode, reject_redirects=reject_redirects
-            )
+            scraper = self._build_scraper_client(mode, reject_redirects=reject_redirects)
             scraper = await exit_stack.enter_async_context(scraper)
             await scraper.create_session_pool(pool_size)
         except Exception as exc:
-            logger.warning(
-                "%s crawler failed to start (%s); skipping this pass", mode, exc
-            )
+            logger.warning("%s crawler failed to start (%s); skipping this pass", mode, exc)
             return
 
         self.scraper_client = scraper
@@ -842,14 +805,10 @@ class SiteAnalysisOrchestrator:
             mode="firecrawl",
             # Stay within the service's configured rendering capacity —
             # oversubscribing just queues requests against the client timeout.
-            pool_size=min(
-                config.CONCURRENT_SESSIONS, config.FIRECRAWL_MAX_CONCURRENT
-            ),
+            pool_size=min(config.CONCURRENT_SESSIONS, config.FIRECRAWL_MAX_CONCURRENT),
             # Firecrawl failures stay retryable only while a later pass (deep
             # crawl or the research fallback) can still run after this one.
-            defer_failures=(
-                self._deep_crawl_available() or self._research_fallback_available()
-            ),
+            defer_failures=(self._deep_crawl_available() or self._research_fallback_available()),
             # Follow cross-host redirects here (unless disabled): many
             # publishers redirect a brand domain to its parent, and the
             # destination's content is the result we actually want.
@@ -954,8 +913,7 @@ class SiteAnalysisOrchestrator:
             return
 
         logger.info(
-            "Auto mode: classifying %d unscrapeable website(s) from external "
-            "research (%s)",
+            "Auto mode: classifying %d unscrapeable website(s) from external research (%s)",
             len(retry_items),
             getattr(config, "RESEARCH_MODEL", "perplexity/sonar-pro"),
         )
@@ -984,15 +942,13 @@ class SiteAnalysisOrchestrator:
             async with semaphore:
                 if self.shutdown_requested:
                     return
-                await processor.process_domain_research(
-                    DomainWorkItem(domain=item.identifier)
-                )
+                await processor.process_domain_research(DomainWorkItem(domain=item.identifier))
 
         results = await asyncio.gather(
             *(research_one(item) for item in retry_items),
             return_exceptions=True,
         )
-        for item, result in zip(retry_items, results):
+        for item, result in zip(retry_items, results, strict=True):
             if isinstance(result, Exception):
                 logger.error(
                     "Research fallback task failed for %s: %s",
@@ -1086,9 +1042,7 @@ class SiteAnalysisOrchestrator:
                 logger.error("No valid CTV items to process")
                 self.progress_tracker.print_summary()
                 if self.reporter:
-                    self.reporter.render_summary(
-                        summary_before, time.perf_counter() - run_start
-                    )
+                    self.reporter.render_summary(summary_before, time.perf_counter() - run_start)
                 return
 
             # Filter out already processed items
@@ -1190,9 +1144,7 @@ class SiteAnalysisOrchestrator:
 
         logger.info("CTV clients initialised successfully")
 
-    async def _process_ctv_items_concurrently(
-        self, items_to_process: List[CTVWorkItem]
-    ) -> None:
+    async def _process_ctv_items_concurrently(self, items_to_process: List[CTVWorkItem]) -> None:
         """Process CTV items concurrently with rate limiting."""
         ctv_concurrency = getattr(config, "CTV_MAX_CONCURRENT", 5)
         semaphore = asyncio.Semaphore(ctv_concurrency)
@@ -1204,20 +1156,14 @@ class SiteAnalysisOrchestrator:
             reporter=self.reporter,
             results_writer=self.results_writer,
             results_file=self.output_file,
-            research_model=getattr(
-                config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"
-            ),
+            research_model=getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"),
             research_temperature=getattr(config, "CTV_RESEARCH_TEMPERATURE", 0.3),
             research_max_tokens=getattr(config, "CTV_RESEARCH_MAX_TOKENS", 2000),
             classification_model=getattr(
                 config, "CTV_CLASSIFICATION_MODEL", "~google/gemini-flash-latest"
             ),
-            classification_temperature=getattr(
-                config, "CTV_CLASSIFICATION_TEMPERATURE", 0.1
-            ),
-            classification_max_tokens=getattr(
-                config, "CTV_CLASSIFICATION_MAX_TOKENS", 1500
-            ),
+            classification_temperature=getattr(config, "CTV_CLASSIFICATION_TEMPERATURE", 0.1),
+            classification_max_tokens=getattr(config, "CTV_CLASSIFICATION_MAX_TOKENS", 1500),
             request_delay=getattr(config, "CTV_REQUEST_DELAY", 2.0),
         )
 
@@ -1242,10 +1188,7 @@ class SiteAnalysisOrchestrator:
                 return
 
         # Create tasks for all CTV items
-        task_set = {
-            asyncio.create_task(process_single_ctv_item(item))
-            for item in items_to_process
-        }
+        task_set = {asyncio.create_task(process_single_ctv_item(item)) for item in items_to_process}
 
         if not task_set:
             return

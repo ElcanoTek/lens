@@ -41,17 +41,14 @@ def _auth_cookie(email: str = "tester@elcanotek.com") -> str:
 
 os.environ["AUTH_SIGNING_PUBKEY"] = _AUTH_PUB_B64
 
-import web_service  # noqa: E402
+from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
-
-from conftest import make_orchestrator as _make_orchestrator  # noqa: E402
+import web_service  # noqa: E402
 
 
 def test_auto_mode_resolves_to_fast_first_pass(monkeypatch, tmp_path):
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nexample.com\n"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\n")
     assert orchestrator.auto_mode is True
     assert orchestrator.scrape_mode == "direct"
 
@@ -89,9 +86,7 @@ def test_non_auto_mode_only_warns_on_ctv_files(monkeypatch, tmp_path):
         'SSP,Publisher,"App, Account or Network Name",Bundle ID\n'
         "ExampleSSP,Northwind Broadcasting,Example News Network,512001\n"
     )
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, ctv_csv, scrape_mode="direct"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, ctv_csv, scrape_mode="direct")
 
     orchestrator._load_input_data()
     assert orchestrator.is_ctv_input is False
@@ -114,9 +109,7 @@ def test_auto_mode_detects_mixed_content(monkeypatch, tmp_path):
 async def test_deep_retry_noop_without_failures(monkeypatch, tmp_path):
     from contextlib import AsyncExitStack
 
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nexample.com\n"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\n")
     items = orchestrator._load_input_data()
 
     # No failures recorded -> the retry pass must not even probe for podman.
@@ -133,9 +126,7 @@ async def test_deep_retry_noop_without_failures(monkeypatch, tmp_path):
 async def test_deep_retry_skipped_when_deep_crawl_unavailable(monkeypatch, tmp_path):
     from contextlib import AsyncExitStack
 
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nexample.com\n"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\n")
     items = orchestrator._load_input_data()
     await orchestrator.progress_tracker.mark_domain_processed(
         "example.com", status="error", error_message="HTTP 403"
@@ -167,9 +158,7 @@ async def test_deep_retry_targets_only_failed_websites(monkeypatch, tmp_path):
     await orchestrator.progress_tracker.mark_domain_processed(
         "example.com", status="error", error_message="HTTP 403"
     )
-    await orchestrator.progress_tracker.mark_domain_processed(
-        "github.com", status="success"
-    )
+    await orchestrator.progress_tracker.mark_domain_processed("github.com", status="success")
     await orchestrator.progress_tracker.mark_domain_processed(
         "333903271", status="error", error_message="rate limited"
     )
@@ -188,9 +177,7 @@ async def test_deep_retry_targets_only_failed_websites(monkeypatch, tmp_path):
 
     import orchestration
 
-    monkeypatch.setattr(
-        orchestration, "ScraperClient", lambda **kwargs: FakeDeepScraper()
-    )
+    monkeypatch.setattr(orchestration, "ScraperClient", lambda **kwargs: FakeDeepScraper())
 
     processed = []
 
@@ -214,10 +201,8 @@ async def test_retry_pending_not_counted_as_processed(tmp_path):
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     tracker.set_total_domains(3)
     await tracker.mark_domain_processed("a.com", status="success")
-    await tracker.mark_domain_processed("b.com", status="retry_pending",
-                                        error_message="HTTP 403")
-    await tracker.mark_domain_processed("c.com", status="error",
-                                        error_message="DNS failure")
+    await tracker.mark_domain_processed("b.com", status="retry_pending", error_message="HTTP 403")
+    await tracker.mark_domain_processed("c.com", status="error", error_message="DNS failure")
 
     summary = tracker.get_summary()
     assert summary["processed"] == 2
@@ -234,8 +219,7 @@ async def test_retry_pending_resolves_to_success(tmp_path):
 
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     tracker.set_total_domains(1)
-    await tracker.mark_domain_processed("a.com", status="retry_pending",
-                                        error_message="HTTP 403")
+    await tracker.mark_domain_processed("a.com", status="retry_pending", error_message="HTTP 403")
     await tracker.mark_domain_processed("a.com", status="success")
 
     summary = tracker.get_summary()
@@ -252,8 +236,7 @@ async def test_finalize_pending_retries_converts_to_errors(tmp_path):
 
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     tracker.set_total_domains(2)
-    await tracker.mark_domain_processed("a.com", status="retry_pending",
-                                        error_message="HTTP 403")
+    await tracker.mark_domain_processed("a.com", status="retry_pending", error_message="HTTP 403")
     await tracker.mark_domain_processed("b.com", status="success")
 
     converted = await tracker.finalize_pending_retries()
@@ -268,8 +251,8 @@ async def test_finalize_pending_retries_converts_to_errors(tmp_path):
 
 @pytest.mark.asyncio
 async def test_domain_processor_defers_failures(monkeypatch, tmp_path):
-    from progress_tracker import ProgressTracker
     from domain_processing import DomainProcessor
+    from progress_tracker import ProgressTracker
     from shared_types import DomainWorkItem
 
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
@@ -350,16 +333,12 @@ def test_read_progress_excludes_retry_pending(monkeypatch, tmp_path):
 async def test_deep_retry_includes_retry_pending_items(monkeypatch, tmp_path):
     from contextlib import AsyncExitStack
 
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nexample.com\ngithub.com\n"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\ngithub.com\n")
     items = orchestrator._load_input_data()
     await orchestrator.progress_tracker.mark_domain_processed(
         "example.com", status="retry_pending", error_message="HTTP 403"
     )
-    await orchestrator.progress_tracker.mark_domain_processed(
-        "github.com", status="success"
-    )
+    await orchestrator.progress_tracker.mark_domain_processed("github.com", status="success")
 
     monkeypatch.setattr(orchestrator, "_deep_crawl_available", lambda: True)
 
@@ -375,9 +354,7 @@ async def test_deep_retry_includes_retry_pending_items(monkeypatch, tmp_path):
 
     import orchestration
 
-    monkeypatch.setattr(
-        orchestration, "ScraperClient", lambda **kwargs: FakeDeepScraper()
-    )
+    monkeypatch.setattr(orchestration, "ScraperClient", lambda **kwargs: FakeDeepScraper())
 
     processed = []
 
@@ -394,9 +371,7 @@ async def test_deep_retry_includes_retry_pending_items(monkeypatch, tmp_path):
     # failures stay retryable; with the fallback disabled they are terminal.
     assert orchestrator._defer_website_failures is True
 
-    monkeypatch.setattr(
-        orchestrator, "_research_fallback_available", lambda: False
-    )
+    monkeypatch.setattr(orchestrator, "_research_fallback_available", lambda: False)
     processed.clear()
     await orchestrator.progress_tracker.mark_domain_processed(
         "example.com", status="retry_pending", error_message="HTTP 403"
@@ -427,9 +402,7 @@ def test_dedupe_output_csv_prefers_success_rows(monkeypatch, tmp_path):
         writer.writerows(rows)
 
     monkeypatch.setattr(config, "OUTPUT_CSV_PATH", str(output_path))
-    orchestrator = _make_orchestrator(
-        monkeypatch, tmp_path, "pageURL\nexample.com\n"
-    )
+    orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\n")
     monkeypatch.setattr(config, "OUTPUT_CSV_PATH", str(output_path))
 
     orchestrator._dedupe_output_csv()
@@ -471,9 +444,7 @@ def test_enqueue_defaults_to_auto_mode(monkeypatch, tmp_path):
         assert response.status_code == 303
         assert "message=" in response.headers["location"]
 
-    state = json.loads(
-        (output_dir / web_service.JOBS_STATE_FILENAME).read_text(encoding="utf-8")
-    )
+    state = json.loads((output_dir / web_service.JOBS_STATE_FILENAME).read_text(encoding="utf-8"))
     assert state["jobs"][0]["mode"] == "auto"
 
 
@@ -520,13 +491,9 @@ def test_index_renders_unified_runs(monkeypatch, tmp_path):
     (input_dir / "list.csv").write_text("pageURL\nexample.com\n", encoding="utf-8")
 
     # An orphaned artifact group (no job in state) must surface as archived.
-    (output_dir / "20260101000000-abc123_output.csv").write_text(
-        "Domain\n", encoding="utf-8"
-    )
+    (output_dir / "20260101000000-abc123_output.csv").write_text("Domain\n", encoding="utf-8")
     (output_dir / "20260101000000-abc123_progress.json").write_text(
-        json.dumps(
-            {"summary": {"total_domains": 5, "successful": 4, "errors": 1}}
-        ),
+        json.dumps({"summary": {"total_domains": 5, "successful": 4, "errors": 1}}),
         encoding="utf-8",
     )
 

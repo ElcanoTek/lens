@@ -14,7 +14,6 @@ import os
 import time
 
 import pandas as pd
-import pytest
 
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
@@ -43,14 +42,14 @@ def _auth_cookie(email: str = "tester@elcanotek.com") -> str:
 
 os.environ["AUTH_SIGNING_PUBKEY"] = _AUTH_PUB_B64
 
-import web_service  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
 
+import web_service  # noqa: E402
+from input_detector import InputDetector, detect_input_column_by_content  # noqa: E402
 from orchestration import (  # noqa: E402
     _load_input_dataframe,
     _normalize_headerless_input_dataframe,
 )
-from input_detector import InputDetector, detect_input_column_by_content  # noqa: E402
 
 
 def _analyze(path):
@@ -73,9 +72,7 @@ def test_bom_crlf_csv_detects_domain_column(tmp_path):
 
 def test_headerless_xlsx_recovers_header_domain(tmp_path):
     path = tmp_path / "allowlist.xlsx"
-    pd.DataFrame(
-        {"harborlight-news.com": ["cedarpost.com", "01net-example.com"]}
-    ).to_excel(
+    pd.DataFrame({"harborlight-news.com": ["cedarpost.com", "01net-example.com"]}).to_excel(
         path, index=False
     )
     detector = _analyze(path)
@@ -106,9 +103,7 @@ def test_trailing_empty_columns_dropped(tmp_path):
 
 def test_content_fallback_finds_domain_column(tmp_path):
     path = tmp_path / "ranked.csv"
-    path.write_text(
-        "Position,Address\n1,nytimes.com\n2,wsj.com\n3,cnn.com\n", encoding="utf-8"
-    )
+    path.write_text("Position,Address\n1,nytimes.com\n2,wsj.com\n3,cnn.com\n", encoding="utf-8")
     detector = _analyze(path)
     assert detector.input_column == "Address"
     assert len(detector.item_types) == 3
@@ -338,14 +333,8 @@ def test_breakdown_counts_mixed_file(monkeypatch, tmp_path):
     # Composition bar segments, total row count, and labelled dot chips.
     assert '<span class="comp-seg seg-site" style="width: 60.0%;"></span>' in body
     assert "<strong>5</strong> rows" in body
-    assert (
-        '<span class="tchip"><span class="tdot seg-site"></span>Websites <b>3</b></span>'
-        in body
-    )
-    assert (
-        '<span class="tchip"><span class="tdot seg-ios"></span>iOS <b>1</b></span>'
-        in body
-    )
+    assert '<span class="tchip"><span class="tdot seg-site"></span>Websites <b>3</b></span>' in body
+    assert '<span class="tchip"><span class="tdot seg-ios"></span>iOS <b>1</b></span>' in body
 
 
 def test_breakdown_headerless_domain_list(monkeypatch, tmp_path):
@@ -353,9 +342,7 @@ def test_breakdown_headerless_domain_list(monkeypatch, tmp_path):
     header (the off-by-one fix)."""
     input_dir, _ = _client_dirs(monkeypatch, tmp_path)
     # No header row: the file goes straight into domains.
-    (input_dir / "domains.csv").write_text(
-        "example.com\nfoo.com\nbar.com\n", encoding="utf-8"
-    )
+    (input_dir / "domains.csv").write_text("example.com\nfoo.com\nbar.com\n", encoding="utf-8")
 
     breakdown = web_service._get_breakdown(input_dir / "domains.csv")
     # All three rows are counted, not two.

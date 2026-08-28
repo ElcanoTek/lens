@@ -16,15 +16,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from conftest import make_orchestrator as _make_orchestrator
+
 from config import config
 from domain_processing import DomainProcessor, derive_bot_protection
 from progress_tracker import ProgressTracker
 from shared_types import DomainWorkItem
 
-from conftest import make_orchestrator as _make_orchestrator
-
-
 # --- derivation matrix -------------------------------------------------------
+
 
 def test_direct_success_means_none_detected():
     assert derive_bot_protection("direct") == "None Detected"
@@ -32,62 +32,83 @@ def test_direct_success_means_none_detected():
 
 def test_browser_rescue_after_403_means_moderate():
     # Auto ladder: direct pass got a 403, Firecrawl rendered the page fine.
-    assert derive_bot_protection(
-        "firecrawl",
-        prior_error="Scrape validation failed: Received HTTP status 403",
-        prior_error_mode="direct",
-    ) == "Moderate"
+    assert (
+        derive_bot_protection(
+            "firecrawl",
+            prior_error="Scrape validation failed: Received HTTP status 403",
+            prior_error_mode="direct",
+        )
+        == "Moderate"
+    )
 
 
 def test_browser_rescue_after_nonblock_failure_means_none():
     # JS-heavy site: direct pass content was too short, not blocked.
-    assert derive_bot_protection(
-        "firecrawl",
-        prior_error="Scraped content too short (101 chars < 500)",
-        prior_error_mode="direct",
-    ) == "None Detected"
+    assert (
+        derive_bot_protection(
+            "firecrawl",
+            prior_error="Scraped content too short (101 chars < 500)",
+            prior_error_mode="direct",
+        )
+        == "None Detected"
+    )
 
 
 def test_research_rescue_after_browser_block_means_aggressive():
-    assert derive_bot_protection(
-        "research",
-        prior_error="Potential block page detected ('just a moment')",
-        prior_error_mode="firecrawl",
-    ) == "Aggressive"
+    assert (
+        derive_bot_protection(
+            "research",
+            prior_error="Potential block page detected ('just a moment')",
+            prior_error_mode="firecrawl",
+        )
+        == "Aggressive"
+    )
 
 
 def test_research_rescue_after_plain_http_block_means_moderate():
     # Ladder without Firecrawl/Chrome available: only the plain client was
     # proven blocked, so don't overstate.
-    assert derive_bot_protection(
-        "research",
-        prior_error="Received HTTP status 403",
-        prior_error_mode="direct",
-    ) == "Moderate"
+    assert (
+        derive_bot_protection(
+            "research",
+            prior_error="Received HTTP status 403",
+            prior_error_mode="direct",
+        )
+        == "Moderate"
+    )
 
 
 def test_research_rescue_without_block_evidence_means_unknown():
-    assert derive_bot_protection(
-        "research",
-        prior_error="Chrome scraping failed: timeout",
-        prior_error_mode="deep",
-    ) == "Unknown"
+    assert (
+        derive_bot_protection(
+            "research",
+            prior_error="Chrome scraping failed: timeout",
+            prior_error_mode="deep",
+        )
+        == "Unknown"
+    )
 
 
 def test_direct_failure_with_403_means_moderate():
-    assert derive_bot_protection(
-        "direct",
-        current_error="Scrape validation failed: Received HTTP status 403",
-    ) == "Moderate"
+    assert (
+        derive_bot_protection(
+            "direct",
+            current_error="Scrape validation failed: Received HTTP status 403",
+        )
+        == "Moderate"
+    )
 
 
 def test_browser_failure_with_block_means_aggressive():
-    assert derive_bot_protection(
-        "deep",
-        current_error="Potential block page detected ('captcha')",
-        prior_error="Received HTTP status 403",
-        prior_error_mode="direct",
-    ) == "Aggressive"
+    assert (
+        derive_bot_protection(
+            "deep",
+            current_error="Potential block page detected ('captcha')",
+            prior_error="Received HTTP status 403",
+            prior_error_mode="direct",
+        )
+        == "Aggressive"
+    )
 
 
 def test_research_failure_echoing_prior_block_uses_prior_rung():
@@ -97,36 +118,47 @@ def test_research_failure_echoing_prior_block_uses_prior_rung():
         "Received HTTP status 403; research fallback: Research found no "
         "meaningful public information about this domain"
     )
-    assert derive_bot_protection(
-        "research",
-        current_error=combined,
-        prior_error="Received HTTP status 403",
-        prior_error_mode="firecrawl",
-    ) == "Aggressive"
-    assert derive_bot_protection(
-        "research",
-        current_error=combined,
-        prior_error="Received HTTP status 403",
-        prior_error_mode="direct",
-    ) == "Moderate"
+    assert (
+        derive_bot_protection(
+            "research",
+            current_error=combined,
+            prior_error="Received HTTP status 403",
+            prior_error_mode="firecrawl",
+        )
+        == "Aggressive"
+    )
+    assert (
+        derive_bot_protection(
+            "research",
+            current_error=combined,
+            prior_error="Received HTTP status 403",
+            prior_error_mode="direct",
+        )
+        == "Moderate"
+    )
 
 
 def test_failure_without_block_evidence_means_unknown():
-    assert derive_bot_protection(
-        "direct", current_error="Chrome scraping failed: timeout"
-    ) == "Unknown"
+    assert (
+        derive_bot_protection("direct", current_error="Chrome scraping failed: timeout")
+        == "Unknown"
+    )
 
 
 def test_prior_mode_missing_reads_conservatively_as_moderate():
     # State files from before modes were tracked.
-    assert derive_bot_protection(
-        "research",
-        prior_error="Received HTTP status 429",
-        prior_error_mode=None,
-    ) == "Moderate"
+    assert (
+        derive_bot_protection(
+            "research",
+            prior_error="Received HTTP status 429",
+            prior_error_mode=None,
+        )
+        == "Moderate"
+    )
 
 
 # --- end-to-end through the record writers -----------------------------------
+
 
 def _make_processor(tmp_path):
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
@@ -203,6 +235,7 @@ async def test_failure_row_carries_bot_protection_and_mode_is_tracked(tmp_path):
 
 # --- output schema migration --------------------------------------------------
 
+
 def test_setup_output_file_migrates_old_header(monkeypatch, tmp_path):
     orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nexample.com\n")
 
@@ -211,7 +244,7 @@ def test_setup_output_file_migrates_old_header(monkeypatch, tmp_path):
     with open(out_path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=old_fields)
         writer.writeheader()
-        writer.writerow({field: "x" for field in old_fields})
+        writer.writerow(dict.fromkeys(old_fields, "x"))
 
     orchestrator._setup_output_file()
     orchestrator._teardown_output_file()

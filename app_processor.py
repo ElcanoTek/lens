@@ -14,12 +14,12 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional, TextIO
 
-from ios_api_client import iOSAPIClient
 from android_scraper import AndroidScraper
+from ios_api_client import iOSAPIClient
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
 from reporting import TerminalReporter, shorten_error
-from shared_types import WorkItem, ContentType
+from shared_types import ContentType, WorkItem
 
 logger = logging.getLogger(__name__)
 
@@ -305,7 +305,12 @@ class AppProcessor:
             processing_time=processing_time,
         )
 
-        logger.debug("Processed %s app: %s → %s", platform.upper(), app_name, classification_result["quality"])
+        logger.debug(
+            "Processed %s app: %s → %s",
+            platform.upper(),
+            app_name,
+            classification_result["quality"],
+        )
 
     async def _record_app_failure(
         self,

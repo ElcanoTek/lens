@@ -11,8 +11,8 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from http.client import RemoteDisconnected
 from datetime import datetime
+from http.client import RemoteDisconnected
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
@@ -95,8 +95,7 @@ def _browser_headers(user_agent: str) -> Dict[str, str]:
     return {
         "User-Agent": user_agent,
         "Accept": (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,"
-            "image/avif,image/webp,*/*;q=0.8"
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"
         ),
         "Accept-Language": "en-US,en;q=0.9",
         "Upgrade-Insecure-Requests": "1",
@@ -334,12 +333,8 @@ class ScraperClient:
             fallback_url = self._www_fallback_url(url)
             if fallback_url is None or not self._is_connection_failure(exc):
                 raise
-            logger.info(
-                "Connection to %s failed; retrying via %s", url, fallback_url
-            )
-            html, status_code = await self._fetch_html_with_retries(
-                fallback_url, timeout
-            )
+            logger.info("Connection to %s failed; retrying via %s", url, fallback_url)
+            html, status_code = await self._fetch_html_with_retries(fallback_url, timeout)
             url = fallback_url
         parsed = self._parse_html(url, html)
         parsed["status_code"] = status_code
@@ -390,14 +385,12 @@ class ScraperClient:
         if original_host != final_host:
             raise RuntimeError(f"URL redirected to different host: {final_host}")
 
-    async def _fetch_html_with_retries(
-        self, url: str, timeout: int
-    ) -> Tuple[str, int]:
+    async def _fetch_html_with_retries(self, url: str, timeout: int) -> Tuple[str, int]:
         if not self._web_session:
             raise RuntimeError("Web session is not initialised")
 
         last_exception = None
-        
+
         for attempt in range(1, self.max_retries + 1):
             try:
                 async with self._web_session.get(
@@ -419,9 +412,7 @@ class ScraperClient:
                 # DNS resolution won't heal within a retry cycle; fail fast so
                 # dead domains don't hold a session slot through backoff sleeps.
                 last_exception = exc
-                logger.warning(
-                    "DNS resolution failed for %s: %s", url, str(exc)[:100]
-                )
+                logger.warning("DNS resolution failed for %s: %s", url, str(exc)[:100])
                 break
             except Exception as exc:
                 last_exception = exc
@@ -429,13 +420,19 @@ class ScraperClient:
                     delay = self.retry_delay * (2 ** (attempt - 1))
                     logger.warning(
                         "Attempt %d/%d to fetch %s failed: %s. Retrying in %.1fs...",
-                        attempt, self.max_retries, url, str(exc)[:100], delay
+                        attempt,
+                        self.max_retries,
+                        url,
+                        str(exc)[:100],
+                        delay,
                     )
                     await asyncio.sleep(delay)
                 else:
                     logger.error(
                         "All %d attempts to fetch %s failed: %s",
-                        self.max_retries, url, str(exc)[:100]
+                        self.max_retries,
+                        url,
+                        str(exc)[:100],
                     )
 
         raise RuntimeError(f"Failed to fetch {url}: {last_exception}") from last_exception
@@ -489,9 +486,7 @@ class ScraperClient:
         """Verify the local Firecrawl API is reachable before accepting work."""
         if not self._web_session:
             raise RuntimeError("Web session is not initialised")
-        if not await firecrawl_service_ready(
-            self.firecrawl_url, session=self._web_session
-        ):
+        if not await firecrawl_service_ready(self.firecrawl_url, session=self._web_session):
             # __aexit__ never runs when __aenter__ raises, so close the
             # session here or it leaks its connector.
             await self._web_session.close()
@@ -539,29 +534,22 @@ class ScraperClient:
                         # against a site that is blocking us. Retrying from here
                         # just re-hammers that site (wasted time + ban risk), so
                         # surface it as a permanent failure instead of retrying.
-                        if (
-                            "SCRAPE_RETRY_LIMIT" in detail
-                            or "document_antibot" in detail
-                        ):
+                        if "SCRAPE_RETRY_LIMIT" in detail or "document_antibot" in detail:
                             raise RuntimeError(
                                 f"Firecrawl could not bypass anti-bot protection "
                                 f"(HTTP {response.status})"
                             )
-                        raise _RetryableStatusError(
-                            f"HTTP {response.status}: {detail}"
-                        )
+                        raise _RetryableStatusError(f"HTTP {response.status}: {detail}")
                     body = await response.json(content_type=None)
                     if not isinstance(body, dict):
                         raise RuntimeError(
-                            f"Firecrawl returned an unexpected response: "
-                            f"{str(body)[:100]}"
+                            f"Firecrawl returned an unexpected response: {str(body)[:100]}"
                         )
                     if not body.get("success", False):
                         # The service already exhausted its own fetch attempts;
                         # a retry from here would not change the outcome.
                         raise RuntimeError(
-                            f"Firecrawl scrape failed: "
-                            f"{body.get('error', 'unknown error')}"
+                            f"Firecrawl scrape failed: {body.get('error', 'unknown error')}"
                         )
                     return self._parse_firecrawl_document(url, body.get("data") or {})
             except RuntimeError:
@@ -571,9 +559,12 @@ class ScraperClient:
                 if attempt < self.max_retries:
                     delay = self.retry_delay * (2 ** (attempt - 1))
                     logger.warning(
-                        "Attempt %d/%d to scrape %s via Firecrawl failed: %s. "
-                        "Retrying in %.1fs...",
-                        attempt, self.max_retries, url, str(exc)[:100], delay,
+                        "Attempt %d/%d to scrape %s via Firecrawl failed: %s. Retrying in %.1fs...",
+                        attempt,
+                        self.max_retries,
+                        url,
+                        str(exc)[:100],
+                        delay,
                     )
                     await asyncio.sleep(delay)
 
@@ -581,9 +572,7 @@ class ScraperClient:
             f"Failed to scrape {url} via Firecrawl: {last_exception}"
         ) from last_exception
 
-    def _parse_firecrawl_document(
-        self, url: str, document: Dict[str, Any]
-    ) -> Dict[str, Any]:
+    def _parse_firecrawl_document(self, url: str, document: Dict[str, Any]) -> Dict[str, Any]:
         metadata = document.get("metadata") or {}
 
         final_url = metadata.get("url") or metadata.get("sourceURL") or url
@@ -629,9 +618,7 @@ class ScraperClient:
             "total_sessions": total_sessions,
             "in_use": in_use_sessions,
             "available": available_sessions,
-            "utilization": (in_use_sessions / total_sessions * 100)
-            if total_sessions > 0
-            else 0,
+            "utilization": (in_use_sessions / total_sessions * 100) if total_sessions > 0 else 0,
         }
 
     def get_mode(self) -> str:
@@ -724,9 +711,7 @@ class ScraperClient:
                     "Set `deep_scrape_image` to a fully qualified reference such as "
                     "'docker.io/selenium/standalone-chrome:latest'."
                 )
-                raise RuntimeError(
-                    f"Failed to start Chrome container: {error_output}"
-                ) from exc
+                raise RuntimeError(f"Failed to start Chrome container: {error_output}") from exc
 
             # A pre-seeded image should survive registry/userns pull failures:
             # retry once against the local copy before giving up.
@@ -750,9 +735,7 @@ class ScraperClient:
                         f"Failed to start Chrome container: {retry_output}"
                     ) from retry_exc
             else:
-                raise RuntimeError(
-                    f"Failed to start Chrome container: {error_output}"
-                ) from exc
+                raise RuntimeError(f"Failed to start Chrome container: {error_output}") from exc
 
         self._container_started = True
         self._wait_for_container_ready()
@@ -775,9 +758,7 @@ class ScraperClient:
         try:
             result = self._podman("ps", "--format", "{{.Names}}")
         except FileNotFoundError as exc:
-            raise RuntimeError(
-                f"Podman executable '{self.podman_binary}' not found."
-            ) from exc
+            raise RuntimeError(f"Podman executable '{self.podman_binary}' not found.") from exc
         except subprocess.CalledProcessError:
             return False
 
@@ -792,9 +773,7 @@ class ScraperClient:
             try:
                 with urllib.request.urlopen(status_url, timeout=2) as response:
                     if response.status != 200:
-                        raise urllib.error.URLError(
-                            f"Unexpected status code {response.status}"
-                        )
+                        raise urllib.error.URLError(f"Unexpected status code {response.status}")
                     payload = json.loads(response.read().decode("utf-8"))
                     value = payload.get("value", {}) if isinstance(payload, dict) else {}
                     ready = value.get("ready", True)
@@ -820,9 +799,7 @@ class ScraperClient:
                 time.sleep(1)
                 continue
 
-        raise RuntimeError(
-            "Timed out waiting for Chrome container to become ready"
-        )
+        raise RuntimeError("Timed out waiting for Chrome container to become ready")
 
     def _create_webdriver(self):
         assert SELENIUM_AVAILABLE and webdriver is not None and Options is not None
@@ -892,9 +869,7 @@ class ScraperClient:
                     exc,
                 )
                 await asyncio.to_thread(self._recover_chrome_session, session, exc)
-                return await self._scrape_with_chrome_internal(
-                    session, url, timeout, False
-                )
+                return await self._scrape_with_chrome_internal(session, url, timeout, False)
 
             raise RuntimeError(f"Chrome scraping failed: {exc}") from exc
 

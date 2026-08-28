@@ -13,7 +13,6 @@ from typing import List, Optional
 
 from config import config
 from orchestration import SiteAnalysisOrchestrator
-from shared_types import DomainWorkItem
 
 logger = logging.getLogger(__name__)
 
@@ -37,13 +36,14 @@ def _setup_logging(log_file_path: str) -> None:
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
         handlers=[file_handler, stream_handler],
     )
-    
+
+
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     """Parse command-line arguments."""
 
     parser = argparse.ArgumentParser(
         description="Run Lens: classify websites, apps and CTV inventory "
-                    "into advertising-quality tiers."
+        "into advertising-quality tiers."
     )
     parser.add_argument(
         "--quiet",
@@ -150,20 +150,20 @@ async def main(argv: Optional[List[str]] = None):
     reject_redirects = bool(getattr(config, "REJECT_REDIRECTS", True)) and not args.allow_redirects
 
     if args.llm_model:
-        setattr(config, "LLM_MODEL", args.llm_model)
-        setattr(config, "CTV_CLASSIFICATION_MODEL", args.llm_model)
+        config.LLM_MODEL = args.llm_model
+        config.CTV_CLASSIFICATION_MODEL = args.llm_model
     if args.research_fallback:
-        setattr(config, "RESEARCH_FALLBACK_ENABLED", args.research_fallback == "on")
+        config.RESEARCH_FALLBACK_ENABLED = args.research_fallback == "on"
     if args.research_model:
-        setattr(config, "RESEARCH_MODEL", args.research_model)
+        config.RESEARCH_MODEL = args.research_model
     if args.input_csv:
-        setattr(config, "INPUT_CSV_PATH", args.input_csv)
+        config.INPUT_CSV_PATH = args.input_csv
     if args.output_csv:
-        setattr(config, "OUTPUT_CSV_PATH", args.output_csv)
+        config.OUTPUT_CSV_PATH = args.output_csv
     if args.progress_file:
-        setattr(config, "PROGRESS_FILE_PATH", args.progress_file)
+        config.PROGRESS_FILE_PATH = args.progress_file
     if args.log_file:
-        setattr(config, "LOG_FILE_PATH", args.log_file)
+        config.LOG_FILE_PATH = args.log_file
 
     _setup_logging(str(getattr(config, "LOG_FILE_PATH", "site_analysis.log")))
 
@@ -182,6 +182,7 @@ async def main(argv: Optional[List[str]] = None):
     except Exception as e:
         logger.error(f"Application failed: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -87,18 +87,38 @@ real; it skips itself when no usable key is present.
 
 ## Linting
 
-`black` and `flake8` are in `requirements.txt` and are useful locally, but they
-are **advisory** — neither is configured or enforced in CI, and the existing
-tree is not clean under either default profile.
+[Ruff](https://docs.astral.sh/ruff/) handles both formatting and linting; it
+replaced the earlier `black` + `flake8` pair. The tree is clean and CI
+**enforces** it, so a violation fails the build.
 
 ```bash
-python -m black --diff .          # see what it would change
-python -m flake8 <files-you-touched>
+ruff format .        # apply formatting
+ruff check .         # lint
+ruff check --fix .   # apply the safe fixes
 ```
 
-Please keep formatting changes out of functional PRs: a `black` run across a
-module you touched turns a five-line fix into a thousand-line diff nobody can
-review. Match the surrounding style instead. **The test suite is the gate.**
+Run both before pushing. The `lint` job runs them as `--check`, in parallel
+with the tests.
+
+Configuration lives in `pyproject.toml`, and a few decisions there are
+deliberate:
+
+- **Line length is the formatter's job, so `E501` is off.** `ruff format`
+  wraps everything it safely can; what's left is mostly the prompt literals in
+  `openrouter_client.py`. Hand-wrapping those would edit prompt text and change
+  classification behavior.
+- **`tests/` is exempt from `E402`.** This encodes the import-ordering rule
+  described above — the suites must stub the API key and extend `sys.path`
+  before importing project modules, so the linter is told not to "fix" them.
+- **FastAPI's `Depends`/`File`/`Form` markers are exempt from `B008`.** Calling
+  them in argument defaults is how a route declares dependencies.
+- **`UP` and `SIM` are deliberately not enabled.** The reasoning is recorded in
+  `pyproject.toml`.
+
+Because formatting is now automatic and enforced, it no longer bloats diffs the
+way an ad-hoc `black` run once did — so the old advice to avoid reformatting is
+gone. Do still keep unrelated refactors out of functional PRs. The test suite
+remains the gate on behavior; the linter is the gate on style.
 
 ## Branches and pull requests
 

@@ -1,18 +1,17 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2026 ElcanoTek, Inc.
 
-import asyncio
 import logging
 import time
 from datetime import datetime
 from typing import Any, Dict, Optional, TextIO
 
 from config import config
-from shared_types import DomainWorkItem, is_antibot_error
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
 from reporting import TerminalReporter, shorten_error
 from scraper_client import ScraperClient
+from shared_types import DomainWorkItem, is_antibot_error
 
 logger = logging.getLogger(__name__)
 
@@ -105,9 +104,7 @@ class DomainProcessor:
             session = await self.scraper_client.get_available_session()
 
             try:
-                scrape_result = await self.scraper_client.scrape_site(
-                    session, item.domain
-                )
+                scrape_result = await self.scraper_client.scrape_site(session, item.domain)
                 scrape_mode = scrape_result.get("mode", self.scraper_client.get_mode())
 
                 validation_error = self._validate_scrape_result(scrape_result)
@@ -176,9 +173,7 @@ class DomainProcessor:
             if self.reporter:
                 short_error = shorten_error(error_message)
                 size_kb = (
-                    (scrape_result.get("content_length", 0) or 0) / 1024
-                    if scrape_result
-                    else None
+                    (scrape_result.get("content_length", 0) or 0) / 1024 if scrape_result else None
                 )
                 await self.reporter.log_attempt(
                     domain=item.domain,
@@ -187,12 +182,8 @@ class DomainProcessor:
                     error=short_error,
                     elapsed=processing_time,
                     size_kb=size_kb,
-                    retries_used=(
-                        scrape_result.get("retries_used", 0) if scrape_result else 0
-                    ),
-                    cache_status=(
-                        scrape_result.get("cache_status") if scrape_result else None
-                    ),
+                    retries_used=(scrape_result.get("retries_used", 0) if scrape_result else 0),
+                    cache_status=(scrape_result.get("cache_status") if scrape_result else None),
                 )
 
     async def process_domain_research(self, item: DomainWorkItem) -> None:
@@ -217,9 +208,7 @@ class DomainProcessor:
                 max_tokens=getattr(config, "RESEARCH_MAX_TOKENS", 1500),
             )
             if not research.get("success", False):
-                raise RuntimeError(
-                    f"Research failed: {research.get('error', 'unknown error')}"
-                )
+                raise RuntimeError(f"Research failed: {research.get('error', 'unknown error')}")
             research_content = research.get("research_content", "")
             if not research_content:
                 raise RuntimeError(
@@ -329,7 +318,9 @@ class DomainProcessor:
             content_length = len(content)
 
         if content_length < config.MIN_CONTENT_LENGTH:
-            return f"Scraped content too short ({content_length} chars < {config.MIN_CONTENT_LENGTH})"
+            return (
+                f"Scraped content too short ({content_length} chars < {config.MIN_CONTENT_LENGTH})"
+            )
 
         lower_snippet = content.lower()[:512]
         block_phrases = (

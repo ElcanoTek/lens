@@ -12,11 +12,11 @@ import signal
 import socket
 import sys
 import time
-from io import BytesIO
 from collections import deque
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from io import BytesIO
 from pathlib import Path
 from typing import Deque, Dict, List, Optional
 from urllib.parse import urlencode
@@ -27,7 +27,6 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from auth_cookie import AUTH_LOGIN_URL, current_identity, login_redirect
-
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "managed-files" / "inputs"
@@ -173,10 +172,7 @@ async def _get_model_catalog() -> Dict[str, List[Dict[str, str]]]:
     has_cached = any(cached.values())
     if has_cached and now - cached_at < _MODEL_CATALOG_TTL_SECONDS:
         return cached
-    if (
-        not has_cached
-        and now - _model_catalog_failed_at < _MODEL_CATALOG_RETRY_SECONDS
-    ):
+    if not has_cached and now - _model_catalog_failed_at < _MODEL_CATALOG_RETRY_SECONDS:
         return _EMPTY_CATALOG
 
     try:
@@ -186,13 +182,13 @@ async def _get_model_catalog() -> Dict[str, List[Dict[str, str]]]:
         api_key = os.getenv("OPENROUTER_API_KEY")
         if api_key:
             headers["Authorization"] = f"Bearer {api_key}"
-        async with aiohttp.ClientSession(
-            timeout=aiohttp.ClientTimeout(total=10)
-        ) as session:
-            async with session.get(OPENROUTER_MODELS_URL, headers=headers) as resp:
-                if resp.status != 200:
-                    raise RuntimeError(f"HTTP {resp.status}")
-                payload = await resp.json(content_type=None)
+        async with (
+            aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session,
+            session.get(OPENROUTER_MODELS_URL, headers=headers) as resp,
+        ):
+            if resp.status != 200:
+                raise RuntimeError(f"HTTP {resp.status}")
+            payload = await resp.json(content_type=None)
     except Exception:
         # Keep serving the stale catalog if we have one; otherwise degrade to
         # the recommended defaults only.
@@ -211,9 +207,7 @@ async def _get_model_catalog() -> Dict[str, List[Dict[str, str]]]:
 
 def _allowed_model_ids(kind: str = "classify") -> set:
     _, cached = _model_catalog_cache
-    recommended = (
-        RECOMMENDED_MODEL if kind == "classify" else RECOMMENDED_RESEARCH_MODEL
-    )
+    recommended = RECOMMENDED_MODEL if kind == "classify" else RECOMMENDED_RESEARCH_MODEL
     return {option["id"] for option in cached.get(kind, [])} | {recommended}
 
 
@@ -231,6 +225,8 @@ def _firecrawl_probably_up() -> bool:
         value = False
     _firecrawl_probe_cache = (now, value)
     return value
+
+
 ALLOWED_INPUT_EXTENSIONS = {".csv", ".xlsx"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 XLSX_MAGIC = b"PK\x03\x04"
@@ -297,16 +293,12 @@ def _verify_input_payload(filename: str, payload: bytes) -> None:
     suffix = Path(filename).suffix.lower()
     if suffix == ".xlsx":
         if not payload.startswith(XLSX_MAGIC):
-            raise ValueError(
-                "File does not look like a valid .xlsx workbook (wrong file contents)"
-            )
+            raise ValueError("File does not look like a valid .xlsx workbook (wrong file contents)")
     elif suffix == ".csv":
         # CSV has no magic bytes, but a NUL byte in the leading sample is a
         # reliable signal of a binary file mislabeled as CSV.
         if b"\x00" in payload[:4096]:
-            raise ValueError(
-                "File does not look like a valid CSV (binary contents detected)"
-            )
+            raise ValueError("File does not look like a valid CSV (binary contents detected)")
 
 
 def _normalize_job_name(raw: Optional[str]) -> Optional[str]:
@@ -572,11 +564,7 @@ class JobManager:
         if mode not in ALLOWED_MODES:
             raise ValueError(f"Invalid mode: {mode}")
 
-        job_id = (
-            datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S")
-            + "-"
-            + secrets.token_hex(3)
-        )
+        job_id = datetime.now(tz=timezone.utc).strftime("%Y%m%d%H%M%S") + "-" + secrets.token_hex(3)
         cleaned_name = (name or "").strip() or None
         job = Job(
             id=job_id,
@@ -597,9 +585,7 @@ class JobManager:
 
     async def list_jobs(self) -> List[Job]:
         async with self.lock:
-            return sorted(
-                self.jobs.values(), key=lambda item: item.created_at, reverse=True
-            )
+            return sorted(self.jobs.values(), key=lambda item: item.created_at, reverse=True)
 
     async def get_job(self, job_id: str) -> Optional[Job]:
         async with self.lock:
@@ -902,9 +888,7 @@ def _read_dataframe_for_breakdown(path: Path):
         header = str(df.columns[0])
         if ";" in header or "\t" in header:
             try:
-                sniffed = pd.read_csv(
-                    path, encoding="utf-8-sig", sep=None, engine="python"
-                )
+                sniffed = pd.read_csv(path, encoding="utf-8-sig", sep=None, engine="python")
                 if len(sniffed.columns) > 1:
                     df = sniffed
             except Exception:
@@ -922,6 +906,7 @@ def _normalize_headerless_breakdown_df(df):
     whether the "header" cell itself looks like processable data.
     """
     import pandas as pd
+
     from input_detector import CANDIDATE_COLUMNS, _looks_processable
 
     if len(df.columns) != 1 or df.empty:
@@ -942,9 +927,7 @@ def _normalize_headerless_breakdown_df(df):
         return df
 
     column_values = [
-        value.strip()
-        for value in df.iloc[:, 0].dropna().astype(str).tolist()
-        if value.strip()
+        value.strip() for value in df.iloc[:, 0].dropna().astype(str).tolist() if value.strip()
     ]
     # Recover the first row but keep every row — the breakdown reports what's
     # in the file, so we don't de-duplicate here.
@@ -1080,17 +1063,13 @@ def _breakdown_chips(breakdown: Dict[str, int]) -> List[Dict[str, object]]:
         if not count:
             continue
         pct = round(count / total * 100, 2) if total else 0
-        chips.append(
-            {"key": key, "seg": seg, "label": label, "count": count, "pct": pct}
-        )
+        chips.append({"key": key, "seg": seg, "label": label, "count": count, "pct": pct})
     return chips
 
 
 def _breakdown_label(breakdown: Dict[str, int]) -> str:
     """Plain-text summary like '318 Websites · 64 iOS' (comp-bar aria-label)."""
-    return " · ".join(
-        f"{chip['count']:,} {chip['label']}" for chip in _breakdown_chips(breakdown)
-    )
+    return " · ".join(f"{chip['count']:,} {chip['label']}" for chip in _breakdown_chips(breakdown))
 
 
 def _list_input_files() -> List[Dict[str, object]]:
@@ -1205,9 +1184,7 @@ async def index(request: Request):
         match = re.match(r"^(\d{14})-", job_id)
         if match:
             try:
-                dt = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(
-                    tzinfo=timezone.utc
-                )
+                dt = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
                 return dt.strftime("%b %d, %Y %H:%M UTC")
             except ValueError:
                 pass
@@ -1215,15 +1192,11 @@ async def index(request: Request):
             return _format_created_at(fallback_iso)
         return "Unknown date"
 
-    def _job_id_timestamp_iso(
-        job_id: str, fallback_iso: Optional[str]
-    ) -> Optional[str]:
+    def _job_id_timestamp_iso(job_id: str, fallback_iso: Optional[str]) -> Optional[str]:
         match = re.match(r"^(\d{14})-", job_id)
         if match:
             try:
-                dt = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(
-                    tzinfo=timezone.utc
-                )
+                dt = datetime.strptime(match.group(1), "%Y%m%d%H%M%S").replace(tzinfo=timezone.utc)
                 return dt.isoformat()
             except ValueError:
                 pass
@@ -1273,9 +1246,7 @@ async def index(request: Request):
         )
         fast_rate = elapsed_seconds / attempts
         remaining_fresh = max(0, total - attempts)
-        remaining_seconds = (
-            remaining_fresh * fast_rate + retrying * retry_seconds_per_item
-        )
+        remaining_seconds = remaining_fresh * fast_rate + retrying * retry_seconds_per_item
 
         if remaining_seconds < 60:
             return "< 1m remaining"
@@ -1488,9 +1459,7 @@ async def enqueue_job(
         return _redirect_with_params({"error": str(exc)})
 
     if not (INPUT_DIR / safe_input).exists():
-        return RedirectResponse(
-            url="/?error=Input+file+does+not+exist", status_code=303
-        )
+        return RedirectResponse(url="/?error=Input+file+does+not+exist", status_code=303)
 
     if mode not in ALLOWED_MODES:
         return RedirectResponse(url="/?error=Invalid+mode", status_code=303)
@@ -1511,9 +1480,7 @@ async def enqueue_job(
     elif res_model is not None:
         await _get_model_catalog()
         if res_model not in _allowed_model_ids("research"):
-            return RedirectResponse(
-                url="/?error=Unknown+research+model", status_code=303
-            )
+            return RedirectResponse(url="/?error=Unknown+research+model", status_code=303)
 
     # The checkbox posts "on" when checked and is absent when unchecked; the
     # hidden companion field posts "default" so API clients that omit both
@@ -1638,16 +1605,12 @@ async def rename_file(
             cleaned_new += Path(safe_old).suffix
         safe_new = _validate_input_filename(cleaned_new)
     except ValueError as exc:
-        return _redirect_with_params(
-            {"files_error": str(exc), "files_scope": destination}
-        )
+        return _redirect_with_params({"files_error": str(exc), "files_scope": destination})
 
     old_path = INPUT_DIR / safe_old
     new_path = INPUT_DIR / safe_new
     if not old_path.exists() or not old_path.is_file():
-        return _redirect_with_params(
-            {"files_error": "File not found", "files_scope": destination}
-        )
+        return _redirect_with_params({"files_error": "File not found", "files_scope": destination})
     if safe_new == safe_old:
         return _redirect_with_params(
             {"files_message": "Name unchanged", "files_scope": destination}
@@ -1678,7 +1641,7 @@ async def download_file(request: Request, destination: str, filename: str):
     try:
         safe_name = _safe_filename(filename)
     except ValueError:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404) from None
 
     if _is_protected_output(destination, safe_name):
         raise HTTPException(status_code=404)
@@ -1691,9 +1654,7 @@ async def download_file(request: Request, destination: str, filename: str):
 
 
 @app.post("/files/delete")
-async def delete_file(
-    request: Request, destination: str = Form(...), filename: str = Form(...)
-):
+async def delete_file(request: Request, destination: str = Form(...), filename: str = Form(...)):
     _require_auth(request)
     if destination not in {"inputs", "outputs"}:
         return _redirect_with_params(
@@ -1703,20 +1664,14 @@ async def delete_file(
     try:
         safe_name = _safe_filename(filename)
     except ValueError as exc:
-        return _redirect_with_params(
-            {"files_error": str(exc), "files_scope": destination}
-        )
+        return _redirect_with_params({"files_error": str(exc), "files_scope": destination})
 
     if _is_protected_output(destination, safe_name):
-        return _redirect_with_params(
-            {"files_error": "File not found", "files_scope": destination}
-        )
+        return _redirect_with_params({"files_error": "File not found", "files_scope": destination})
 
     path = (INPUT_DIR if destination == "inputs" else OUTPUT_DIR) / safe_name
     if not path.exists() or not path.is_file():
-        return _redirect_with_params(
-            {"files_error": "File not found", "files_scope": destination}
-        )
+        return _redirect_with_params({"files_error": "File not found", "files_scope": destination})
 
     path.unlink()
     return _redirect_with_params(

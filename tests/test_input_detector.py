@@ -7,24 +7,22 @@ These tests verify that the content type classifier correctly distinguishes
 between websites/URLs, Android apps, and iOS apps.
 """
 
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from input_detector import (
-    detect_input_column,
-    detect_content_type,
-    detect_type_column,
-    parse_content_type_hint,
     _is_url_or_website,
     _is_valid_android_package,
+    detect_content_type,
+    detect_input_column,
+    detect_type_column,
+    parse_content_type_hint,
 )
 from shared_types import ContentType
 
@@ -69,9 +67,7 @@ class TestWebsiteDetection:
             "example.ai",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_detect_input_column_finds_domain_header(self):
         df = pd.DataFrame({"Domain": ["example.com", "github.com"]})
@@ -93,9 +89,7 @@ class TestWebsiteDetection:
             "example.ru",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_domains_with_compound_tlds(self):
         """Domains with compound TLDs should be detected as websites."""
@@ -108,9 +102,7 @@ class TestWebsiteDetection:
             "example.co.nz",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_subdomains_ending_with_tlds(self):
         """Subdomains ending with TLDs should be detected as websites."""
@@ -123,9 +115,7 @@ class TestWebsiteDetection:
             "cdn.static.example.com",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_domains_starting_with_tld_like_prefixes(self):
         """Domains that start with TLD-like prefixes but end with TLDs should be websites.
@@ -144,9 +134,7 @@ class TestWebsiteDetection:
             "com.company.io",  # Starts with "com." but ends with ".io"
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_www_prefix(self):
         """Domains with www prefix should be detected as websites."""
@@ -156,9 +144,7 @@ class TestWebsiteDetection:
             "www.example.net",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
     def test_urls_with_paths(self):
         """URLs with paths should be detected as websites."""
@@ -236,9 +222,7 @@ class TestWebsiteDetection:
             "api-v2.company.io",
         ]
         for domain in domains:
-            assert detect_content_type(domain) == ContentType.WEBSITE, (
-                f"Failed for: {domain}"
-            )
+            assert detect_content_type(domain) == ContentType.WEBSITE, f"Failed for: {domain}"
 
 
 class TestAndroidAppDetection:
@@ -257,9 +241,7 @@ class TestAndroidAppDetection:
             "net.oneplus.launcher",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
     def test_android_packages_with_underscores(self):
         """Android packages with underscores should be detected correctly."""
@@ -269,9 +251,7 @@ class TestAndroidAppDetection:
             "org.project.module_one",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
     def test_android_packages_with_numbers(self):
         """Android packages with numbers should be detected correctly."""
@@ -281,9 +261,7 @@ class TestAndroidAppDetection:
             "org.project.module1",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
     def test_android_packages_with_various_prefixes(self):
         """Android packages with various known prefixes should be detected."""
@@ -300,9 +278,7 @@ class TestAndroidAppDetection:
             "tv.company.streaming",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
     def test_packages_without_known_prefix_non_tld_leaf(self):
         """Real packages that do NOT start with a known reverse-DNS prefix.
@@ -319,9 +295,7 @@ class TestAndroidAppDetection:
             "beetles.puzzle.solitaire",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
     def test_deeply_nested_packages_with_tld_leaf(self):
         """Packages whose leaf collides with a real TLD (.free/.games/.news) but
@@ -333,9 +307,7 @@ class TestAndroidAppDetection:
             "park.master.car.parking.games",
         ]
         for package in packages:
-            assert detect_content_type(package) == ContentType.ANDROID_APP, (
-                f"Failed for: {package}"
-            )
+            assert detect_content_type(package) == ContentType.ANDROID_APP, f"Failed for: {package}"
 
 
 class TestAndroidAppNotDetected:
@@ -413,9 +385,7 @@ class TestiOSAppDetection:
             "389801252",  # Instagram
         ]
         for app_id in ids:
-            assert detect_content_type(app_id) == ContentType.IOS_APP, (
-                f"Failed for: {app_id}"
-            )
+            assert detect_content_type(app_id) == ContentType.IOS_APP, f"Failed for: {app_id}"
 
     def test_numeric_with_leading_zeros(self):
         """Numeric values with leading zeros should be detected as iOS apps."""
@@ -424,9 +394,7 @@ class TestiOSAppDetection:
             "0001",
         ]
         for app_id in ids:
-            assert detect_content_type(app_id) == ContentType.IOS_APP, (
-                f"Failed for: {app_id}"
-            )
+            assert detect_content_type(app_id) == ContentType.IOS_APP, f"Failed for: {app_id}"
 
 
 class TestEdgeCases:
@@ -470,9 +438,7 @@ class TestEdgeCases:
             "com.example?app",  # Question marks not allowed
         ]
         for value in values:
-            assert detect_content_type(value) == ContentType.WEBSITE, (
-                f"Wrongly classified: {value}"
-            )
+            assert detect_content_type(value) == ContentType.WEBSITE, f"Wrongly classified: {value}"
 
 
 class TestHelperFunctions:
@@ -506,9 +472,7 @@ class TestHelperFunctions:
 
     def test_is_valid_android_package_invalid(self):
         """Test _is_valid_android_package with invalid packages."""
-        assert (
-            _is_valid_android_package("example.com") is True
-        )  # Valid format, just short
+        assert _is_valid_android_package("example.com") is True  # Valid format, just short
         assert _is_valid_android_package("com-example-app") is False  # Hyphens
         assert _is_valid_android_package("com.example/app") is False  # Slash
         assert _is_valid_android_package("com") is False  # Single segment
@@ -535,9 +499,7 @@ class TestRealWorldExamples:
         ]
         for domain in domains:
             result = detect_content_type(domain)
-            assert result == ContentType.WEBSITE, (
-                f"'{domain}' misclassified as {result.value}"
-            )
+            assert result == ContentType.WEBSITE, f"'{domain}' misclassified as {result.value}"
 
     def test_real_android_packages(self):
         """Real Android package names should be classified correctly."""
@@ -555,9 +517,7 @@ class TestRealWorldExamples:
         ]
         for package in packages:
             result = detect_content_type(package)
-            assert result == ContentType.ANDROID_APP, (
-                f"'{package}' misclassified as {result.value}"
-            )
+            assert result == ContentType.ANDROID_APP, f"'{package}' misclassified as {result.value}"
 
     def test_real_ios_app_ids(self):
         """Real iOS App Store IDs should be classified correctly."""
@@ -570,9 +530,7 @@ class TestRealWorldExamples:
         ]
         for app_id in app_ids:
             result = detect_content_type(app_id)
-            assert result == ContentType.IOS_APP, (
-                f"'{app_id}' misclassified as {result.value}"
-            )
+            assert result == ContentType.IOS_APP, f"'{app_id}' misclassified as {result.value}"
 
 
 class TestContentTypeHint:
