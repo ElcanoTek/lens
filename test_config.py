@@ -11,6 +11,10 @@ from typing import Dict, Any
 
 class TestConfig:
     """Test configuration class that uses dummy values."""
+
+    # A helper, not a test case. The `Test` prefix makes pytest try to collect
+    # it, which it then warns about because of the __init__ below.
+    __test__ = False
     
     def __init__(self, config_file: str = "config.json"):
         self.config_file = config_file
