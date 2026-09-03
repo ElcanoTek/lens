@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 ElcanoTek, Inc.
 # Print the effective Business Source License Change Date for this checkout.
 #
 # The Change Date is two years after the author date of the commit you are
