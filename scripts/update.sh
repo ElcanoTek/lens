@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 ElcanoTek, Inc.
 # scripts/update.sh — staged update for a Lens install.
 
 set -euo pipefail
