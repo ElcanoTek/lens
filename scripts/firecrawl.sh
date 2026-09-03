@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 ElcanoTek, Inc.
 # scripts/firecrawl.sh — manage the local self-hosted Firecrawl stack.
 #
 # Lens uses Firecrawl (when running) as a fast JS-capable retry pass in auto
