@@ -161,7 +161,9 @@ and verified to install and pass the suite on both 3.11 and 3.12.
 ## Branches and pull requests
 
 Work on a branch off `main` and open a PR — `main` is protected and CI runs on
-pull requests. The convention in this repo's history is a
+pull requests, alongside CodeQL (`.github/workflows/codeql.yml`), which also
+scans weekly. The issue and pull-request templates under `.github/` ask for
+exactly what a reviewer needs. The convention in this repo's history is a
 `<type>/<short-description>` slug:
 
 | Prefix | For |
