@@ -15,7 +15,7 @@ openpyxl>=3.1.5
 python-dotenv>=1.2.3
 
 # OpenAI SDK for OpenRouter compatibility
-openai>=3.3.1
+openai>=3.6.0
 
 # Utilities
 beautifulsoup4>=4.15.0
