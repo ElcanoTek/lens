@@ -192,12 +192,21 @@ ok "staging venv ready"
 
 step "3/4  Swapping + restarting"
 systemctl stop "$SERVICE" || true
+if ! python3 "$STAGING/scripts/migrate_access_db.py" \
+  --legacy "$APP_DIR/data/access.db" \
+  --target /var/lib/lens/access.db \
+  --env-file "$APP_DIR/.env" \
+  --owner "$APP_USER"; then
+  systemctl start "$SERVICE" 2>/dev/null || true
+  die "could not prepare persistent Lens access database; previous service restarted"
+fi
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
-# (managed-files) and rootless podman's storage/config under the service
-# user's home (.local/.config/.cache hold the pre-seeded Chrome image).
+# (managed-files), the legacy auth DB retained for operator verification
+# (data), and rootless podman's storage/config under the service user's home
+# (.local/.config/.cache hold the pre-seeded Chrome image).
 rsync -a --delete \
   --exclude='/.git' --exclude='/.venv' --exclude='/.env' \
-  --exclude='/managed-files' \
+  --exclude='/managed-files' --exclude='/data' \
   --exclude='/.local' --exclude='/.config' --exclude='/.cache' \
   "$STAGING/" "$APP_DIR/"
 if [[ -d "$APP_DIR/.venv" ]]; then

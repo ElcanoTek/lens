@@ -8,7 +8,7 @@
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
-#   5. Writes /opt/lens/.env with AUTH_SIGNING_PUBKEY (unified auth cookie)
+#   5. Writes /opt/lens/.env and migrates persistent auth state to /var/lib/lens
 #   6. Installs the lens systemd unit + operator CLI
 #   7. Enables and starts the service; health-checks /health
 #
@@ -170,11 +170,12 @@ if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
   rsync -a --exclude='/.venv' "$SRC_DIR/" "$INSTALL_SRC_DIR/"
 fi
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
-# (managed-files) and rootless podman's storage/config under the service
-# user's home (.local/.config/.cache hold the pre-seeded Chrome image).
+# (managed-files), the legacy auth DB during its one-time migration (data),
+# and rootless podman's storage/config under the service user's home
+# (.local/.config/.cache hold the pre-seeded Chrome image).
 rsync -a --delete \
   --exclude='/.git' --exclude='/.venv' --exclude='/.env' \
-  --exclude='/managed-files' \
+  --exclude='/managed-files' --exclude='/data' \
   --exclude='/.local' --exclude='/.config' --exclude='/.cache' \
   "$INSTALL_SRC_DIR/" "$APP_DIR/"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
@@ -237,7 +238,7 @@ cat > "$ENV_FILE" <<EOF
 AUTH_SIGNING_PUBKEY="$AUTH_SIGNING_PUBKEY"
 LENS_AUTH_MODE="$LENS_AUTH_MODE"
 LENS_SESSION_SECRET="$LENS_SESSION_SECRET"
-LENS_ACCESS_DB="${LENS_ACCESS_DB:-/opt/lens/data/access.db}"
+LENS_ACCESS_DB="${LENS_ACCESS_DB:-/var/lib/lens/access.db}"
 AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}"
 LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
 AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}"
@@ -251,6 +252,17 @@ chown "$APP_USER:$APP_USER" "$ENV_FILE"
 # secret, and the OpenRouter key.
 chmod 0600 "$ENV_FILE"
 ok "env seeded"
+
+# Persistent auth state must not live beneath APP_DIR: release syncs replace
+# that tree. Stop an existing service so no session or allowlist write can land
+# between SQLite's online backup and the restart on the new database.
+systemctl stop lens.service 2>/dev/null || true
+python3 "$APP_DIR/scripts/migrate_access_db.py" \
+  --legacy "$APP_DIR/data/access.db" \
+  --target /var/lib/lens/access.db \
+  --env-file "$ENV_FILE" \
+  --owner "$APP_USER" \
+  || die "could not prepare persistent Lens access database"
 
 step "5/7  Installing systemd units + CLI"
 install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
