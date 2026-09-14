@@ -20,6 +20,7 @@ from fastapi.responses import RedirectResponse
 import auth_cookie
 from central_auth import (
     LOGIN_TRANSACTION_SECONDS,
+    AuthKeyResolver,
     AuthTransactionError,
     CentralAuthClient,
     CentralAuthStore,
@@ -62,6 +63,9 @@ class CentralAuthProvider:
         self.client = client
         self.cookie_secure = cookie_secure
         self.cookie_name = "__Host-lens_session" if cookie_secure else "lens_session"
+        # Static env keys plus Auth's published JWKS, so a signing-key
+        # rotation on Auth needs no env edit here.
+        self.key_resolver = AuthKeyResolver(client.issuer_url, require_auth_signing_public_keys())
 
     @classmethod
     def from_env(cls) -> CentralAuthProvider:
@@ -81,7 +85,6 @@ class CentralAuthProvider:
             raise RuntimeError("Central auth requires a Secure Lens cookie")
         if len(os.getenv("LENS_SESSION_SECRET", "").encode()) < 32:
             raise RuntimeError("LENS_SESSION_SECRET must contain at least 32 bytes")
-        require_auth_signing_public_keys()
         return cls(CentralAuthStore.from_env(), CentralAuthClient.from_env(), cookie_secure=secure)
 
     def identity(self, request: Request) -> CentralIdentity | None:

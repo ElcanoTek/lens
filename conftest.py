@@ -174,3 +174,14 @@ def isolate_managed_paths(
         monkeypatch.setattr(config_singleton, attribute, str(target))
 
     yield sandbox
+
+
+@pytest.fixture(autouse=True)
+def _no_network_jwks(monkeypatch):
+    """Tests never reach Auth's /jwks.json; the resolver falls back to env keys."""
+    import central_auth
+
+    def refuse(url, timeout):
+        raise OSError("no network in tests")
+
+    monkeypatch.setattr(central_auth, "_fetch_jwks", refuse)

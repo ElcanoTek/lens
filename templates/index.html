@@ -132,7 +132,7 @@
               {% if file.breakdown_chips %}
               <span class="comp-bar" title="Detected composition" aria-label="{{ file.breakdown_label }}">
                 {% for chip in file.breakdown_chips %}
-                <span class="comp-seg {{ chip.seg }}" style="width: {{ chip.pct }}%;"></span>
+                <span class="comp-seg {{ chip.seg }}" data-pct="{{ chip.pct }}"></span>
                 {% endfor %}
               </span>
               <span class="metanum"><strong>{{ file.breakdown_total }}</strong> rows</span>
@@ -263,9 +263,9 @@
                 <td data-label="Progress">
                   <div class="queue-progress">
                     <div class="queue-progress-bar" title="green: classified · amber: queued for retry · red: failed">
-                      <span class="bar-seg bar-seg--ok" style="width: {{ run.progress.ok_pct }}%;"></span>
-                      <span class="bar-seg bar-seg--retry" style="width: {{ run.progress.retry_pct }}%;"></span>
-                      <span class="bar-seg bar-seg--fail" style="width: {{ run.progress.fail_pct }}%;"></span>
+                      <span class="bar-seg bar-seg--ok" data-pct="{{ run.progress.ok_pct }}"></span>
+                      <span class="bar-seg bar-seg--retry" data-pct="{{ run.progress.retry_pct }}"></span>
+                      <span class="bar-seg bar-seg--fail" data-pct="{{ run.progress.fail_pct }}"></span>
                     </div>
                     <div class="queue-progress-meta">
                       <span class="queue-progress-text">{{ run.progress.text }}</span>

@@ -23,6 +23,18 @@ document.addEventListener("DOMContentLoaded", () => {
   const toastRoot = document.getElementById("toast-root");
   const flashData = document.getElementById("flash-data");
 
+// Progress-bar segments carry their width as data-pct and get it applied
+// here through the CSSOM. Inline style attributes would need CSP
+// style-src 'unsafe-inline'; element.style assignments do not.
+function applySegmentWidths(root) {
+  const scope = root || document;
+  scope.querySelectorAll("[data-pct]").forEach((el) => {
+    const pct = Number.parseFloat(el.dataset.pct);
+    if (Number.isFinite(pct)) el.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  });
+}
+document.addEventListener("DOMContentLoaded", () => applySegmentWidths(document));
+
   let activeMonitorJobId = null;
   let queuePollInFlight = false;
 
@@ -255,8 +267,9 @@ document.addEventListener("DOMContentLoaded", () => {
       const types = (data && data.types) || [];
       if (compBarEl) {
         compBarEl.innerHTML = types
-          .map((t) => `<span class="comp-seg ${t.seg}" style="width: ${t.pct}%;"></span>`)
+          .map((t) => `<span class="comp-seg ${t.seg}" data-pct="${t.pct}"></span>`)
           .join("");
+        applySegmentWidths(compBarEl);
         compBarEl.hidden = types.length === 0;
       }
       if (rowsEl) {

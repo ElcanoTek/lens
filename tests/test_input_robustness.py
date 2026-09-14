@@ -445,7 +445,7 @@ def test_breakdown_counts_mixed_file(monkeypatch, tmp_path):
         client.cookies.set("elcano_auth", _auth_cookie())
         body = client.get("/").text
     # Composition bar segments, total row count, and labelled dot chips.
-    assert '<span class="comp-seg seg-site" style="width: 60.0%;"></span>' in body
+    assert '<span class="comp-seg seg-site" data-pct="60.0"></span>' in body
     assert "<strong>5</strong> rows" in body
     assert '<span class="tchip"><span class="tdot seg-site"></span>Websites <b>3</b></span>' in body
     assert '<span class="tchip"><span class="tdot seg-ios"></span>iOS <b>1</b></span>' in body

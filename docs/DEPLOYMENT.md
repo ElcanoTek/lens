@@ -716,3 +716,11 @@ sudo runuser -u lens -- env XDG_RUNTIME_DIR=/run/user/$(id -u lens) \
   HOME=/opt/lens podman image prune -a
 sudo journalctl --vacuum-time=14d
 ```
+
+### Auth signing-key rotation
+
+In central mode Lens verifies back-channel logout tokens with `AUTH_SIGNING_PUBKEY`
+plus the keys Auth publishes at `/jwks.json` (cached 10 minutes, refreshed once when
+a token names an unknown key). An Auth key rotation therefore needs no env edit
+here; keep one static key so verification works even if Auth is unreachable at
+startup. `AUTH_SIGNING_PREVIOUS_PUBKEYS` remains available as a manual override.

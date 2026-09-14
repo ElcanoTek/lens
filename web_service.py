@@ -34,7 +34,6 @@ from central_auth import (
     AuthTransactionError,
     CentralAuthError,
     CodeExchangeRejectedError,
-    auth_signing_public_keys,
     verify_logout_token,
 )
 
@@ -868,10 +867,10 @@ async def _limit_backchannel_body(request: Request, call_next):
 # Content-Security-Policy. Pages carry one inline <script> (the theme
 # bootstrap) which gets a per-response nonce; everything else loads from this
 # origin. Scripts are the strict part: no inline handlers, no eval, no other
-# origins, so an injected <script> or onclick cannot run. Styles keep
-# 'unsafe-inline' because the progress bars set width via style attributes in
-# the template and in main.js; tightening that means moving those widths to
-# CSSOM assignments first. No form-action: Elcano-mode logout is a form POST
+# origins, so an injected <script> or onclick cannot run. Styles are 'self'
+# only: the progress bars carry their widths as data-pct attributes and
+# main.js applies them through the CSSOM (element.style.width), which CSP
+# permits; there are no style attributes in the markup. No form-action: Elcano-mode logout is a form POST
 # that redirects to the auth host, and browsers apply form-action to that
 # redirect. frame-ancestors 'none' mirrors X-Frame-Options: DENY.
 CSP_NON_PAGE = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
@@ -880,7 +879,7 @@ CSP_NON_PAGE = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
 def _csp_for_page(nonce: str) -> str:
     return (
         f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
-        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
+        "style-src 'self'; img-src 'self' data:; font-src 'self'; "
         "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
     )
 
@@ -1601,7 +1600,7 @@ async def auth_backchannel_logout(logout_token: str = Form(...)) -> Response:
             logout_token,
             issuer=provider.client.issuer_url,
             audience=provider.client.client_id,
-            public_keys=auth_signing_public_keys(),
+            public_keys=provider.key_resolver.keys_for_token(logout_token),
         )
     except CentralAuthError as exc:
         raise HTTPException(status_code=400, detail="Invalid logout token") from exc
