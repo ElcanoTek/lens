@@ -233,8 +233,8 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 
 Production target: **Fedora/RHEL 9+**
 
-- `scripts/bootstrap.sh` — Full installer: creates the `lens` system user, installs to `/opt/lens`, builds the venv with `uv`, writes `/opt/lens/.env` (`AUTH_SIGNING_PUBKEY` + `OPENROUTER_API_KEY`), installs the systemd units and operator CLI, and optionally sets up Caddy TLS. Lens owns no password of its own — sign-in is the shared `elcano_auth` cookie.
-- `scripts/update.sh` — Staged update: git pull, build staging venv, atomic swap, health check
+- `scripts/bootstrap.sh` — Full installer: creates the `lens` system user, installs to `/opt/lens`, keeps persistent central-auth state under `/var/lib/lens`, builds the venv with `uv`, writes `/opt/lens/.env` (`AUTH_SIGNING_PUBKEY` + `OPENROUTER_API_KEY`), installs the systemd units and operator CLI, and optionally sets up Caddy TLS. Lens owns no password of its own — sign-in is either the legacy shared `elcano_auth` cookie or central Auth's one-use application handoff.
+- `scripts/update.sh` — Staged update: git pull, build staging venv, migrate a legacy `/opt/lens/data/access.db` without overwriting existing state, atomic swap, health check
 - `deploy/lens.service` — systemd unit; runs uvicorn on 127.0.0.1:8808; hardened with `ProtectSystem=full`, `ProtectKernelModules`, `LockPersonality` and a restricted address-family set. `NoNewPrivileges`, `ProtectControlGroups`, `ProtectKernelTunables`, `PrivateTmp` and `ProtectHome` are deliberately **absent** — each one breaks rootless podman (see the comments in the unit).
 - `deploy/lens.caddy` — Caddy reverse proxy config with security headers; `{{HOSTNAME}}` placeholder substituted by bootstrap
 - `deploy/nginx-lens.conf` — Nginx alternative reverse proxy config

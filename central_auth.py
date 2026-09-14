@@ -370,7 +370,7 @@ class CentralAuthStore:
     @classmethod
     def from_env(cls) -> CentralAuthStore:
         return cls(
-            os.getenv("LENS_ACCESS_DB", "/opt/lens/data/access.db"),
+            os.getenv("LENS_ACCESS_DB", "/var/lib/lens/access.db"),
             idle_seconds=int(os.getenv("LENS_SESSION_IDLE_SECONDS", str(DEFAULT_IDLE_SECONDS))),
             absolute_seconds=int(
                 os.getenv("LENS_SESSION_ABSOLUTE_SECONDS", str(DEFAULT_ABSOLUTE_SECONDS))

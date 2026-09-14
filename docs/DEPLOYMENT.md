@@ -125,10 +125,13 @@ Seven steps, in order:
    multi-gigabyte download.
 3. **Source sync** — seeds `/opt/lens-src` (keeping `.git`), then rsyncs it to
    `/opt/lens` with `--delete`, preserving `.git`, `.venv`, `.env`,
-   `managed-files` and podman's `.local`/`.config`/`.cache`.
+   `managed-files`, the legacy `data` directory during migration, and podman's
+   `.local`/`.config`/`.cache`.
 4. **venv** — `uv venv` + `uv pip install --reinstall -r requirements.txt`.
-5. **`.env`** — writes `AUTH_SIGNING_PUBKEY` and `OPENROUTER_API_KEY`, owned
-   `lens:lens`, mode `0640`.
+5. **Configuration and state** — writes `.env`, owned `lens:lens`, mode `0600`,
+   then creates `/var/lib/lens` and atomically migrates the legacy
+   `/opt/lens/data/access.db` when present. A custom `LENS_ACCESS_DB` is never
+   moved or rewritten.
 6. **Units and CLI** — installs `lens.service`, `/usr/local/bin/lens`, and
    `firecrawl.service` when podman-compose is present.
 7. **Start** — enables and starts the services, polls
@@ -151,6 +154,8 @@ prompt answer.
   │   └── outputs/      per-job output.csv, progress.json, .log, plus _jobs.json
   ├── .local/ .config/ .cache/   rootless podman storage (holds the pulled images)
   └── (application source, rsynced from /opt/lens-src)
+/var/lib/lens/          persistent application state (owned by lens:lens, 0750)
+  └── access.db         central allowlist, hashed sessions and revocation state, 0600
 /etc/systemd/system/lens.service
 /etc/systemd/system/firecrawl.service   (optional)
 /usr/local/bin/lens                     operator CLI
@@ -188,7 +193,7 @@ working directory via python-dotenv for CLI runs).
 | `AUTH_ISSUER_URL`, `LENS_PUBLIC_URL` | Central mode | — | Exact Auth and Lens origins. |
 | `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | Central mode | — | Per-deployment Auth client credentials. |
 | `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for signed login state. |
-| `LENS_ACCESS_DB` | No | `/opt/lens/data/access.db` | Local access/session/revocation SQLite database. |
+| `LENS_ACCESS_DB` | No | `/var/lib/lens/access.db` | Persistent local access/session/revocation SQLite database. |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` enables extra CLI diagnostics. Same as `--verbose`. |
 | `PYTHONUNBUFFERED` | No | set to `1` by the unit | Keeps log lines flowing into journald. |
 
@@ -459,10 +464,12 @@ build cannot take down a working install:
    label across a move and systemd then refuses to exec it (203/EXEC). Same
    filesystem also makes the final move atomic. A failed `uv pip install`
    dies here with the live install untouched.
-4. **Swap.** Stop the service, rsync the staged tree over `$APP_DIR`
-   (preserving `.git`, `.venv`, `.env`, `managed-files` and podman's caches),
-   move the old venv aside as `.venv.old`, move the new one in, `restorecon`
-   it, reinstall the unit and CLI, refresh Firecrawl and `/etc/motd`, restart.
+4. **Swap.** Stop the service, migrate a legacy access database to
+   `/var/lib/lens`, then rsync the staged tree over `$APP_DIR` (preserving
+   `.git`, `.venv`, `.env`, `managed-files`, legacy `data`, and podman's
+   caches). Move the old venv aside as `.venv.old`, move the new one in,
+   `restorecon` it, reinstall the unit and CLI, refresh Firecrawl and
+   `/etc/motd`, then restart.
 5. **Verify.** Poll `/health` for 10 s. On success `.venv.old` is deleted; on
    failure the script exits non-zero and prints the venv rollback command.
 
@@ -506,18 +513,35 @@ Everything a run produces lives under `/opt/lens/managed-files/`:
 | `outputs/_jobs.json` | Queue state, reloaded on restart |
 
 Both `bootstrap.sh` and `update.sh` exclude `managed-files` from their
-`rsync --delete`, so upgrades never touch it. That also means **nothing prunes
-it** — output accumulates until you remove it, from the dashboard or on disk.
+`rsync --delete`, so upgrades never touch it. The central-auth database lives
+outside the release tree at `/var/lib/lens/access.db`, so source deployment and
+rollback cannot delete it. The legacy `/opt/lens/data` directory is also
+preserved during migration; remove it only after verifying the new database.
+Nothing prunes run output — it accumulates until you remove it from the
+dashboard or on disk.
 
 Back up `managed-files/outputs/` (the results you paid OpenRouter for) and
-`/opt/lens/.env` (the credentials). Everything else is reproducible from git.
-Note that output CSVs contain the identifiers you analysed, which may be
-commercially sensitive; treat backups accordingly.
+`/opt/lens/.env` (the credentials). In central mode, also back up
+`/var/lib/lens/access.db`; it contains the local allowlist, hashed sessions and
+revocation records and is not reproducible from git. Note that output CSVs
+contain the identifiers you analysed and the access database contains client
+account metadata, so treat backups accordingly.
+
+For a simple manual backup, briefly stop Lens so SQLite and its write-ahead log
+cannot change while `tar` reads them:
 
 ```bash
+sudo systemctl stop lens.service
 sudo tar czf lens-backup-$(date +%F).tar.gz \
-  -C /opt/lens managed-files/outputs .env
+  -C /opt/lens managed-files/outputs .env \
+  -C /var/lib/lens access.db
+sudo systemctl start lens.service
 ```
+
+For automated backups without downtime, use SQLite's backup API to create a
+consistent snapshot first, then upload that snapshot to private backup storage.
+Do not copy a live SQLite file directly and do not use S3 as its active
+filesystem.
 
 Jobs interrupted by a restart resume where they left off: `progress.json` is
 written after every single item.
@@ -672,10 +696,10 @@ reaches Lens, so raise the proxy limit first.
 
 Usual suspects, in order: `managed-files/outputs/` (never pruned), podman
 image storage under `/opt/lens/.local/share/containers` (`deep_scrape_pull_policy:
-always` accumulates image layers), and journald.
+always` accumulates image layers), `/var/lib/lens/access.db`, and journald.
 
 ```bash
-sudo du -sh /opt/lens/managed-files/* /opt/lens/.local/share/containers
+sudo du -sh /opt/lens/managed-files/* /opt/lens/.local/share/containers /var/lib/lens
 sudo runuser -u lens -- env XDG_RUNTIME_DIR=/run/user/$(id -u lens) \
   HOME=/opt/lens podman image prune -a
 sudo journalctl --vacuum-time=14d

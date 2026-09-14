@@ -215,7 +215,7 @@ Secrets and per-host settings go in `.env`
 | `LENS_PUBLIC_URL` | Central mode | — | Exact public Lens origin registered with Auth |
 | `AUTH_CLIENT_ID` / `AUTH_CLIENT_SECRET` | Central mode | — | Confidential client credentials; the secret is stored only on this Lens host |
 | `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for the short-lived login transaction cookie |
-| `LENS_ACCESS_DB` | No | `/opt/lens/data/access.db` | Local allowlist, hashed Lens sessions, and replay-safe logout events |
+| `LENS_ACCESS_DB` | No | `/var/lib/lens/access.db` | Persistent local allowlist, hashed Lens sessions, and replay-safe logout events |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` — same as `--verbose` |
 
 Central mode keeps authorization local. After registering Lens in Auth, run
@@ -267,10 +267,11 @@ export AUTH_SIGNING_PUBKEY=...      # else every request redirects to login
 uvicorn web_service:app --host 127.0.0.1 --port 8808
 ```
 
-Authentication is a signed cookie verified against a public key — Lens has no
-login, no password and no user database of its own. Without
-`AUTH_SIGNING_PUBKEY` it fails closed. `/health` is intentionally public so
-load balancers can probe it.
+In legacy mode, authentication is a signed cookie verified against a public
+key — Lens has no login or password of its own. Central mode exchanges Auth's
+one-use code for a Lens-local session and keeps its application allowlist in
+`/var/lib/lens/access.db`. Without `AUTH_SIGNING_PUBKEY` it fails closed.
+`/health` is intentionally public so load balancers can probe it.
 
 The dashboard shells out to `main.py` as a subprocess per job, so environment
 variables and CLI flags are the only configuration surface — there is no
