@@ -242,3 +242,28 @@ def test_central_mode_refuses_to_start_without_the_auth_public_key(monkeypatch, 
     with pytest.raises(RuntimeError, match="AUTH_SIGNING_PUBKEY"):
         auth_provider.get_auth_provider()
     auth_provider.clear_provider_cache()
+
+
+def test_session_touch_is_rate_limited_to_one_write_per_minute(tmp_path) -> None:
+    import sqlite3
+
+    from central_auth import _token_hash
+
+    store = CentralAuthStore(tmp_path / "access.db")
+    store.grant_access("alice@example.com", now=1_000)
+    issued = store.create_session("account-123", "alice@example.com", now=1_000)
+
+    def stamps():
+        with sqlite3.connect(store.path) as connection:
+            return connection.execute(
+                "SELECT last_seen_at, idle_expires_at FROM sessions WHERE token_hash = ?",
+                (_token_hash(issued.token),),
+            ).fetchone()
+
+    assert stamps() == (1_000, 1_000 + store.idle_seconds)
+    assert store.get_identity(issued.token, now=1_030) is not None
+    assert store.get_identity(issued.token, now=1_059) is not None
+    assert stamps() == (1_000, 1_000 + store.idle_seconds)
+    assert store.get_identity(issued.token, now=1_060) is not None
+    assert stamps() == (1_060, 1_060 + store.idle_seconds)
+    assert store.get_identity(issued.token, now=1_060 + store.idle_seconds) is None
