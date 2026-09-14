@@ -69,6 +69,8 @@ idna==3.19
     #   yarl
 iniconfig==2.3.0
     # via pytest
+itsdangerous==2.2.0
+    # via -r requirements.in
 jinja2==3.1.6
     # via -r requirements.in
 jiter==0.16.0
@@ -85,7 +87,7 @@ multidict==6.7.1
     #   yarl
 numpy==2.4.6
     # via pandas
-openai==3.6.0
+openai==3.13.0
     # via -r requirements.in
 openpyxl==3.1.5
     # via -r requirements.in
@@ -131,9 +133,9 @@ python-multipart==0.0.32
     # via -r requirements.in
 rich==15.0.0
     # via -r requirements.in
-ruff==0.16.5
+ruff==0.16.7
     # via -r requirements-dev.in
-selenium==4.48.0
+selenium==4.49.0
     # via -r requirements.in
 six==1.17.0
     # via python-dateutil
