@@ -25,8 +25,18 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, Response, Uploa
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.middleware.sessions import SessionMiddleware
 
-from auth_cookie import AUTH_LOGIN_URL, current_identity, login_redirect
+from auth_provider import CentralAuthProvider, ElcanoAuthProvider, get_auth_provider
+from central_auth import (
+    LOGIN_TRANSACTION_SECONDS,
+    AccessDeniedError,
+    AuthTransactionError,
+    CentralAuthError,
+    CodeExchangeRejectedError,
+    auth_signing_public_keys,
+    verify_logout_token,
+)
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "managed-files" / "inputs"
@@ -78,6 +88,7 @@ _model_catalog_cache: tuple[float, Dict[str, List[Dict[str, str]]]] = (
     _EMPTY_CATALOG,
 )
 _model_catalog_failed_at: float = 0.0
+MAX_BACKCHANNEL_BODY_BYTES = 20_000
 
 
 def _format_price_per_million(per_token: float) -> str:
@@ -773,6 +784,14 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lens Internal Service", version="1.0.0", lifespan=_lifespan)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("LENS_SESSION_SECRET") or secrets.token_urlsafe(32),
+    session_cookie="lens_ui",
+    max_age=LOGIN_TRANSACTION_SECONDS,
+    same_site="lax",
+    https_only=True,
+)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 
@@ -815,6 +834,19 @@ templates.env.globals["static_url"] = static_url
 
 
 @app.middleware("http")
+async def _limit_backchannel_body(request: Request, call_next):
+    if request.url.path == "/auth/backchannel-logout" and request.method == "POST":
+        content_length = request.headers.get("content-length")
+        if content_length is None:
+            return Response(status_code=411)
+        if not content_length.isdecimal():
+            return Response(status_code=400)
+        if int(content_length) > MAX_BACKCHANNEL_BODY_BYTES:
+            return Response(status_code=413)
+    return await call_next(request)
+
+
+@app.middleware("http")
 async def _cache_policy(request: Request, call_next):
     """Foolproof cache headers to back the versioned URLs.
 
@@ -836,9 +868,7 @@ async def _cache_policy(request: Request, call_next):
 
 
 def _require_auth(request: Request) -> None:
-    # API/POST routes: 401 when the elcano_auth cookie is missing/invalid.
-    # Verified against the auth service's Ed25519 public key (auth_cookie.py).
-    if current_identity(request) is None:
+    if get_auth_provider().identity(request) is None:
         raise HTTPException(status_code=401)
 
 
@@ -1148,8 +1178,9 @@ def _redirect_with_params(params: Dict[str, str]) -> RedirectResponse:
 
 @app.get("/")
 async def index(request: Request):
-    if current_identity(request) is None:
-        return login_redirect(request)
+    provider = get_auth_provider()
+    if provider.identity(request) is None:
+        return provider.unauthenticated_response(request)
 
     jobs = await manager.list_jobs()
 
@@ -1431,15 +1462,91 @@ async def index(request: Request):
             "files_error": request.query_params.get("files_error", ""),
             "files_message": request.query_params.get("files_message", ""),
             "files_scope": request.query_params.get("files_scope", ""),
+            "csrf_token": (
+                provider.csrf_token(request) if isinstance(provider, CentralAuthProvider) else ""
+            ),
         },
     )
 
 
 @app.post("/logout")
-async def logout(request: Request):
-    # Logout is owned by the auth service — it clears the shared cookie. We
-    # forward there; auth redirects back to its own login afterward.
-    return RedirectResponse(url=f"{AUTH_LOGIN_URL}/logout", status_code=303)
+async def logout(request: Request, csrf_token: Optional[str] = Form(default=None)):
+    provider = get_auth_provider()
+    if isinstance(provider, ElcanoAuthProvider):
+        return provider.logout_response()
+    if not isinstance(provider, CentralAuthProvider):
+        raise HTTPException(status_code=500)
+    if not provider.valid_csrf(request, csrf_token or ""):
+        raise HTTPException(status_code=403)
+    provider.store.revoke_session(request.cookies.get(provider.cookie_name))
+    request.session.clear()
+    response = RedirectResponse(url="/", status_code=303)
+    provider.clear_session_cookie(response)
+    return response
+
+
+@app.get("/login")
+@app.get("/auth/login")
+async def auth_login(request: Request, next: Optional[str] = None):
+    provider = get_auth_provider()
+    if provider.identity(request) is not None:
+        return RedirectResponse(url="/", status_code=303)
+    if isinstance(provider, CentralAuthProvider):
+        return provider.begin_login(request, next or "/")
+    return provider.unauthenticated_response(request)
+
+
+@app.get("/auth/callback")
+async def auth_callback(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    provider = get_auth_provider()
+    if not isinstance(provider, CentralAuthProvider):
+        raise HTTPException(status_code=404)
+    if error or not code or not state:
+        request.session.pop("central_auth_transaction", None)
+        raise HTTPException(status_code=400, detail="Sign-in was not completed")
+    try:
+        token, destination = provider.complete_login(request, code=code, state=state)
+    except AuthTransactionError as exc:
+        raise HTTPException(status_code=400, detail="Sign-in expired. Try again.") from exc
+    except AccessDeniedError as exc:
+        raise HTTPException(
+            status_code=403, detail="Your account does not have Lens access"
+        ) from exc
+    except CodeExchangeRejectedError as exc:
+        raise HTTPException(status_code=400, detail="Sign-in expired. Try again.") from exc
+    except CentralAuthError as exc:
+        raise HTTPException(
+            status_code=502, detail="The authentication service is unavailable"
+        ) from exc
+    response = RedirectResponse(url=destination, status_code=303)
+    response.headers["Referrer-Policy"] = "no-referrer"
+    provider.set_session_cookie(response, token)
+    return response
+
+
+@app.post("/auth/backchannel-logout", status_code=204)
+async def auth_backchannel_logout(logout_token: str = Form(...)) -> Response:
+    provider = get_auth_provider()
+    if not isinstance(provider, CentralAuthProvider):
+        raise HTTPException(status_code=404)
+    try:
+        event = verify_logout_token(
+            logout_token,
+            issuer=provider.client.issuer_url,
+            audience=provider.client.client_id,
+            public_keys=auth_signing_public_keys(),
+        )
+    except CentralAuthError as exc:
+        raise HTTPException(status_code=400, detail="Invalid logout token") from exc
+    provider.store.consume_logout_event(
+        event.event_id, event.issuer, event.subject, event.issued_at
+    )
+    return Response(status_code=204)
 
 
 @app.post("/jobs")

@@ -52,6 +52,16 @@ case "$cmd" in
         ;;
     esac
     ;;
+  access)
+    [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
+    [[ -x "$APP_DIR/.venv/bin/python" ]] || { echo "Lens virtualenv missing" >&2; exit 1; }
+    set -a
+    # shellcheck disable=SC1090
+    . "$ENV_FILE"
+    set +a
+    exec sudo -u lens --preserve-env=LENS_ACCESS_DB "$APP_DIR/.venv/bin/python" \
+      "$APP_DIR/central_auth_admin.py" "$@"
+    ;;
   tls)
     sub="${1:-status}"; shift || true
     snippet="/etc/caddy/conf.d/lens.caddy"
@@ -96,6 +106,9 @@ lens — scraper web UI operator CLI
                                 (skip fetch — useful after a manual rollback)
   lens env [show]               print /opt/lens/.env (secrets redacted)
   lens env edit                 edit /opt/lens/.env in $EDITOR, then: lens restart
+  lens access grant <email>     allow a central-auth account on this Lens instance
+  lens access revoke <email>    revoke access and every local Lens session
+  lens access list              list enabled central-auth accounts
   lens tls status|reload|restart   Caddy controls (if installed)
 EOF
     ;;

@@ -61,6 +61,16 @@ prompt() {
   [[ -z "$answer" ]] && answer="$default"
   printf '%s' "$answer"
 }
+prompt_secret() {
+  local varname="$1" label="$2" answer=""
+  if [[ -n "${!varname:-}" ]]; then printf '%s' "${!varname}"; return; fi
+  if [[ "$NON_INTERACTIVE" == "1" ]]; then die "non-interactive + missing: set $varname"; fi
+  ask "$label (input hidden):"
+  read -r -s answer
+  printf '\n' >&2
+  [[ -n "$answer" ]] || die "$varname is required"
+  printf '%s' "$answer"
+}
 genbase64() { openssl rand -base64 "$1" | tr -d '=\n' | tr '/+' '_-'; }
 genhex()    { openssl rand -hex "$1"; }
 
@@ -179,8 +189,10 @@ ok "venv ready"
 step "4/7  Configuring the instance"
 if [[ -f "$ENV_FILE" ]]; then
   info "found existing $ENV_FILE — re-using values"
+  set -a
   # shellcheck disable=SC1090
-  set -a; . "$ENV_FILE"; set +a
+  . "$ENV_FILE"
+  set +a
 fi
 
 # Unified auth: Lens verifies the elcano_auth cookie minted by the auth
@@ -188,6 +200,18 @@ fi
 # from the auth host with `auth pubkey`. Safe to paste — verify-only, can't
 # mint sessions. Without it the app redirects every request to auth.
 AUTH_SIGNING_PUBKEY="$(prompt AUTH_SIGNING_PUBKEY "auth service AUTH_SIGNING_PUBKEY (run 'auth pubkey' on the auth host; blank to set later)" "${AUTH_SIGNING_PUBKEY:-}")"
+LENS_AUTH_MODE="$(prompt LENS_AUTH_MODE "Authentication mode: elcano (legacy magic link) or central" "${LENS_AUTH_MODE:-elcano}")"
+case "$LENS_AUTH_MODE" in
+  elcano) ;;
+  central)
+    AUTH_ISSUER_URL="$(prompt AUTH_ISSUER_URL "Central Auth issuer origin" "${AUTH_ISSUER_URL:-}")"
+    LENS_PUBLIC_URL="$(prompt LENS_PUBLIC_URL "Public Lens origin" "${LENS_PUBLIC_URL:-}")"
+    AUTH_CLIENT_ID="$(prompt AUTH_CLIENT_ID "Central Auth client ID" "${AUTH_CLIENT_ID:-lens}")"
+    AUTH_CLIENT_SECRET="$(prompt_secret AUTH_CLIENT_SECRET "Central Auth client secret")"
+    ;;
+  *) die "LENS_AUTH_MODE must be elcano or central" ;;
+esac
+LENS_SESSION_SECRET="${LENS_SESSION_SECRET:-$(genbase64 32)}"
 OPENROUTER_API_KEY="$(prompt OPENROUTER_API_KEY "OpenRouter API key (blank to fill in later)" "${OPENROUTER_API_KEY:-}")"
 
 # ── Caddy / TLS intent (install happens in step 7) ────────
@@ -211,12 +235,21 @@ cat > "$ENV_FILE" <<EOF
 
 # Unified Elcano auth — verifies the elcano_auth cookie. From 'auth pubkey'.
 AUTH_SIGNING_PUBKEY="$AUTH_SIGNING_PUBKEY"
+LENS_AUTH_MODE="$LENS_AUTH_MODE"
+LENS_SESSION_SECRET="$LENS_SESSION_SECRET"
+LENS_ACCESS_DB="${LENS_ACCESS_DB:-/opt/lens/data/access.db}"
+AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}"
+LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
+AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}"
+AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
 # AUTH_LOGIN_URL="https://auth.elcanotek.com"   # override if auth lives elsewhere
 
 OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
 EOF
 chown "$APP_USER:$APP_USER" "$ENV_FILE"
-chmod 0640 "$ENV_FILE"
+# Owner-only: the file carries the session secret, the central-auth client
+# secret, and the OpenRouter key.
+chmod 0600 "$ENV_FILE"
 ok "env seeded"
 
 step "5/7  Installing systemd units + CLI"

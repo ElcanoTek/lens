@@ -184,6 +184,11 @@ working directory via python-dotenv for CLI runs).
 | `AUTH_SIGNING_PUBKEY` | Yes, for the dashboard | *(empty)* | Base64 of the auth service's 32-byte Ed25519 **public** key. Only verifies signatures — it cannot mint a session, so distributing it is safe. Empty means every request redirects to login. |
 | `AUTH_LOGIN_URL` | No | `https://auth.elcanotek.com` | Where unauthenticated browsers are sent. Point at your own auth service. |
 | `AUTH_COOKIE_NAME` | No | `elcano_auth` | Session cookie to verify. |
+| `LENS_AUTH_MODE` | No | `elcano` | `elcano` preserves legacy magic-link cookies; `central` enables confidential-client handoff and Lens-only sessions. |
+| `AUTH_ISSUER_URL`, `LENS_PUBLIC_URL` | Central mode | — | Exact Auth and Lens origins. |
+| `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | Central mode | — | Per-deployment Auth client credentials. |
+| `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for signed login state. |
+| `LENS_ACCESS_DB` | No | `/opt/lens/data/access.db` | Local access/session/revocation SQLite database. |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` enables extra CLI diagnostics. Same as `--verbose`. |
 | `PYTHONUNBUFFERED` | No | set to `1` by the unit | Keeps log lines flowing into journald. |
 
