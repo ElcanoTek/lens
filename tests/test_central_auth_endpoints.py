@@ -233,6 +233,18 @@ async def test_legacy_logout_still_uses_the_elcano_auth_logout(monkeypatch) -> N
     monkeypatch.setattr(auth_provider.auth_cookie, "AUTH_LOGIN_URL", "https://auth.elcanotek.com")
     auth_provider.clear_provider_cache()
 
+    transport = httpx.ASGITransport(app=web_service.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://lens.example.com"
+    ) as client:
+        response = await client.post("/logout", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://auth.elcanotek.com/logout"
+    auth_provider.clear_provider_cache()
+
+
+@pytest.mark.asyncio
 async def test_pages_carry_nonce_csp_and_other_responses_a_closed_one(
     monkeypatch, tmp_path
 ) -> None:
@@ -255,11 +267,6 @@ async def test_pages_carry_nonce_csp_and_other_responses_a_closed_one(
     async with httpx.AsyncClient(
         transport=transport, base_url="https://lens.example.com"
     ) as client:
-        response = await client.post("/logout", follow_redirects=False)
-
-    assert response.status_code == 303
-    assert response.headers["location"] == "https://auth.elcanotek.com/logout"
-    auth_provider.clear_provider_cache()
         page = await client.get("/")
         assert page.status_code == 200
         csp = page.headers["content-security-policy"]
