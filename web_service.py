@@ -771,6 +771,11 @@ worker_task: Optional[asyncio.Task] = None
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
     global worker_task
+    # Build the selected provider before advertising readiness. In central
+    # mode this validates every required credential and opens/migrates the
+    # local access database, so a broken deployment fails during startup
+    # instead of returning 200 until the first user arrives.
+    get_auth_provider()
     _ensure_directories()
     await manager.hydrate_from_disk()
     worker_task = asyncio.create_task(manager.worker_loop())
@@ -1480,9 +1485,17 @@ async def logout(request: Request, csrf_token: Optional[str] = Form(default=None
         raise HTTPException(status_code=403)
     provider.store.revoke_session(request.cookies.get(provider.cookie_name))
     request.session.clear()
-    response = RedirectResponse(url="/", status_code=303)
+    response = RedirectResponse(url="/signed-out", status_code=303)
     provider.clear_session_cookie(response)
     return response
+
+
+@app.get("/signed-out")
+async def signed_out(request: Request):
+    # Deliberately public and provider-free. Redirecting back to / would start
+    # central SSO immediately while the Auth cookie is still valid, making the
+    # local logout appear ineffective.
+    return templates.TemplateResponse(request, "signed_out.html", {})
 
 
 @app.get("/login")
@@ -1947,9 +1960,11 @@ async def queue_job_status(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "time": _utc_now()}
+    provider = get_auth_provider()
+    return {"status": "ok", "time": _utc_now(), "auth_mode": provider.mode}
 
 
 @app.head("/health")
 async def health_head() -> Response:
+    get_auth_provider()
     return Response(status_code=200)

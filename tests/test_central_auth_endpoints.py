@@ -12,7 +12,11 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import auth_provider
 import web_service
-from central_auth import AuthenticatedPrincipal, CodeExchangeRejectedError
+from central_auth import (
+    AuthenticatedPrincipal,
+    CodeExchangeRejectedError,
+    csrf_token_for_session,
+)
 
 
 class FakeCentralClient:
@@ -135,3 +139,103 @@ def test_legacy_magic_mode_remains_default(monkeypatch) -> None:
     monkeypatch.delenv("LENS_AUTH_MODE", raising=False)
     auth_provider.clear_provider_cache()
     assert auth_provider.get_auth_provider().mode == "elcano"
+
+
+@pytest.mark.asyncio
+async def test_startup_and_health_fail_when_central_auth_is_misconfigured(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setenv("LENS_AUTH_MODE", "central")
+    monkeypatch.setenv("LENS_SESSION_SECRET", "test-session-secret-with-at-least-32-bytes")
+    monkeypatch.setenv("LENS_ACCESS_DB", str(tmp_path / "access.db"))
+    monkeypatch.setenv("AUTH_ISSUER_URL", "https://auth.example.com")
+    monkeypatch.setenv("LENS_PUBLIC_URL", "https://lens.example.com")
+    monkeypatch.setenv("AUTH_CLIENT_ID", "lens")
+    monkeypatch.setenv("AUTH_CLIENT_SECRET", "a-test-secret-that-is-at-least-32-bytes")
+    monkeypatch.setenv("AUTH_SIGNING_PUBKEY", "")
+    monkeypatch.delenv("AUTH_SIGNING_PREVIOUS_PUBKEYS", raising=False)
+    auth_provider.clear_provider_cache()
+
+    with pytest.raises(RuntimeError, match="AUTH_SIGNING_PUBKEY"):
+        async with web_service._lifespan(web_service.app):
+            pass
+    with pytest.raises(RuntimeError, match="AUTH_SIGNING_PUBKEY"):
+        await web_service.health()
+
+    auth_provider.clear_provider_cache()
+
+
+@pytest.mark.asyncio
+async def test_central_logout_stays_signed_out_until_the_user_chooses_to_sign_in(
+    monkeypatch, tmp_path
+) -> None:
+    private_key = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("LENS_AUTH_MODE", "central")
+    monkeypatch.setenv("LENS_SESSION_SECRET", "test-session-secret-with-at-least-32-bytes")
+    monkeypatch.setenv("LENS_ACCESS_DB", str(tmp_path / "access.db"))
+    monkeypatch.setenv("LENS_AUTH_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AUTH_ALLOW_INSECURE_HTTP", "1")
+    monkeypatch.setenv("AUTH_ISSUER_URL", "http://auth.example.com")
+    monkeypatch.setenv("LENS_PUBLIC_URL", "http://lens.example.com")
+    monkeypatch.setenv("AUTH_CLIENT_ID", "lens")
+    monkeypatch.setenv("AUTH_CLIENT_SECRET", "a-test-secret-that-is-at-least-32-bytes")
+    monkeypatch.setenv(
+        "AUTH_SIGNING_PUBKEY",
+        base64.b64encode(private_key.public_key().public_bytes_raw()).decode(),
+    )
+    monkeypatch.setattr(auth_provider, "CentralAuthClient", FakeCentralClient)
+    auth_provider.clear_provider_cache()
+    provider = auth_provider.get_auth_provider()
+    provider.store.grant_access("alice@example.com", now=1_000)
+    session = provider.store.create_session("account-123", "alice@example.com", now=1_000)
+
+    transport = httpx.ASGITransport(app=web_service.app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://lens.example.com") as client:
+        client.cookies.set("lens_session", session.token, domain="lens.example.com", path="/")
+        response = await client.post(
+            "/logout",
+            data={"csrf_token": csrf_token_for_session(session.token)},
+            follow_redirects=False,
+        )
+
+        assert response.status_code == 303
+        assert response.headers["location"] == "/signed-out"
+        assert provider.store.get_identity(session.token) is None
+        assert client.cookies.get("lens_session") is None
+
+        signed_out = await client.get(response.headers["location"], follow_redirects=False)
+        assert signed_out.status_code == 200
+        assert "You are signed out" in signed_out.text
+        assert 'href="/auth/login?next=%2F"' in signed_out.text
+        assert "location" not in signed_out.headers
+
+    auth_provider.clear_provider_cache()
+
+
+@pytest.mark.asyncio
+async def test_health_reports_the_validated_auth_mode(monkeypatch) -> None:
+    monkeypatch.setenv("LENS_AUTH_MODE", "elcano")
+    auth_provider.clear_provider_cache()
+
+    payload = await web_service.health()
+
+    assert payload["status"] == "ok"
+    assert payload["auth_mode"] == "elcano"
+    auth_provider.clear_provider_cache()
+
+
+@pytest.mark.asyncio
+async def test_legacy_logout_still_uses_the_elcano_auth_logout(monkeypatch) -> None:
+    monkeypatch.setenv("LENS_AUTH_MODE", "elcano")
+    monkeypatch.setattr(auth_provider.auth_cookie, "AUTH_LOGIN_URL", "https://auth.elcanotek.com")
+    auth_provider.clear_provider_cache()
+
+    transport = httpx.ASGITransport(app=web_service.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://lens.example.com"
+    ) as client:
+        response = await client.post("/logout", follow_redirects=False)
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "https://auth.elcanotek.com/logout"
+    auth_provider.clear_provider_cache()

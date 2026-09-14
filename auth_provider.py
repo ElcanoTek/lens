@@ -202,10 +202,15 @@ def _fingerprint() -> tuple[str, ...]:
             "LENS_ACCESS_DB",
             "LENS_AUTH_COOKIE_SECURE",
             "AUTH_ALLOW_INSECURE_HTTP",
+            "AUTH_SIGNING_PUBKEY",
+            "AUTH_SIGNING_PREVIOUS_PUBKEYS",
             "AUTH_ISSUER_URL",
             "LENS_PUBLIC_URL",
             "AUTH_CLIENT_ID",
             "AUTH_CLIENT_SECRET",
+            "LENS_SESSION_SECRET",
+            "LENS_SESSION_IDLE_SECONDS",
+            "LENS_SESSION_ABSOLUTE_SECONDS",
         )
     )
 

@@ -202,3 +202,9 @@ def test_bootstrap_and_service_prepare_the_external_state_directory() -> None:
     assert "StateDirectory=lens" in service
     assert "StateDirectoryMode=0750" in service
     assert "ReadWritePaths=/opt/lens /var/lib/lens" in service
+
+
+def test_bootstrap_fails_when_lens_never_becomes_ready() -> None:
+    bootstrap = (REPO_ROOT / "scripts" / "bootstrap.sh").read_text()
+
+    assert 'die "lens did not become ready within 15s' in bootstrap
