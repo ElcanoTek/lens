@@ -50,6 +50,7 @@
             </span>
           </button>
           <form method="post" action="/logout" class="header-action-form">
+            {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
             <button class="icon-action" type="submit" aria-label="Log out" title="Log out">
               <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#logout"></use></svg>
             </button>

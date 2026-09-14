@@ -59,6 +59,8 @@ idna==3.19
     #   yarl
 jinja2==3.1.6
     # via -r requirements.in
+itsdangerous==2.2.0
+    # via -r requirements.in
 jiter==0.16.0
     # via openai
 markdown-it-py==4.2.0

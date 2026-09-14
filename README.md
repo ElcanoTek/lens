@@ -210,7 +210,19 @@ Secrets and per-host settings go in `.env`
 | `AUTH_SIGNING_PUBKEY` | Dashboard only | *(empty)* | Base64 Ed25519 **public** key used to verify the session cookie. Verify-only, so it cannot mint a session. |
 | `AUTH_LOGIN_URL` | No | `https://auth.elcanotek.com` | Where unauthenticated browsers are sent |
 | `AUTH_COOKIE_NAME` | No | `elcano_auth` | Session cookie to verify |
+| `LENS_AUTH_MODE` | No | `elcano` | Keep legacy magic-link cookies or opt into central application handoff |
+| `AUTH_ISSUER_URL` | Central mode | — | Exact central Auth origin |
+| `LENS_PUBLIC_URL` | Central mode | — | Exact public Lens origin registered with Auth |
+| `AUTH_CLIENT_ID` / `AUTH_CLIENT_SECRET` | Central mode | — | Confidential client credentials; the secret is stored only on this Lens host |
+| `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for the short-lived login transaction cookie |
+| `LENS_ACCESS_DB` | No | `/opt/lens/data/access.db` | Local allowlist, hashed Lens sessions, and replay-safe logout events |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` — same as `--verbose` |
+
+Central mode keeps authorization local. After registering Lens in Auth, run
+`auth app set-backchannel <client-id> https://lens.example.com/auth/backchannel-logout`,
+then grant users with `lens access grant person@example.com`. Password changes,
+central account disablement, and sign-out-everywhere revoke Lens sessions; the
+legacy `elcano` magic-link mode remains the default and is unchanged.
 
 Tuning goes in `config.json` (git-ignored; copy from
 [`config.json.example`](config.json.example), which annotates all 64 keys).
