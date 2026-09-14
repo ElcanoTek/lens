@@ -274,9 +274,12 @@ async def test_pages_carry_nonce_csp_and_other_responses_a_closed_one(
         assert match, csp
         nonce = match.group(1)
         assert "default-src 'self'" in csp
+        assert "style-src 'self';" in csp
+        assert "unsafe-inline" not in csp
         assert "frame-ancestors 'none'" in csp
         assert "form-action" not in csp
         body = page.text
+        assert ' style="' not in body
         # Every inline script carries this response's nonce; none is bare.
         assert "<script>" not in body
         assert f'<script nonce="{nonce}">' in body
