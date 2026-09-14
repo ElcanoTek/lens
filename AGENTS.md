@@ -106,7 +106,7 @@ The web service (`web_service.py`) spawns `main.py` as a subprocess for each job
 | `ctv_processor.py` | CTV two-step processor; research → classify → post-process; markdown stripping; research truncation; platform detection from bundle ID |
 | `progress_tracker.py` | JSON-based progress persistence; atomic writes; resumable processing |
 | `reporting.py` | Terminal reporter; Rich-based progress bar; JSONL logging |
-| `web_service.py` | FastAPI web dashboard; unified `elcano_auth` cookie auth (see `auth_cookie.py`); job queue (one at a time); file upload/download |
+| `web_service.py` | FastAPI web dashboard; eagerly validated legacy/central auth provider, public readiness and signed-out routes; job queue (one at a time); file upload/download |
 | `manage.py` | CLI utility for setup, progress, reset, validation, stats |
 | `content_taxonomy.tsv` | IAB content taxonomy used for classification; loaded and cached as class variable in `openrouter_client.py` |
 

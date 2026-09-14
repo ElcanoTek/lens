@@ -290,8 +290,12 @@ for _ in $(seq 1 15); do
   if [[ "$code" == "200" ]]; then healthy=1; break; fi
   sleep 1
 done
-if [[ "$healthy" == "1" ]]; then ok "health check /health → 200"
-else warn "lens didn't return 200 on /health in 15s — check: lens logs"; fi
+if [[ "$healthy" == "1" ]]; then
+  ok "health check /health → 200"
+else
+  systemctl stop lens.service 2>/dev/null || true
+  die "lens did not become ready within 15s — check: lens logs"
+fi
 
 # ── step 7: Caddy / TLS ─────────────────────────────────────────────────
 step "7/7  Reverse proxy / TLS"

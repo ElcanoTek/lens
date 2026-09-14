@@ -178,6 +178,25 @@ table {
   box-shadow: var(--shadow-sm);
 }
 
+.signed-out-shell {
+  max-width: 32rem;
+  align-content: center;
+}
+
+.signed-out-panel {
+  justify-items: center;
+  text-align: center;
+}
+
+.signed-out-mark {
+  width: 3rem;
+  height: 3rem;
+}
+
+.signed-out-copy {
+  color: var(--color-text-secondary);
+}
+
 /* ── App header ─────────────────────────────────────────────────────── */
 
 .ds-app-header {

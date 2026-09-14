@@ -135,8 +135,9 @@ Seven steps, in order:
 6. **Units and CLI** — installs `lens.service`, `/usr/local/bin/lens`, and
    `firecrawl.service` when podman-compose is present.
 7. **Start** — enables and starts the services, polls
-   `http://127.0.0.1:8808/health` for up to 15 s, then optionally installs
-   Caddy, opens http/https in firewalld and waits up to 45 s for TLS.
+   `http://127.0.0.1:8808/health` for up to 15 s and fails the installation if
+   Lens never becomes ready. It then optionally installs Caddy, opens
+   http/https in firewalld and waits up to 45 s for TLS.
    Finally it installs `deploy/motd` to `/etc/motd`.
 
 Nothing in these steps is idempotency-hostile: run it again after changing a
@@ -548,8 +549,13 @@ written after every single item.
 
 ## Health checks and monitoring
 
-`/health` is public — no cookie required — which is what makes it usable as a
-load-balancer probe.
+`/health` is public — no cookie required — which makes it usable as a
+load-balancer readiness probe. Lens constructs the selected authentication
+provider during startup, and the probe reuses that validated provider. Missing
+central credentials, an invalid signing key, or an inaccessible access
+database therefore prevents the service from advertising readiness instead of
+failing on the first user request. The JSON response includes the active
+`auth_mode` for operator diagnostics.
 
 ```bash
 curl -fsS http://127.0.0.1:8808/health          # behind the proxy
@@ -558,6 +564,12 @@ curl -fsS https://lens.example.com/health       # through it
 
 `HEAD /health` is supported too, for probes that prefer it. Both bootstrap and
 update gate on this endpoint returning 200.
+
+In central mode, local logout redirects to the public `/signed-out` page rather
+than `/`. This is deliberate: `/` starts SSO for an unauthenticated browser,
+and the still-valid Auth cookie would otherwise create a new Lens session
+immediately. The signed-out page starts SSO only when the user selects **Sign in
+again**. Legacy mode still delegates logout to the Elcano Auth service.
 
 Beyond that:
 
