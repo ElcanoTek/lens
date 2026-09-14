@@ -789,13 +789,27 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lens Internal Service", version="1.0.0", lifespan=_lifespan)
+
+
+def _cookie_secure() -> bool:
+    """Whether Lens cookies carry Secure.
+
+    Same switch as the central-auth session cookie (LENS_AUTH_COOKIE_SECURE,
+    default on). Turning it off is refused by CentralAuthProvider unless
+    AUTH_ALLOW_INSECURE_HTTP is also set, so production stays Secure by
+    construction; the flag exists so the login flow can be exercised over
+    plain HTTP in development, matching Explorer.
+    """
+    return os.getenv("LENS_AUTH_COOKIE_SECURE", "1").strip().lower() in {"1", "true", "yes", "on"}
+
+
 app.add_middleware(
     SessionMiddleware,
     secret_key=os.getenv("LENS_SESSION_SECRET") or secrets.token_urlsafe(32),
     session_cookie="lens_ui",
     max_age=LOGIN_TRANSACTION_SECONDS,
     same_site="lax",
-    https_only=True,
+    https_only=_cookie_secure(),
 )
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
@@ -849,6 +863,41 @@ async def _limit_backchannel_body(request: Request, call_next):
         if int(content_length) > MAX_BACKCHANNEL_BODY_BYTES:
             return Response(status_code=413)
     return await call_next(request)
+
+
+# Content-Security-Policy. Pages carry one inline <script> (the theme
+# bootstrap) which gets a per-response nonce; everything else loads from this
+# origin. Scripts are the strict part: no inline handlers, no eval, no other
+# origins, so an injected <script> or onclick cannot run. Styles keep
+# 'unsafe-inline' because the progress bars set width via style attributes in
+# the template and in main.js; tightening that means moving those widths to
+# CSSOM assignments first. No form-action: Elcano-mode logout is a form POST
+# that redirects to the auth host, and browsers apply form-action to that
+# redirect. frame-ancestors 'none' mirrors X-Frame-Options: DENY.
+CSP_NON_PAGE = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+
+def _csp_for_page(nonce: str) -> str:
+    return (
+        f"default-src 'self'; script-src 'self' 'nonce-{nonce}'; "
+        "style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; "
+        "connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+    )
+
+
+@app.middleware("http")
+async def _security_headers(request: Request, call_next):
+    request.state.csp_nonce = secrets.token_urlsafe(16)
+    response = await call_next(request)
+    content_type = response.headers.get("content-type", "")
+    if content_type.startswith("text/html"):
+        response.headers["Content-Security-Policy"] = _csp_for_page(request.state.csp_nonce)
+    else:
+        response.headers.setdefault("Content-Security-Policy", CSP_NON_PAGE)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    return response
 
 
 @app.middleware("http")

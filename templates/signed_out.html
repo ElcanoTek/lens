@@ -6,7 +6,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Signed out — Lens</title>
-  <script>
+  <script nonce="{{ request.state.csp_nonce }}">
     (function () {
       var storageKey = "flag-theme-preference";
       var preferredTheme = null;

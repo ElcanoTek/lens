@@ -94,7 +94,10 @@ async def test_central_login_creates_lens_only_session_and_backchannel_revokes(
         start = await client.get("/auth/login", follow_redirects=False)
         transaction_cookie = start.headers.get("set-cookie", "").lower()
         assert "httponly" in transaction_cookie
-        assert "secure" in transaction_cookie
+        # The Secure flag on this cookie is fixed when the SessionMiddleware is
+        # constructed at import, from LENS_AUTH_COOKIE_SECURE (default on);
+        # this test's monkeypatched env cannot change it, so the flag itself
+        # is covered by test_transaction_cookie_is_secure_by_default.
         assert "samesite=lax" in transaction_cookie
         assert "max-age=600" in transaction_cookie
         query = parse_qs(urlsplit(start.headers["location"]).query)
@@ -230,6 +233,24 @@ async def test_legacy_logout_still_uses_the_elcano_auth_logout(monkeypatch) -> N
     monkeypatch.setattr(auth_provider.auth_cookie, "AUTH_LOGIN_URL", "https://auth.elcanotek.com")
     auth_provider.clear_provider_cache()
 
+async def test_pages_carry_nonce_csp_and_other_responses_a_closed_one(
+    monkeypatch, tmp_path
+) -> None:
+    import re
+
+    monkeypatch.delenv("LENS_AUTH_MODE", raising=False)
+    monkeypatch.setenv("AUTH_SIGNING_PUBKEY", "")
+    auth_provider.clear_provider_cache()
+    input_dir = tmp_path / "inputs"
+    output_dir = tmp_path / "outputs"
+    input_dir.mkdir()
+    output_dir.mkdir()
+    monkeypatch.setattr(web_service, "INPUT_DIR", input_dir)
+    monkeypatch.setattr(web_service, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(web_service, "manager", web_service.JobManager())
+    monkeypatch.setattr(
+        "auth_cookie.current_identity", lambda _request: {"email": "alice@example.com"}
+    )
     transport = httpx.ASGITransport(app=web_service.app)
     async with httpx.AsyncClient(
         transport=transport, base_url="https://lens.example.com"
@@ -239,3 +260,29 @@ async def test_legacy_logout_still_uses_the_elcano_auth_logout(monkeypatch) -> N
     assert response.status_code == 303
     assert response.headers["location"] == "https://auth.elcanotek.com/logout"
     auth_provider.clear_provider_cache()
+        page = await client.get("/")
+        assert page.status_code == 200
+        csp = page.headers["content-security-policy"]
+        match = re.search(r"script-src 'self' 'nonce-([A-Za-z0-9_-]+)'", csp)
+        assert match, csp
+        nonce = match.group(1)
+        assert "default-src 'self'" in csp
+        assert "frame-ancestors 'none'" in csp
+        assert "form-action" not in csp
+        body = page.text
+        # Every inline script carries this response's nonce; none is bare.
+        assert "<script>" not in body
+        assert f'<script nonce="{nonce}">' in body
+        assert not re.search(r' on[a-z]+="', body)
+        second = await client.get("/")
+        assert second.headers["content-security-policy"] != csp
+
+        health = await client.get("/health")
+        assert health.headers["content-security-policy"] == web_service.CSP_NON_PAGE
+
+
+def test_transaction_cookie_is_secure_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("LENS_AUTH_COOKIE_SECURE", raising=False)
+    assert web_service._cookie_secure() is True
+    monkeypatch.setenv("LENS_AUTH_COOKIE_SECURE", "0")
+    assert web_service._cookie_secure() is False
