@@ -69,6 +69,8 @@ idna==3.19
     #   yarl
 iniconfig==2.3.0
     # via pytest
+itsdangerous==2.2.0
+    # via -r requirements.in
 jinja2==3.1.6
     # via -r requirements.in
 jiter==0.16.0
