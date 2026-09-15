@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2026 ElcanoTek, Inc.
 
+import asyncio
 import base64
 import hashlib
 import json
+import threading
+import time
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -136,6 +139,73 @@ async def test_central_login_creates_lens_only_session_and_backchannel_revokes(
             FakeCentralClient.exchange_error = None
         assert rejected.status_code == 400
         assert "Try again" in rejected.text
+
+
+@pytest.mark.asyncio
+async def test_slow_code_exchange_does_not_stall_the_event_loop(monkeypatch, tmp_path) -> None:
+    """A blocked token exchange must not block /health (or anyone else).
+
+    The exchange is synchronous urllib with a 10-second timeout. If the
+    callback handler ran on the event loop, one slow Auth response would
+    freeze every other request for that long. Here the fake exchange waits on
+    an event the test only sets after /health has answered.
+    """
+    released = threading.Event()
+
+    class BlockingCentralClient(FakeCentralClient):
+        def exchange(self, *, code: str, verifier: str, expected_nonce: str):
+            released.wait(5)
+            return super().exchange(code=code, verifier=verifier, expected_nonce=expected_nonce)
+
+    private_key = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("LENS_AUTH_MODE", "central")
+    monkeypatch.setenv("LENS_SESSION_SECRET", "test-session-secret-with-at-least-32-bytes")
+    monkeypatch.setenv("LENS_ACCESS_DB", str(tmp_path / "access.db"))
+    monkeypatch.setenv("LENS_AUTH_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AUTH_ALLOW_INSECURE_HTTP", "1")
+    monkeypatch.setenv("AUTH_ISSUER_URL", "http://auth.example.com")
+    monkeypatch.setenv("LENS_PUBLIC_URL", "http://lens.example.com")
+    monkeypatch.setenv("AUTH_CLIENT_ID", "lens")
+    monkeypatch.setenv("AUTH_CLIENT_SECRET", "a-test-secret-that-is-at-least-32-bytes")
+    monkeypatch.setenv(
+        "AUTH_SIGNING_PUBKEY",
+        base64.b64encode(private_key.public_key().public_bytes_raw()).decode(),
+    )
+    monkeypatch.setattr(auth_provider, "CentralAuthClient", BlockingCentralClient)
+    auth_provider.clear_provider_cache()
+    provider = auth_provider.get_auth_provider()
+    provider.store.grant_access("alice@example.com", now=1_000)
+
+    transport = httpx.ASGITransport(app=web_service.app)
+    # https: the transaction cookie carries Secure (fixed at import), and the
+    # client would not send it over plain http.
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://lens.example.com"
+    ) as client:
+        start = await client.get("/auth/login", follow_redirects=False)
+        query = parse_qs(urlsplit(start.headers["location"]).query)
+        # The clock starts before the callback is scheduled: if the handler
+        # blocks the loop, even the sleep below cannot return until it is done.
+        began = time.monotonic()
+        callback_task = asyncio.create_task(
+            client.get(
+                "/auth/callback",
+                params={"code": "one-time-code", "state": query["state"][0]},
+                follow_redirects=False,
+            )
+        )
+        await asyncio.sleep(0.05)  # let the callback reach the exchange
+        try:
+            health = await client.get("/health")
+            elapsed = time.monotonic() - began
+        finally:
+            released.set()
+        callback = await callback_task
+
+    auth_provider.clear_provider_cache()
+    assert health.status_code == 200
+    assert elapsed < 2, f"/health waited {elapsed:.1f}s behind a blocked code exchange"
+    assert callback.status_code == 303
 
 
 def test_legacy_magic_mode_remains_default(monkeypatch) -> None:

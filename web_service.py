@@ -1557,8 +1557,14 @@ async def auth_login(request: Request, next: Optional[str] = None):
     return provider.unauthenticated_response(request)
 
 
+# The two central-auth handlers below are deliberately plain `def`, not
+# `async def`: they call the blocking urllib client (token exchange, up to a
+# 10-second timeout) and the JWKS resolver (up to 5 seconds). FastAPI runs a
+# sync handler in its worker thread pool, so a slow or unreachable Auth stalls
+# that one request instead of the single event loop that serves every other
+# page, /health included. Explorer's handlers have the same shape.
 @app.get("/auth/callback")
-async def auth_callback(
+def auth_callback(
     request: Request,
     code: Optional[str] = None,
     state: Optional[str] = None,
@@ -1591,7 +1597,7 @@ async def auth_callback(
 
 
 @app.post("/auth/backchannel-logout", status_code=204)
-async def auth_backchannel_logout(logout_token: str = Form(...)) -> Response:
+def auth_backchannel_logout(logout_token: str = Form(...)) -> Response:
     provider = get_auth_provider()
     if not isinstance(provider, CentralAuthProvider):
         raise HTTPException(status_code=404)
