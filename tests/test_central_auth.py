@@ -120,6 +120,19 @@ def test_access_admin_cli_grants_lists_and_revokes(monkeypatch, tmp_path, capsys
     monkeypatch.setattr("sys.argv", ["central_auth_admin.py", "revoke", "alice@example.com"])
     assert central_auth_admin.main() == 0
     assert not CentralAuthStore.from_env().is_allowed("alice@example.com")
+    assert "revoked alice@example.com" in capsys.readouterr().out
+
+    # Revoking an email that is not allowed changes nothing and must say so.
+    monkeypatch.setattr("sys.argv", ["central_auth_admin.py", "revoke", "alice@example.com"])
+    assert central_auth_admin.main() == 1
+    captured = capsys.readouterr()
+    assert "not currently allowed" in captured.err
+    assert "revoked" not in captured.out
+
+    # A malformed email is an operator error, not a traceback.
+    monkeypatch.setattr("sys.argv", ["central_auth_admin.py", "grant", "not-an-email"])
+    assert central_auth_admin.main() == 1
+    assert "valid email" in capsys.readouterr().err
 
 
 def test_code_exchange_uses_basic_pkce_and_validates_identity(monkeypatch) -> None:
