@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
+import auth_cookie
 from auth_provider import CentralAuthProvider, ElcanoAuthProvider, get_auth_provider
 from central_auth import (
     LOGIN_TRANSACTION_SECONDS,
@@ -1540,10 +1541,18 @@ async def logout(request: Request, csrf_token: Optional[str] = Form(default=None
 
 @app.get("/signed-out")
 async def signed_out(request: Request):
-    # Deliberately public and provider-free. Redirecting back to / would start
+    # Deliberately public and identity-free. Redirecting back to / would start
     # central SSO immediately while the Auth cookie is still valid, making the
-    # local logout appear ineffective.
-    return templates.TemplateResponse(request, "signed_out.html", {})
+    # local logout appear ineffective. The page therefore also points at the
+    # central account page, which is the one place the Auth session itself can
+    # be ended; local logout only ends the Lens session.
+    provider = get_auth_provider()
+    account_url = (
+        f"{provider.client.issuer_url}/account"
+        if isinstance(provider, CentralAuthProvider)
+        else auth_cookie.AUTH_LOGIN_URL
+    )
+    return templates.TemplateResponse(request, "signed_out.html", {"account_url": account_url})
 
 
 @app.get("/login")
