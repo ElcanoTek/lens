@@ -12,6 +12,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 import auth_provider
+import central_auth
 import central_auth_admin
 from central_auth import (
     AuthKeyResolver,
@@ -191,6 +192,28 @@ def test_logout_token_requires_a_live_expiry(overrides) -> None:
             public_keys=[public_key],
             now=1_200,
         )
+
+
+def test_login_prunes_revoked_and_absolutely_expired_sessions(tmp_path) -> None:
+    import sqlite3
+
+    store = CentralAuthStore(tmp_path / "access.db", idle_seconds=60, absolute_seconds=120)
+    store.grant_access("alice@example.com", now=1_000)
+    revoked = store.create_session("account-1", "alice@example.com", now=1_000)
+    assert store.revoke_session(revoked.token, now=1_001)
+    store.create_session("account-1", "alice@example.com", now=1_002)  # absolute expiry 1_122
+    live = store.create_session("account-1", "alice@example.com", now=1_100)  # still valid at 1_130
+
+    latest = store.create_session("account-1", "alice@example.com", now=1_130)
+
+    with sqlite3.connect(store.path) as connection:
+        remaining = {row[0] for row in connection.execute("SELECT token_hash FROM sessions")}
+    assert remaining == {
+        central_auth._token_hash(live.token),
+        central_auth._token_hash(latest.token),
+    }
+    assert store.get_identity(live.token, now=1_131) is not None
+    assert store.get_identity(latest.token, now=1_131) is not None
 
 
 def test_replay_table_is_pruned_after_retention(tmp_path) -> None:
