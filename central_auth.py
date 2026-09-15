@@ -603,6 +603,15 @@ class CentralAuthStore:
         idle = min(timestamp + self.idle_seconds, absolute)
         with self._connect() as connection:
             connection.execute("BEGIN IMMEDIATE")
+            # Nothing else deletes session rows: validation only marks them
+            # revoked and expiry is enforced by comparison, so without this
+            # every login since the first deploy would stay on disk. A revoked
+            # or absolutely-expired row can never validate again, so a new
+            # login is a safe, cheap moment to drop them (same as Explorer).
+            connection.execute(
+                "DELETE FROM sessions WHERE revoked_at IS NOT NULL OR absolute_expires_at <= ?",
+                (timestamp,),
+            )
             allowed = connection.execute(
                 "SELECT 1 FROM access_entries WHERE email = ? AND enabled = 1", (normalized,)
             ).fetchone()
