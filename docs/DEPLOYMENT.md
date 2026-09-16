@@ -565,11 +565,13 @@ curl -fsS https://lens.example.com/health       # through it
 `HEAD /health` is supported too, for probes that prefer it. Both bootstrap and
 update gate on this endpoint returning 200.
 
-In central mode, local logout redirects to the public `/signed-out` page rather
-than `/`. This is deliberate: `/` starts SSO for an unauthenticated browser,
-and the still-valid Auth cookie would otherwise create a new Lens session
-immediately. The signed-out page starts SSO only when the user selects **Sign in
-again**. Legacy mode still delegates logout to the Elcano Auth service.
+In central mode, logout revokes the Lens session, clears the cookie, and
+redirects to `<AUTH_ISSUER_URL>/logout?client_id=<AUTH_CLIENT_ID>`. Auth ends
+every central session of the account and fans a back-channel logout out to
+every application, so no still-valid Auth cookie can recreate a Lens session;
+the browser lands on Auth's login page. The public `/signed-out` page remains
+for direct visits. Legacy mode still delegates logout to the Elcano Auth
+service.
 
 Beyond that:
 

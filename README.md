@@ -272,9 +272,11 @@ key — Lens has no login or password of its own. Central mode exchanges Auth's
 one-use code for a Lens-local session and keeps its application allowlist in
 `/var/lib/lens/access.db`. Without `AUTH_SIGNING_PUBKEY` it fails closed.
 Central configuration and the access database are validated during startup and
-by the public `/health` readiness probe. Central logout ends only the Lens
-session and lands on `/signed-out`; the user can deliberately start SSO again
-from there. Legacy logout continues through the Elcano Auth service.
+by the public `/health` readiness probe. Central logout revokes the Lens
+session and then redirects to Auth's `/logout?client_id=lens`, which ends
+every central session of the account and signs the user out of every
+application; the browser lands on Auth's login page. Legacy logout continues
+through the Elcano Auth service.
 
 The dashboard shells out to `main.py` as a subprocess per job, so environment
 variables and CLI flags are the only configuration surface — there is no
