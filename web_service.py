@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Deque, Dict, List, Optional
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, StreamingResponse
@@ -1534,7 +1534,15 @@ async def logout(request: Request, csrf_token: Optional[str] = Form(default=None
         raise HTTPException(status_code=403)
     provider.store.revoke_session(request.cookies.get(provider.cookie_name))
     request.session.clear()
-    response = RedirectResponse(url="/signed-out", status_code=303)
+    # Logging out means signing out of every Elcano app: hand the browser to
+    # Auth's RP-initiated logout, which ends the central session, fans a
+    # back-channel logout out to every registered application (this one
+    # included, harmlessly), and lands on Auth's login page. /signed-out
+    # remains for direct visits.
+    response = RedirectResponse(
+        url=f"{provider.client.issuer_url}/logout?client_id={quote(provider.client.client_id, safe='')}",
+        status_code=303,
+    )
     provider.clear_session_cookie(response)
     return response
 

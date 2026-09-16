@@ -272,11 +272,14 @@ async def test_central_logout_stays_signed_out_until_the_user_chooses_to_sign_in
         )
 
         assert response.status_code == 303
-        assert response.headers["location"] == "/signed-out"
+        # Logout hands the browser to Auth's RP-initiated logout so the central
+        # session (and every other app session) ends too; otherwise the next
+        # visit would silently sign the user straight back in.
+        assert response.headers["location"] == "http://auth.example.com/logout?client_id=lens"
         assert provider.store.get_identity(session.token) is None
         assert client.cookies.get("lens_session") is None
 
-        signed_out = await client.get(response.headers["location"], follow_redirects=False)
+        signed_out = await client.get("/signed-out", follow_redirects=False)
         assert signed_out.status_code == 200
         assert "You are signed out" in signed_out.text
         assert 'href="/auth/login?next=%2F"' in signed_out.text
