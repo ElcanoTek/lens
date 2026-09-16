@@ -239,7 +239,7 @@ async def test_startup_and_health_fail_when_central_auth_is_misconfigured(
 
 
 @pytest.mark.asyncio
-async def test_central_logout_stays_signed_out_until_the_user_chooses_to_sign_in(
+async def test_central_logout_signs_out_everywhere_via_auth_and_signed_out_page_stays_direct(
     monkeypatch, tmp_path
 ) -> None:
     private_key = Ed25519PrivateKey.generate()
@@ -283,8 +283,7 @@ async def test_central_logout_stays_signed_out_until_the_user_chooses_to_sign_in
         assert signed_out.status_code == 200
         assert "You are signed out" in signed_out.text
         assert 'href="/auth/login?next=%2F"' in signed_out.text
-        # Local logout ends only the Lens session; the page must lead to the
-        # one place the central Auth session can be ended.
+        # The direct-visit page still points at the central account page.
         assert 'href="http://auth.example.com/account"' in signed_out.text
         assert "location" not in signed_out.headers
 
