@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 
-def run(*args, timeout=15):
+def run(*args, timeout=15, cwd=None):
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return result.returncode, result.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return 127, ""
@@ -138,7 +138,8 @@ def diagnose(app, src, user, public_url=None):
             "running interpreter matches installed interpreter",
             "Run lens restart; interpreter is stale or inaccessible",
         )
-    code, head = run("git", "-C", str(src), "rev-parse", "HEAD")
+    git = ("git", "-c", f"safe.directory={src}", "-C", str(src))
+    code, head = run(*git, "rev-parse", "HEAD")
     try:
         deployed = (app / ".deployed-revision").read_text().strip()
     except OSError:
@@ -149,7 +150,7 @@ def diagnose(app, src, user, public_url=None):
         f"deployed {head[:12]}",
         "Run lens rebuild; source and deployed revision differ or stamp is missing",
     )
-    code, dirty = run("git", "-C", str(src), "status", "--porcelain")
+    code, dirty = run(*git, "status", "--porcelain")
     add(
         "checkout",
         code == 0 and not dirty,
@@ -200,6 +201,7 @@ def diagnose(app, src, user, public_url=None):
                 "podman",
                 "info",
                 timeout=20,
+                cwd=app,
             )
             add(
                 "podman",

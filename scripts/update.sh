@@ -39,7 +39,7 @@ lens_lock "$@"
 
 step "1/4  Fetching latest"
 cd "$SRC_DIR"
-git config --global --add safe.directory "$SRC_DIR" 2>/dev/null || true
+git() { lens_git "$SRC_DIR" "$@"; }
 before_sha="$(git rev-parse HEAD)"
 [[ -z "$(git status --porcelain)" ]] || die "source checkout has local changes — commit or stash them first"
 
@@ -151,25 +151,29 @@ ensure_auth_pubkey
 # Heals boxes bootstrapped before deep-scrape support: system users get no
 # subuid/subgid ranges (image unpack fails with "insufficient UIDs or
 # GIDs"), services get no /run/user/<uid> without lingering, and the Chrome
-# image was never pre-seeded. `podman system migrate` also kills any stale
-# pause process so new mappings and the (possibly changed) unit sandbox
-# apply. Skippable with LENS_UPDATE_SKIP_DEEP=1.
+# image was never pre-seeded. Migrate only after changing mappings: Podman
+# migration stops every service-user container, including live Firecrawl.
+# Skippable with LENS_UPDATE_SKIP_DEEP=1.
 ensure_rootless_podman() {
   [[ "${LENS_UPDATE_SKIP_DEEP:-0}" == "1" ]] && return 0
   if ! command -v podman >/dev/null 2>&1; then
     dnf install -y podman >/dev/null 2>&1 || { warn "podman unavailable — deep scrapes disabled"; return 0; }
   fi
-  local app_uid
+  local app_uid mappings_changed=0
   app_uid="$(id -u "$APP_USER")" || return 0
   if ! grep -q "^${APP_USER}:" /etc/subuid 2>/dev/null; then
     usermod --add-subuids 200000-265535 "$APP_USER" && ok "added subuid range for $APP_USER"
+    mappings_changed=1
   fi
   if ! grep -q "^${APP_USER}:" /etc/subgid 2>/dev/null; then
     usermod --add-subgids 200000-265535 "$APP_USER" && ok "added subgid range for $APP_USER"
+    mappings_changed=1
   fi
   loginctl enable-linger "$APP_USER" 2>/dev/null || true
-  runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" \
-    podman system migrate 2>/dev/null || true
+  if [[ "$mappings_changed" == 1 ]]; then
+    runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" \
+      podman system migrate
+  fi
   local image="${LENS_DEEP_SCRAPE_IMAGE:-docker.io/selenium/standalone-chrome:latest}"
   if ! runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" \
     podman image exists "$image" 2>/dev/null; then
