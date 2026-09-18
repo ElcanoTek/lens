@@ -162,6 +162,7 @@ async def main(argv: Optional[List[str]] = None):
         config.RESEARCH_FALLBACK_ENABLED = args.research_fallback == "on"
     if args.research_model:
         config.RESEARCH_MODEL = args.research_model
+        config.CTV_RESEARCH_MODEL = args.research_model
     if args.input_csv:
         config.INPUT_CSV_PATH = args.input_csv
     if args.output_csv:

@@ -51,6 +51,7 @@ def test_research_catalog_requires_web_search_support():
         _model("perplexity/sonar", 1e-6, 1e-6, params=websearch),
         _model("no-search/model", 1e-7, 4e-7),  # tools only
         _model("pricey-search/model", 5e-6, 2.5e-5, params=websearch),
+        _model("requires-explicit-search/model", 1e-6, 1e-6, params=websearch),
     ]
 
     catalog = _build_model_options(models)
@@ -88,6 +89,13 @@ def test_catalog_labels_include_pricing():
     assert "Gemini Flash Latest" in option["label"]
     assert "$1.5/M in" in option["label"]
     assert "$9/M out" in option["label"]
+
+
+def test_research_prices_show_search_fees():
+    model = _model("perplexity/sonar", 1e-6, 1e-6, params=("web_search_options",))
+    assert "search fees extra" in _build_model_options([model])["research"][0]["label"]
+    model["pricing"]["web_search"] = "0.005"
+    assert "search from $5/1K requests" in _build_model_options([model])["research"][0]["label"]
 
 
 def test_catalog_tolerates_malformed_entries():

@@ -180,6 +180,13 @@ Elcano ships exactly **two typefaces**, everywhere: **Nebula Sans** (SIL OFL 1.1
 
 The dashboard's Advanced settings populate two model dropdowns from OpenRouter's `/models` endpoint (`_get_model_catalog` in `web_service.py`, cached 1h): the **classification model** (must support tool calling; price-capped by `MODEL_PROMPT_PRICE_CAP`/`MODEL_COMPLETION_PRICE_CAP` — classification is high-volume and doesn't benefit from frontier-priced models) and the **research model** (must advertise `web_search_options`, i.e. built-in web search; capped by `RESEARCH_*_PRICE_CAP`). `~vendor/…-latest` aliases (OpenRouter's self-updating pins) sort first; `~google/gemini-flash-latest` and `perplexity/sonar-pro` are the recommended defaults. Selections reach the job subprocess via `--llm-model` / `--research-model`, choices persist per browser in localStorage, and non-default settings show on the run's row in the Runs table.
 
+Research model choices are additionally restricted to the verified automatic-search
+models in `RESEARCH_MODELS` (Sonar and Sonar Pro). Advertising `web_search_options`
+alone does not ensure a plain chat request searches. Search fees appear separately
+in picker labels. `--research-model` applies to both website and CTV research;
+custom-category questions are included as evidence needs in both research prompts.
+See [`docs/RESEARCH_MODELS.md`](docs/RESEARCH_MODELS.md) for the live cost comparison.
+
 ### Web service spawns subprocesses
 
 `web_service.py` runs `main.py` as a subprocess for each job, passing CLI args. It does **not** import the pipeline directly. This means environment variables and CLI flags are the only way to configure job execution.

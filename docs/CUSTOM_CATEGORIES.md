@@ -23,6 +23,13 @@ JSON definitions for reuse in the CLI.
 ## Server setup
 
 Set `TYPESAFE_API_KEY` in the server's `.env` (or environment) and restart Lens.
+
+For website research fallback and CTV research, Lens also sends the custom
+questions (including multiple-choice options) to the research model so its
+summary can include relevant evidence. TypeSafe still makes the custom judgment
+in a separate call. A research summary is indirect evidence: missing details are
+not proof of absence, and these labels do not inspect images or video.
+
 Fresh installs offer an optional, hidden-input TypeSafe key prompt during
 bootstrap—press Enter to skip. Unattended bootstrap accepts `TYPESAFE_API_KEY`
 from its environment and skips the feature when it is absent. Re-running

@@ -227,6 +227,9 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     writer.writeheader()
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     custom = Mock()
+    custom.research_questions.return_value = TypeSafeCategories(
+        SPEC, api_key="test"
+    ).research_questions()
     custom.classify = AsyncMock(
         return_value={"TypeSafe_Status": "error", "TypeSafe_Error": "TypeSafe HTTP 401"}
         if custom_error
@@ -294,6 +297,33 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
         }[kind]
     )
     assert tracker.get_summary()["successful"] == 1
+    if kind in {"research", "ctv"}:
+        research = router.research_website if kind == "research" else router.research_ctv_app
+        assert (
+            research.call_args.kwargs["custom_questions"] == custom.research_questions.return_value
+        )
+
+
+@pytest.mark.parametrize("ctv", [False, True])
+async def test_custom_questions_reach_research_api(ctv):
+    from openrouter_client import OpenRouterClient
+
+    client = OpenRouterClient(api_key="test")
+    response = Mock()
+    response.model_dump.return_value = {
+        "choices": [{"message": {"content": "Factual source evidence. " * 30}}],
+        "usage": {"total_tokens": 10},
+    }
+    create = AsyncMock(return_value=response)
+    client._client = Mock()
+    client._client.chat.completions.create = create
+    custom = TypeSafeCategories(SPEC, api_key="test")
+    method = client.research_ctv_app if ctv else client.research_website
+    await method("example.com", custom_questions=custom.research_questions())
+    prompt = create.call_args.kwargs["messages"][-1]["content"]
+    assert SPEC["categories"][0]["question"] in prompt
+    assert "Education, Entertainment, Unknown" in prompt
+    assert "Do not assign labels" in prompt
 
 
 async def test_failed_primary_analysis_has_no_custom_call(tmp_path):

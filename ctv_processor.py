@@ -267,6 +267,11 @@ class CTVProcessor:
             research_model=self.research_model,
             temperature=self.research_temperature,
             max_tokens=self.research_max_tokens,
+            **(
+                {"custom_questions": self.category_client.research_questions()}
+                if self.category_client
+                else {}
+            ),
         )
 
     async def _classification_step(
