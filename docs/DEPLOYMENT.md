@@ -140,6 +140,9 @@ Seven steps, in order:
    install `requirements.txt`. This avoids following Fedora's default Python
    major before Lens dependencies have been tested on it. Downloads live under
    the service user's `.local/share/uv`; Node/npm/Go are optional host tools.
+   Python refresh uses `uv python install` followed by `uv python upgrade`,
+   compatible with uv 0.7.22 and current uv. Patch availability comes from uv's
+   bundled catalogue: keep the distro's uv package current with `lens host update`.
 5. **Configuration and state** — writes `.env`, owned `lens:lens`, mode `0600`,
    then creates `/var/lib/lens` and atomically migrates the legacy
    `/opt/lens/data/access.db` when present. A custom `LENS_ACCESS_DB` is never

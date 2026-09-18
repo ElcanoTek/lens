@@ -35,7 +35,11 @@ lens_health() {
 lens_venv() {
   local tree="$1" version
   version="$(cat "$tree/.python-version")"
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python install --upgrade "$version" || return
+  # `install --upgrade` is unavailable in distro uv 0.7.22. The separate
+  # upgrade subcommand works there and on current uv; install also covers a
+  # fresh host. Patch availability comes from the installed uv's catalogue.
+  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python install "$version" || return
+  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python upgrade "$version" || return
   runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv venv --managed-python --python "$version" --relocatable "$tree/.venv" || return
   runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv pip install \
     --python "$tree/.venv/bin/python" -r "$tree/requirements.txt"

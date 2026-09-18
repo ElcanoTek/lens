@@ -15,6 +15,36 @@ permissions:
   contents: read
 
 jobs:
+  uv-compat:
+    name: deployment uv ${{ matrix.uv }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        uv: ["0.7.22", "0.12.16"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install uv under test
+        run: pip install "uv==${{ matrix.uv }}"
+      - name: Build and relocate a deployment venv
+        shell: bash
+        run: |
+          source scripts/lib/deploy.sh
+          APP_DIR="$(mktemp -d "$RUNNER_TEMP/lens-uv.XXXXXX")"
+          APP_USER="$(id -un)"
+          export UV_PYTHON_INSTALL_DIR="$APP_DIR/python" UV_CACHE_DIR="$APP_DIR/cache"
+          # Keep this test unprivileged; run the real uv commands as this user.
+          runuser() { shift 3; "$@"; }
+          mkdir "$APP_DIR/staging"
+          cp .python-version "$APP_DIR/staging/"
+          touch "$APP_DIR/staging/requirements.txt"
+          lens_venv "$APP_DIR/staging"
+          mv "$APP_DIR/staging" "$APP_DIR/live"
+          "$APP_DIR/live/.venv/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+
   shell:
     name: deployment shell checks
     runs-on: ubuntu-latest
