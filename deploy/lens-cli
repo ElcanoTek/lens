@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: BUSL-1.1
+# Copyright (c) 2026 ElcanoTek, Inc.
 # /usr/local/bin/lens — operator entry point for the Elcano Lens scraper UI.
 
 set -euo pipefail
@@ -7,28 +9,35 @@ SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 APP_DIR="${LENS_APP_DIR:-/opt/lens}"
 ENV_FILE="$APP_DIR/.env"
 SERVICE="lens.service"
+ROOT=()
+if [[ $EUID != 0 ]]; then
+  ROOT=(sudo '--preserve-env=LENS_SRC_DIR,LENS_APP_DIR,LENS_UPDATE_YES,LENS_UPDATE_BRANCH,LENS_UPDATE_SKIP_DEEP,LENS_UPDATE_SKIP_FIRECRAWL,EDITOR')
+fi
 
 cmd="${1:-}"; shift || true
 
 case "$cmd" in
-  start)    exec sudo systemctl start "$SERVICE" ;;
-  stop)     exec sudo systemctl stop "$SERVICE" ;;
-  restart)  exec sudo systemctl restart "$SERVICE" ;;
-  status)   exec sudo systemctl status "$SERVICE" ;;
+  start)    exec "${ROOT[@]}" systemctl start "$SERVICE" ;;
+  stop)     exec "${ROOT[@]}" systemctl stop "$SERVICE" ;;
+  restart)  exec "${ROOT[@]}" systemctl restart "$SERVICE" ;;
+  status)   exec "${ROOT[@]}" systemctl status "$SERVICE" ;;
   logs)
-    if [[ $# -gt 0 ]]; then exec sudo journalctl -u "$SERVICE" "$@"; fi
-    exec sudo journalctl -fu "$SERVICE"
+    if [[ $# -gt 0 ]]; then exec "${ROOT[@]}" journalctl -u "$SERVICE" "$@"; fi
+    exec "${ROOT[@]}" journalctl -fu "$SERVICE"
     ;;
   update)
     [[ -d "$SRC_DIR/.git" ]] || { echo "no source checkout at $SRC_DIR" >&2; exit 1; }
-    exec sudo bash "$SRC_DIR/scripts/update.sh" "$@"
+    exec "${ROOT[@]}" bash "$SRC_DIR/scripts/update.sh" "$@"
+    ;;
+  doctor|host)
+    exec "${ROOT[@]}" bash "$SRC_DIR/scripts/$cmd.sh" "$@"
     ;;
   rebuild)
     # Rebuild and restart whatever is currently checked out, without
     # fetching or fast-forwarding the branch.  Useful after a manual
     # rollback or when you know the checkout is already correct.
     [[ -d "$SRC_DIR/.git" ]] || { echo "no source checkout at $SRC_DIR" >&2; exit 1; }
-    exec sudo env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 bash "$SRC_DIR/scripts/update.sh"
+    exec "${ROOT[@]}" env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 bash "$SRC_DIR/scripts/update.sh" "$@"
     ;;
   env)
     sub="${1:-show}"; shift || true
@@ -37,11 +46,11 @@ case "$cmd" in
         # bootstrap.sh / update.sh point operators here to paste
         # AUTH_SIGNING_PUBKEY or the OpenRouter key.
         [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
-        exec sudo "${EDITOR:-vi}" "$ENV_FILE"
+        exec "${ROOT[@]}" "${EDITOR:-vi}" "$ENV_FILE"
         ;;
       show|"")
         [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
-        sudo awk -F= '
+        "${ROOT[@]}" awk -F= '
           /^[[:space:]]*#/    { next }
           /TOKEN|KEY|SECRET|PASSWORD|PUBKEY/ { printf "%s=[REDACTED]\n", $1; next }
           NF>=2                { print }
@@ -81,10 +90,10 @@ case "$cmd" in
         else
           echo "No Caddy site block at $snippet"
         fi
-        sudo systemctl is-active caddy.service 2>&1 || true
+        "${ROOT[@]}" systemctl is-active caddy.service 2>&1 || true
         ;;
-      reload)   exec sudo caddy reload --config /etc/caddy/Caddyfile ;;
-      restart)  exec sudo systemctl restart caddy.service ;;
+      reload)   exec "${ROOT[@]}" caddy reload --config /etc/caddy/Caddyfile ;;
+      restart)  exec "${ROOT[@]}" systemctl restart caddy.service ;;
       help|--help|-h|*)
         cat <<EOF
 lens tls status     show hostname + cert expiry + Caddy state
@@ -100,8 +109,10 @@ lens — scraper web UI operator CLI
 
   lens start | stop | restart | status
   lens logs [journalctl args...]
-  lens update                   git pull + rebuild + restart
-                                (use LENS_UPDATE_YES=1 to skip the prompt)
+  lens update [--yes]           fetch + staged build + restart; rollback on failure
+  lens doctor [--json] [--strict]  read-only diagnostics (including auth + runtime)
+  lens host check|update|tools|upgrade [--yes] [--dry-run]
+                                packages, optional Node/npm/Go, stable Fedora
   lens rebuild                  rebuild + restart current checkout
                                 (skip fetch — useful after a manual rollback)
   lens env [show]               print /opt/lens/.env (secrets redacted)
@@ -114,6 +125,6 @@ EOF
     ;;
   *)
     echo "unknown command: $cmd" >&2
-    exec "$0" --help
+    exit 2
     ;;
 esac
