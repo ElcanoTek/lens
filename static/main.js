@@ -763,7 +763,6 @@ document.addEventListener("DOMContentLoaded", () => applySegmentWidths(document)
     const modelSelect = document.getElementById("llm-model-select");
     const researchCheck = document.getElementById("research-fallback-check");
     const researchModelSelect = document.getElementById("research-model-select");
-    const researchModelField = document.getElementById("research-model-field");
     const advanced = document.querySelector(".run-advanced");
     if (!modelSelect || !researchCheck || !advanced) return;
 
@@ -803,16 +802,9 @@ document.addEventListener("DOMContentLoaded", () => applySegmentWidths(document)
       }
     }
 
-    // The research-model picker only matters while the fallback is on.
-    const syncResearchModelField = () => {
-      if (!researchModelField) return;
-      researchModelField.style.opacity = researchCheck.checked ? "" : "0.5";
-      if (researchModelSelect) researchModelSelect.disabled = !researchCheck.checked;
-    };
-    syncResearchModelField();
-
+    // CTV always researches, even when website fallback is disabled. Keep the
+    // model enabled so the browser submits the selected value for either path.
     const save = () => {
-      syncResearchModelField();
       try {
         window.localStorage.setItem(
           storageKey,

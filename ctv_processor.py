@@ -129,7 +129,7 @@ class CTVProcessor:
                 if (
                     not isinstance(evidence, str)
                     or not evidence.strip()
-                    or evidence.strip().upper().startswith("INSUFFICIENT INFORMATION")
+                    or evidence.strip().upper() == "INSUFFICIENT INFORMATION"
                 ):
                     raise RuntimeError("No meaningful research evidence available")
 

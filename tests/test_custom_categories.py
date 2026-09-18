@@ -240,6 +240,8 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     router.classify_app = AsyncMock(return_value=CLASSIFICATION)
     router.classify_ctv_app = AsyncMock(return_value=CLASSIFICATION)
     evidence = "Original source evidence. " * 30
+    if kind in {"research", "ctv"}:
+        evidence = "INSUFFICIENT INFORMATION about one custom question. " + evidence
     router.research_website = AsyncMock(
         return_value={"success": True, "research_content": evidence}
     )
@@ -354,7 +356,7 @@ async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
 
 @pytest.mark.parametrize(
     "evidence",
-    [None, "", "   ", "INSUFFICIENT INFORMATION", "Insufficient information about this app."],
+    [None, "", "   ", "INSUFFICIENT INFORMATION", "  insufficient information\n"],
 )
 async def test_ctv_missing_research_never_classifies(tmp_path, evidence):
     out = io.StringIO()

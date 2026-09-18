@@ -214,14 +214,15 @@
                 <label class="run-advanced-field" id="research-model-field">
                   <span class="run-advanced-label">Research model</span>
                   <select name="research_model" id="research-model-select">
-                    <option value="{{ recommended_research_model }}" selected>Perplexity Sonar Pro — recommended</option>
+                    {% set recommended_option = model_catalog.research | selectattr('id', 'equalto', recommended_research_model) | first %}
+                    <option value="{{ recommended_research_model }}" selected>{{ recommended_option.label if recommended_option else 'Perplexity Sonar Pro' }} — recommended</option>
                     {% for option in model_catalog.research %}
                     {% if option.id != recommended_research_model %}
                     <option value="{{ option.id }}">{{ option.label }}</option>
                     {% endif %}
                     {% endfor %}
                   </select>
-                  <span class="caption">Used only for the research pass above. All listed models have built-in web search.</span>
+                  <span class="caption">Used for website research fallback and all CTV research. All listed models have built-in web search.</span>
                 </label>
               </div>
             </details>

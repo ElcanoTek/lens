@@ -7,6 +7,8 @@ import csv
 import io
 import os
 
+import pytest
+
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
 from config import config  # noqa: E402
@@ -151,7 +153,24 @@ async def test_orchestrator_research_pass_respects_disable_flag(monkeypatch, tmp
     assert researched == []
 
 
-async def test_research_website_detects_insufficient_information():
+@pytest.mark.parametrize(
+    "content,missing",
+    [
+        ("INSUFFICIENT INFORMATION", True),
+        ("  insufficient information\n", True),
+        (
+            "INSUFFICIENT INFORMATION about the custom question. "
+            + "An established daily news publisher. " * 10,
+            False,
+        ),
+        (
+            "An established daily news publisher. " * 10
+            + "INSUFFICIENT INFORMATION about its video policy.",
+            False,
+        ),
+    ],
+)
+async def test_research_website_detects_insufficient_information(content, missing):
     from openrouter_client import OpenRouterClient
 
     client = OpenRouterClient(api_key="test-key")
@@ -159,7 +178,7 @@ async def test_research_website_detects_insufficient_information():
     class _Msg:
         def model_dump(self):
             return {
-                "choices": [{"message": {"content": "INSUFFICIENT INFORMATION"}}],
+                "choices": [{"message": {"content": content}}],
                 "usage": {"total_tokens": 10},
             }
 
@@ -171,4 +190,4 @@ async def test_research_website_detects_insufficient_information():
 
     result = await client.research_website("nobody-knows-this.example")
     assert result["success"] is True
-    assert result["research_content"] == ""
+    assert result["research_content"] == ("" if missing else content)

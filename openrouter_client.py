@@ -796,7 +796,7 @@ Analyze the website and provide your classification:"""
             self.total_tokens_used += self._usage_tokens(response_data)
 
             insufficient = (
-                self.RESEARCH_INSUFFICIENT in research_content.upper()
+                self.RESEARCH_INSUFFICIENT == research_content.strip().upper()
                 or len(research_content.strip()) < 100
             )
             if insufficient:
