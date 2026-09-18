@@ -87,7 +87,7 @@ multidict==6.7.1
     #   yarl
 numpy==2.4.6
     # via pandas
-openai==3.13.0
+openai==3.14.0
     # via -r requirements.in
 openpyxl==3.1.5
     # via -r requirements.in
@@ -180,7 +180,7 @@ typing-inspection==0.4.4
     #   pydantic
 urllib3==2.7.0
     # via selenium
-uvicorn==0.52.4
+uvicorn==0.53.0
     # via -r requirements.in
 websocket-client==1.9.0
     # via selenium
