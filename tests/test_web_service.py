@@ -4,6 +4,7 @@
 import json
 import os
 from io import BytesIO
+from unittest.mock import AsyncMock
 
 import pandas as pd
 import pytest
@@ -39,6 +40,106 @@ def _auth_cookie(email: str = "tester@elcanotek.com") -> str:
 
 
 import web_service
+
+
+def test_custom_categories_form_validation_and_key_stays_server_side(monkeypatch):
+    spec = {
+        "categories": [
+            {"name": "Educational", "type": "boolean", "question": "Does this teach useful skills?"}
+        ]
+    }
+    monkeypatch.setattr(web_service, "manager", web_service.JobManager())
+    monkeypatch.setattr(web_service.manager, "worker_loop", AsyncMock())
+    monkeypatch.setattr(
+        web_service, "_model_catalog_cache", (1e18, {"classify": [], "research": []})
+    )
+    web_service.INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    (web_service.INPUT_DIR / "list.csv").write_text("Domain\nexample.com\n")
+    monkeypatch.setenv("TYPESAFE_API_KEY", "private-typesafe-key")
+    with TestClient(web_service.app) as client:
+        client.cookies.set("elcano_auth", _auth_cookie())
+        page = client.get("/")
+        assert 'id="custom-categories-enabled"' in page.text
+        assert "private-typesafe-key" not in page.text
+        response = client.post(
+            "/jobs",
+            data={"input_file": "list.csv", "custom_categories": json.dumps(spec)},
+            follow_redirects=False,
+        )
+        assert "message=" in response.headers["location"]
+        job = next(iter(web_service.manager.jobs.values()))
+        assert job.custom_categories == spec
+        assert "Educational" in web_service._job_settings_summary(job)
+        saved = web_service._jobs_state_path().read_text()
+        assert "private-typesafe-key" not in saved
+        web_service.manager._load_jobs()
+        assert web_service.manager.jobs[job.id].custom_categories == spec
+        for invalid in ("not JSON", '{"categories": []}'):
+            response = client.post(
+                "/jobs",
+                data={"input_file": "list.csv", "custom_categories": invalid},
+                follow_redirects=False,
+            )
+            assert "error=" in response.headers["location"]
+        monkeypatch.delenv("TYPESAFE_API_KEY")
+        page = client.get("/")
+        assert 'id="custom-categories"' not in page.text
+        assert 'id="custom-categories-enabled"' not in page.text
+        assert 'name="custom_categories"' not in page.text
+        response = client.post(
+            "/jobs",
+            data={"input_file": "list.csv", "custom_categories": json.dumps(spec)},
+            follow_redirects=False,
+        )
+        assert "TYPESAFE_API_KEY" in response.headers["location"]
+        assert len(web_service.manager.jobs) == 1
+
+
+async def test_custom_categories_subprocess_handoff_and_deletion(monkeypatch):
+    spec = {
+        "categories": [
+            {"name": "Educational", "type": "boolean", "question": "Does this teach useful skills?"}
+        ]
+    }
+    manager = web_service.JobManager()
+    process = AsyncMock()
+    process.wait.return_value = 0
+    spawn = AsyncMock(return_value=process)
+    monkeypatch.setattr(web_service.asyncio, "create_subprocess_exec", spawn)
+    job = await manager.create_job("list.csv", "auto", custom_categories=spec)
+    await manager._run_job(job.id)
+    args = spawn.call_args.args
+    definition_path = web_service.Path(args[args.index("--custom-categories") + 1])
+    assert json.loads(definition_path.read_text()) == spec
+    assert job.status == "completed"
+    await manager.delete_job(job.id)
+    assert not definition_path.exists()
+    plain = await manager.create_job("list.csv", "auto")
+    await manager._run_job(plain.id)
+    assert "--custom-categories" not in spawn.call_args.args
+
+
+def test_corrupt_custom_categories_cannot_be_silently_queued():
+    web_service.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    web_service._jobs_state_path().write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": "bad-labels",
+                        "input_file": "list.csv",
+                        "mode": "auto",
+                        "status": "queued",
+                        "custom_categories": {"categories": []},
+                    }
+                ]
+            }
+        )
+    )
+    manager = web_service.JobManager()
+    manager._load_jobs()
+    assert manager.jobs["bad-labels"].status == "failed"
+    assert not manager.queue
 
 
 def test_safe_filename_rejects_path_traversal():

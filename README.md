@@ -43,6 +43,9 @@ output, progress and log artifacts.](docs/images/dashboard.png)
 - **Rich output.** Quality tier, justification, IAB tiers 1–3, description,
   language, political leaning, audience size, bot protection, content length,
   which rung of the ladder produced the data, and a timestamp.
+- **Your own categories.** Optional TypeSafe yes/no labels or multiple-choice
+  categories alongside standard results, with raw probabilities.
+  [Setup and examples](docs/CUSTOM_CATEGORIES.md).
 - **A web dashboard, or just the CLI.** The FastAPI dashboard adds uploads, a
   one-at-a-time job queue, live progress and artifact downloads. The CLI needs
   nothing but Python and a key.
@@ -221,6 +224,14 @@ python manage.py sample         # write sample_input.csv
 
 CTV runs emit a wider set including `Bundle_ID`, `SSP`, `Publisher`,
 `Platform`, `Network_Affiliation`, `Target_Audience` and `Research_Summary`.
+
+## Optional custom categories
+
+Add your own yes/no labels or multiple-choice categories alongside Lens's
+standard analysis, powered by TypeSafe. Configure `TYPESAFE_API_KEY`, then use
+**Custom categories** in the dashboard or `--custom-categories definitions.json`
+on the CLI. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for setup, examples,
+CSV probabilities and resume behavior.
 
 ## Configuration
 

@@ -64,13 +64,16 @@ prompt() {
   printf '%s' "$answer"
 }
 prompt_secret() {
-  local varname="$1" label="$2" answer=""
+  local varname="$1" label="$2" optional="${3:-}" answer=""
   if [[ -n "${!varname:-}" ]]; then printf '%s' "${!varname}"; return; fi
-  if [[ "$NON_INTERACTIVE" == "1" ]]; then die "non-interactive + missing: set $varname"; fi
+  if [[ "$NON_INTERACTIVE" == "1" ]]; then
+    [[ "$optional" == optional ]] && return 0
+    die "non-interactive + missing: set $varname"
+  fi
   ask "$label (input hidden):"
   read -r -s answer
   printf '\n' >&2
-  [[ -n "$answer" ]] || die "$varname is required"
+  [[ -n "$answer" || "$optional" == optional ]] || die "$varname is required"
   printf '%s' "$answer"
 }
 genbase64() { openssl rand -base64 "$1" | tr -d '=\n' | tr '/+' '_-'; }
@@ -192,7 +195,7 @@ if [[ -f "$ENV_FILE" ]]; then
   while IFS= read -r -d '' key && IFS= read -r -d '' value; do
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     # Load known configuration only, never execute .env as a root shell script.
-    case "$key" in AUTH_*|LENS_*|OPENROUTER_API_KEY) export "$key=$value" ;; esac
+    case "$key" in AUTH_*|LENS_*|OPENROUTER_API_KEY|TYPESAFE_API_KEY) export "$key=$value" ;; esac
   done < <("$APP_DIR/.venv/bin/python" - "$ENV_FILE" <<'PY'
 import sys
 from dotenv import dotenv_values
@@ -222,6 +225,7 @@ case "$LENS_AUTH_MODE" in
 esac
 LENS_SESSION_SECRET="${LENS_SESSION_SECRET:-$(genbase64 32)}"
 OPENROUTER_API_KEY="$(prompt_secret OPENROUTER_API_KEY "OpenRouter API key")"
+TYPESAFE_API_KEY="$(prompt_secret TYPESAFE_API_KEY "TypeSafe API key for custom categories (optional, Enter to skip)" optional)"
 
 # ── Caddy / TLS intent (install happens in step 7) ────────
 HOSTNAME_FOR_TLS="$(prompt LENS_BOOTSTRAP_HOSTNAME "Public hostname for TLS (e.g. lens.example.com, blank to skip Caddy)" "${LENS_BOOTSTRAP_HOSTNAME:-}" optional)"
@@ -241,6 +245,7 @@ fi
 umask 077
 LENS_ACCESS_DB="${LENS_ACCESS_DB:-/var/lib/lens/access.db}"
 export AUTH_SIGNING_PUBKEY LENS_AUTH_MODE LENS_SESSION_SECRET LENS_ACCESS_DB OPENROUTER_API_KEY
+export TYPESAFE_API_KEY
 export AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}" LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}" AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
 # Merge only the configured keys; retain custom settings and comments on rerun.
@@ -248,7 +253,7 @@ export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}" AUTH_CLIENT_SECRET="${AUTH_CLIENT_SE
 import os, sys
 from dotenv import set_key
 for key in ('AUTH_SIGNING_PUBKEY', 'LENS_AUTH_MODE', 'LENS_SESSION_SECRET',
-            'LENS_ACCESS_DB', 'OPENROUTER_API_KEY', 'AUTH_ISSUER_URL',
+            'LENS_ACCESS_DB', 'OPENROUTER_API_KEY', 'TYPESAFE_API_KEY', 'AUTH_ISSUER_URL',
             'LENS_PUBLIC_URL', 'AUTH_CLIENT_ID', 'AUTH_CLIENT_SECRET'):
     set_key(sys.argv[1], key, os.environ[key])
 PY

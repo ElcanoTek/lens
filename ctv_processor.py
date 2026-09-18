@@ -45,7 +45,9 @@ class CTVProcessor:
         classification_temperature: float = 0.1,
         classification_max_tokens: int = 1500,
         request_delay: float = 1.0,
+        category_client=None,
     ):
+        self.category_client = category_client
         """
         Initialize the CTV processor.
 
@@ -335,6 +337,15 @@ class CTVProcessor:
             "Processed_At": datetime.now().isoformat(),
         }
 
+        if self.category_client:
+            record.update(
+                await self.category_client.classify(
+                    identifier=item.identifier,
+                    title=item.app_name,
+                    content=research_result.get("research_content", ""),
+                    source="ctv_research",
+                )
+            )
         self._write_result(record)
 
         await self.progress_tracker.mark_domain_processed(
@@ -404,6 +415,11 @@ class CTVProcessor:
         if not self.results_writer or not self.results_file:
             raise RuntimeError("Results writer has not been initialised")
 
+        if self.category_client:
+            record.setdefault("TypeSafe_Status", "skipped")
+            record.setdefault(
+                "TypeSafe_Error", "Primary analysis failed; custom categories not evaluated"
+            )
         self.results_writer.writerow(record)
         self.results_file.flush()
 

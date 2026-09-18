@@ -225,6 +225,26 @@
                 </label>
               </div>
             </details>
+            {% if typesafe_available %}
+            <details class="run-advanced custom-categories" id="custom-categories">
+              <summary class="caption">Custom categories <span class="caption">· optional · TypeSafe</span></summary>
+              <div class="run-advanced-body">
+                <label class="run-advanced-field run-advanced-check">
+                  <input type="checkbox" id="custom-categories-enabled">
+                  <span><span class="run-advanced-label">Add your own categories</span>
+                  <span class="caption">Keep the standard Lens analysis and add labels you define. Multiple yes/no labels can apply to the same item.</span></span>
+                </label>
+                <div id="custom-category-editor" hidden>
+                  <p class="caption">TypeSafe evaluates scraped text, app-store descriptions, or research summaries—not images. Define what each label means. Results and probabilities appear in the CSV.</p>
+                  <div id="custom-category-list"></div>
+                  <button class="btn btn-ghost" type="button" id="add-custom-category">Add category</button>
+                  <p class="caption">Up to 12 categories. Yes/no uses a 50% cutoff; its probability is always P(yes). Choice selects one option. Include “Other” or “Unknown” when appropriate.</p>
+                </div>
+                <input type="hidden" name="custom_categories" id="custom-categories-json" value="">
+                <noscript><p class="caption">JavaScript is required for the category editor. The CLI also accepts a JSON definition file.</p></noscript>
+              </div>
+            </details>
+            {% endif %}
             <p class="caption run-hint">Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research.</p>
           </form>
         </div>
@@ -280,6 +300,9 @@
                       <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#download"></use></svg>
                     </a>
                     {% endif %}
+                    {% if run.category_file %}
+                    <a class="btn btn-ghost" href="/files/download/outputs/{{ run.category_file }}" title="Download custom category definitions (JSON)">Categories</a>
+                    {% endif %}
                     {% if run.log_file %}
                     <a class="icon-action subtle" href="/files/download/outputs/{{ run.log_file }}" aria-label="Download log for {{ run.title }}" title="Download log">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -315,6 +338,7 @@
                       {% if run.output_file %}<input type="hidden" name="filenames" value="{{ run.output_file }}">{% endif %}
                       {% if run.progress_file %}<input type="hidden" name="filenames" value="{{ run.progress_file }}">{% endif %}
                       {% if run.log_file %}<input type="hidden" name="filenames" value="{{ run.log_file }}">{% endif %}
+                      {% if run.category_file %}<input type="hidden" name="filenames" value="{{ run.category_file }}">{% endif %}
                       <button class="icon-action danger" type="submit" aria-label="Delete artifacts for {{ run.title }}" title="Delete run and results">
                         <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
                       </button>
@@ -398,5 +422,6 @@
     </dialog>
   </div>
   <script src="{{ static_url('main.js') }}"></script>
+  <script src="{{ static_url('custom-categories.js') }}"></script>
 </body>
 </html>
