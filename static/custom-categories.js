@@ -47,13 +47,13 @@ document.addEventListener("DOMContentLoaded", () => {
     // Static markup only; user values are assigned through DOM properties.
     row.innerHTML = `
       <legend>Category</legend>
-      <label class="run-advanced-field"><span class="run-advanced-label">Name</span>
+      <label class="run-advanced-field"><span class="run-advanced-label">Category name · CSV column label</span>
         <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="e.g. Sexy" title="Start with a letter; use letters, digits, spaces, underscores or hyphens."></label>
       <label class="run-advanced-field"><span class="run-advanced-label">Answer format</span>
-        <select data-field="type"><option value="boolean">Yes / no</option><option value="choice">Choose one category</option></select></label>
+        <select data-field="type"><option value="boolean">Yes / no · independent label</option><option value="choice">Multiple choice · select one option</option></select></label>
       <label class="run-advanced-field"><span class="run-advanced-label">What should TypeSafe decide?</span>
         <textarea data-field="question" required maxlength="1000" rows="3" placeholder="Does this content use sexually suggestive themes or imagery descriptions to attract its audience?"></textarea></label>
-      <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">Options · one per line</span>
+      <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">Options · 2–12 choices, one per line</span>
         <textarea data-field="options" required maxlength="972" rows="4" placeholder="News\nEntertainment\nShopping\nOther\nUnknown"></textarea></label>
       <button type="button" class="btn btn-ghost">Remove category</button>`;
     for (const field of ["name", "question"]) row.querySelector(`[data-field=${field}]`).value = typeof value[field] === "string" ? value[field] : "";

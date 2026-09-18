@@ -228,10 +228,40 @@ CTV runs emit a wider set including `Bundle_ID`, `SSP`, `Publisher`,
 ## Optional custom categories
 
 Add your own yes/no labels or multiple-choice categories alongside Lens's
-standard analysis, powered by TypeSafe. Configure `TYPESAFE_API_KEY`, then use
-**Custom categories** in the dashboard or `--custom-categories definitions.json`
-on the CLI. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for setup, examples,
-CSV probabilities and resume behavior.
+standard analysis, powered by TypeSafe. Configure `TYPESAFE_API_KEY` on the server
+and restart Lens; the editor appears only when a key is configured. Bootstrap
+offers an optional key prompt; existing installs can use `sudo lens env edit`
+and `sudo lens restart`.
+
+![Custom category editor with a yes/no label and a multiple-choice category](docs/images/custom-categories.png)
+
+### Quick dashboard guide
+
+1. Upload and select your input file. Open **Custom categories** and check
+   **Add your own categories**.
+2. Enter a **category name**, which becomes a CSV column label. Choose **Yes / no**
+   for an independent label, or **Multiple choice** for one answer from 2–12
+   options (one option per line).
+3. Write a specific question. For example, name a label **Sexy** and ask
+   “Is erotic or sexually suggestive entertainment a primary focus?” For a
+   **Purpose** category, ask “What is the primary purpose?” and supply `News`,
+   `Entertainment`, `Education`, `Other`, and `Unknown` as separate options.
+4. Use **Add category** for more questions (up to 12), then click **Analyze**
+   above the settings.
+5. Download the CSV from **Runs**. Look for `Custom: <name>` and
+   `P(yes/choice): <name>` columns. Yes/no uses a 50% cutoff and reports P(yes);
+   multiple choice reports the probability of the selected option.
+
+Definitions are remembered in your browser, but the feature switches off after
+a page reload—enable it again for the next run. TypeSafe evaluates source text,
+app-store descriptions, or research summaries, **not images or video**, and adds
+an API call per successfully analyzed item. Missing research details are not
+proof of absence. If TypeSafe fails, standard results remain available, custom
+labels stay blank, and `TypeSafe_Status` / `TypeSafe_Error` explain the failure.
+
+For CLI use, add `--custom-categories examples/custom-categories.json` to your
+normal command. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for the JSON
+format, setup details, definition downloads, and resume behavior.
 
 ## Configuration
 
