@@ -366,7 +366,7 @@ fi
 # Single source of truth is deploy/motd; update.sh keeps it in sync on
 # existing boxes.
 install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
-git -C "$INSTALL_SRC_DIR" rev-parse HEAD > "$APP_DIR/.deployed-revision"
+lens_git "$INSTALL_SRC_DIR" rev-parse HEAD > "$APP_DIR/.deployed-revision"
 
 say
 printf '%s═══════════════════════════════════════════════%s\n' "$c_green" "$c_reset"

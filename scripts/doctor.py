@@ -138,7 +138,8 @@ def diagnose(app, src, user, public_url=None):
             "running interpreter matches installed interpreter",
             "Run lens restart; interpreter is stale or inaccessible",
         )
-    code, head = run("git", "-C", str(src), "rev-parse", "HEAD")
+    git = ("git", "-c", f"safe.directory={src}", "-C", str(src))
+    code, head = run(*git, "rev-parse", "HEAD")
     try:
         deployed = (app / ".deployed-revision").read_text().strip()
     except OSError:
@@ -149,7 +150,7 @@ def diagnose(app, src, user, public_url=None):
         f"deployed {head[:12]}",
         "Run lens rebuild; source and deployed revision differ or stamp is missing",
     )
-    code, dirty = run("git", "-C", str(src), "status", "--porcelain")
+    code, dirty = run(*git, "status", "--porcelain")
     add(
         "checkout",
         code == 0 and not dirty,

@@ -13,6 +13,13 @@ LENS_STATE_EXCLUDES=(
   --exclude='/*.log' --exclude='/__pycache__' --exclude='/.pytest_cache'
 )
 
+lens_git() {
+  local source="$1"; shift
+  # Legacy installs have a service-owned checkout. Scope trust to this command
+  # instead of writing root's global config (HOME may be unset under systemd).
+  command git -c "safe.directory=$source" -C "$source" "$@"
+}
+
 lens_lock() {
   # flock's parent owns the lock across update.sh's self-exec; no inheritable
   # descriptor leaks into systemd or long-lived child processes.

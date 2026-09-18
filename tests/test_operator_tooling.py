@@ -171,6 +171,21 @@ def test_doctor_timeout_is_a_failure():
     assert doctor.run(sys.executable, "-c", "import time; time.sleep(5)", timeout=0.01) == (127, "")
 
 
+def test_deploy_git_needs_no_home_or_global_trust_config(tmp_path):
+    repo = tmp_path / "source"
+    subprocess.run(["git", "init", str(repo)], check=True, capture_output=True)
+    env = {**os.environ, "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1", "GIT_CONFIG_NOSYSTEM": "1"}
+    env.pop("HOME", None)
+    env.pop("XDG_CONFIG_HOME", None)
+    result = subprocess.run(
+        ["git", "-C", str(repo), "status", "--porcelain"], env=env, capture_output=True
+    )
+    assert result.returncode != 0
+    result = bash('source "$1"; lens_git "$2" status --porcelain', LIB, repo, env=env)
+    assert result.returncode == 0, result.stderr
+    assert not (repo / ".gitconfig").exists()
+
+
 def test_doctor_podman_probe_uses_service_home_not_root_cwd(tmp_path, monkeypatch):
     calls = []
 

@@ -556,6 +556,9 @@ installed Firecrawl. `--public-url` also checks HTTPS and certificate validation
 Missing optional containers are warnings; `--strict` makes warnings fail the check.
 The Podman probe runs from the service user's application directory, so root
 operators can invoke doctor from `/root` without causing a permissions false alarm.
+Git checks and deployment use a command-scoped `safe.directory` for the configured
+checkout; they work with legacy service-owned checkouts even when a systemd
+deployment has no `HOME`, without changing global Git configuration.
 It reports installed optional tool versions, not remote patch availability; use
 `lens host check` for DNF updates. DNF's “updates available” exit 100 is normalized
 to success, while repository failures remain errors.
@@ -770,6 +773,25 @@ running an update is usually the fastest fix.
 
 If containers die on restart with mount-namespace errors, a stale pause
 process is pinning an old namespace; `podman system migrate` clears it.
+That command stops the user's running containers. Normal updates only run it
+when they add subuid/subgid mappings, so an unsuccessful staging build does not
+stop an otherwise healthy Firecrawl stack.
+
+### Staging fails to hardlink a root-owned uv cache file
+
+Older manual Python maintenance can leave root-owned `__pycache__` files in the
+service user's uv cache. Linux's protected-hardlink checks then reject staging
+installs with `Operation not permitted`. The cache is disposable; clear it and
+restore ownership of that cache only, then retry `lens update`:
+
+```bash
+sudo uv cache clean --cache-dir /opt/lens/.cache/uv
+sudo install -d -o lens -g lens /opt/lens/.cache/uv
+```
+
+Do not recursively chown `/opt/lens/.local`: rootless container layers deliberately
+contain subordinate UIDs/GIDs. Likewise, avoid recursively byte-compiling Python
+under the entire service home as root; it also reaches container storage.
 
 ### Missing chromedriver / deep scrape never runs
 
