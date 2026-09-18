@@ -5,6 +5,7 @@
 import base64
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -25,6 +26,73 @@ def bash(script, *args, **kwargs):
         capture_output=True,
         **kwargs,
     )
+
+
+@pytest.mark.parametrize(
+    "noninteractive,key,optional,stdin,success,expected",
+    [
+        ("1", "", "optional", "", True, ""),
+        ("1", "preset-secret", "optional", "", True, "preset-secret"),
+        ("0", "", "optional", "\n", True, ""),
+        ("0", "", "optional", "typed-secret\n", True, "typed-secret"),
+        ("1", "", "", "", False, ""),
+        ("0", "", "", "\n", False, ""),
+    ],
+)
+def test_bootstrap_optional_secret_prompt(noninteractive, key, optional, stdin, success, expected):
+    source = (ROOT / "scripts/bootstrap.sh").read_text()
+    function = source[source.index("prompt_secret() {") : source.index("genbase64()")]
+    result = bash(
+        'die() { echo "$*" >&2; exit 1; }; ask() { echo "$*" >&2; }; '
+        + function
+        + '\nNON_INTERACTIVE="$1"; TEST_KEY="$2"; prompt_secret TEST_KEY "Test key" "$3"',
+        noninteractive,
+        key,
+        optional,
+        input=stdin,
+    )
+    assert (result.returncode == 0) is success
+    if success:
+        assert result.stdout == expected
+    assert "preset-secret" not in result.stderr and "typed-secret" not in result.stderr
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_bootstrap_typesafe_env_roundtrip_preserves_existing_key(tmp_path, existing):
+    from dotenv import dotenv_values
+
+    source = (ROOT / "scripts/bootstrap.sh").read_text()
+    prompts = source[source.index("prompt() {") : source.index("[[ $EUID")]
+    config_block = source[
+        source.index('if [[ -f "$ENV_FILE" ]]; then') : source.index("# ── Caddy / TLS intent")
+    ]
+    writer = source[
+        source.index("umask 077") : source.index('chown "$APP_USER:$APP_USER" "$ENV_FILE"')
+    ]
+    app = tmp_path / "app"
+    (app / ".venv/bin").mkdir(parents=True)
+    python = app / ".venv/bin/python"
+    python.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')
+    python.chmod(0o755)
+    env_file = app / ".env"
+    if existing:
+        env_file.write_text("TYPESAFE_API_KEY='existing-secret'\nOTHER_SETTING='preserved'\n")
+    result = bash(
+        'die() { echo "$*" >&2; exit 1; }; info() { :; }; ask() { exit 99; }; '
+        + prompts
+        + '\nAPP_DIR="$1"; ENV_FILE="$2"; NON_INTERACTIVE=1; '
+        "AUTH_SIGNING_PUBKEY=test; OPENROUTER_API_KEY=test; LENS_SESSION_SECRET=test; LENS_AUTH_MODE=elcano; "
+        "TYPESAFE_API_KEY=provided-secret\n" + config_block + writer,
+        app,
+        env_file,
+    )
+    assert result.returncode == 0, result.stderr
+    saved = dotenv_values(env_file)
+    assert saved["TYPESAFE_API_KEY"] == ("existing-secret" if existing else "provided-secret")
+    if existing:
+        assert saved["OTHER_SETTING"] == "preserved"
+    assert "provided-secret" not in result.stdout + result.stderr
+    assert "existing-secret" not in result.stdout + result.stderr
 
 
 @pytest.mark.skipif(not shutil.which("rsync"), reason="deployment integration needs rsync")

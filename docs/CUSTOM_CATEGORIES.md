@@ -23,6 +23,18 @@ JSON definitions for reuse in the CLI.
 ## Server setup
 
 Set `TYPESAFE_API_KEY` in the server's `.env` (or environment) and restart Lens.
+Fresh installs offer an optional, hidden-input TypeSafe key prompt during
+bootstrap—press Enter to skip. Unattended bootstrap accepts `TYPESAFE_API_KEY`
+from its environment and skips the feature when it is absent. Re-running
+bootstrap preserves a key already in `.env`.
+
+For an existing installation:
+
+```bash
+sudo lens env edit   # add TYPESAFE_API_KEY=your-key
+sudo lens restart
+```
+
 The dashboard hides the custom-category options until the key is configured. The key
 stays on the server and is never stored with jobs, in browser storage, or in CSVs.
 The existing `OPENROUTER_API_KEY` is still required.
