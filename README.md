@@ -102,6 +102,32 @@ written out as a plausible-looking guess.
 
 ## Quick start
 
+### Install the dashboard on a server
+
+On a Fedora server with curl and root/sudo access, install directly from this
+public repository — no GitHub account or deploy key needed:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | sudo bash
+```
+
+The installer asks for your OpenRouter key, auth configuration and an optional
+TLS hostname. It installs the service, Python runtime and browser containers.
+Then manage everything with:
+
+```bash
+lens doctor                     # diagnose configuration, service and runtime
+lens update --yes               # deploy main; restore previous release on failure
+lens host check                 # available OS/package updates
+lens host update --yes          # update all packages in enabled DNF repositories
+lens host upgrade --dry-run     # plan the latest stable Fedora upgrade
+```
+
+See the [deployment guide](docs/DEPLOYMENT.md) for unattended installs, JSON
+diagnostics, optional Node/npm/Go tooling and the Fedora upgrade workflow.
+
+### Run the CLI locally
+
 The CLI is the low-friction path — no service, no auth, no containers.
 
 ```bash
@@ -287,15 +313,14 @@ separate in-process code path to keep in sync.
 Running Lens as a service on Fedora/RHEL is a single bootstrap script:
 
 ```bash
-sudo dnf install -y git
-sudo git clone https://github.com/ElcanoTek/lens.git /opt/lens-src
-sudo bash /opt/lens-src/scripts/bootstrap.sh
+curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | sudo bash
 ```
 
 It creates the `lens` system user and `/opt/lens`, builds a venv with `uv`,
 installs the systemd units and a `lens` operator CLI, and optionally sets up
-Caddy with automatic TLS. Updates are a staged rebuild with an atomic swap and
-a health-gated rollback path.
+Caddy with automatic TLS. Updates are staged and health-checked, with automatic
+code-and-venv rollback. `lens doctor` diagnoses the installation; `lens host`
+handles package maintenance and Fedora upgrade preparation.
 
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the full guide** — prerequisites,
 the `/opt/lens` layout, the complete environment and `config.json` reference,

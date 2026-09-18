@@ -26,6 +26,8 @@ APP_DIR="${APP_DIR:-/opt/lens}"
 APP_USER="${APP_USER:-lens}"
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
+# shellcheck source=lib/deploy.sh
+. "$SRC_DIR/scripts/lib/deploy.sh"
 ENV_FILE="$APP_DIR/.env"
 CLI_TARGET="/usr/local/bin/lens"
 
@@ -52,7 +54,7 @@ prompt() {
   local varname="$1" label="$2" default="${3:-}" answer=""
   if [[ -n "${!varname:-}" ]]; then printf '%s' "${!varname}"; return; fi
   if [[ "$NON_INTERACTIVE" == "1" ]]; then
-    [[ -n "$default" ]] || die "non-interactive + missing: set $varname"
+    [[ -n "$default" || "${4:-}" == optional ]] || die "non-interactive + missing: set $varname"
     printf '%s' "$default"; return
   fi
   if [[ -n "$default" ]]; then ask "$label ${c_dim}[$default]${c_reset}:"
@@ -76,6 +78,7 @@ genhex()    { openssl rand -hex "$1"; }
 
 [[ $EUID -eq 0 ]] || die "run as root: sudo bash scripts/bootstrap.sh"
 [[ -f "$SRC_DIR/web_service.py" ]] || die "not a Lens checkout at $SRC_DIR"
+lens_lock "$@"
 
 cat <<EOF
 ${c_bold}Elcano Lens — bootstrap${c_reset}
@@ -89,7 +92,7 @@ step "1/7  Installing system dependencies via dnf"
 # chromium + chromedriver are needed by the selenium-based scrapers.
 # If the operator runs scrapers headless-only, they can skip those
 # packages by exporting LENS_BOOTSTRAP_SKIP_CHROME=1.
-PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl)
+PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certificates)
 [[ "${LENS_BOOTSTRAP_SKIP_CHROME:-0}" == "1" ]] || PKGS+=(chromium chromedriver)
 # podman drives the deep-scrape headless-Chrome container (auto mode's
 # fallback for sites that block the fast crawler) and the Firecrawl stack.
@@ -167,40 +170,45 @@ if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
   # /.venv stays excluded — we rebuild it into APP_DIR below.
   [[ -d "$SRC_DIR/.git" ]] || die "bootstrap must run from a git checkout (no .git at $SRC_DIR)"
   mkdir -p "$INSTALL_SRC_DIR"
-  rsync -a --exclude='/.venv' "$SRC_DIR/" "$INSTALL_SRC_DIR/"
+  rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$INSTALL_SRC_DIR/"
+  # .git is needed for subsequent updates, but local instance data is not.
+  rsync -a "$SRC_DIR/.git/" "$INSTALL_SRC_DIR/.git/"
 fi
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
 # (managed-files), the legacy auth DB during its one-time migration (data),
 # and rootless podman's storage/config under the service user's home
 # (.local/.config/.cache hold the pre-seeded Chrome image).
-rsync -a --delete \
-  --exclude='/.git' --exclude='/.venv' --exclude='/.env' \
-  --exclude='/managed-files' --exclude='/data' \
-  --exclude='/.local' --exclude='/.config' --exclude='/.cache' \
+rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$INSTALL_SRC_DIR/" "$APP_DIR/"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 step "3/7  Building venv via uv"
-runuser -u "$APP_USER" -- uv venv "$APP_DIR/.venv" >/dev/null
-runuser -u "$APP_USER" -- uv pip install --python "$APP_DIR/.venv/bin/python" \
-  --reinstall -r "$APP_DIR/requirements.txt" \
-  || die "uv pip install failed"
+lens_venv "$APP_DIR" || die "venv build failed"
 ok "venv ready"
 
 step "4/7  Configuring the instance"
 if [[ -f "$ENV_FILE" ]]; then
   info "found existing $ENV_FILE — re-using values"
-  set -a
-  # shellcheck disable=SC1090
-  . "$ENV_FILE"
-  set +a
+  while IFS= read -r -d '' key && IFS= read -r -d '' value; do
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    # Load known configuration only, never execute .env as a root shell script.
+    case "$key" in AUTH_*|LENS_*|OPENROUTER_API_KEY) export "$key=$value" ;; esac
+  done < <("$APP_DIR/.venv/bin/python" - "$ENV_FILE" <<'PY'
+import sys
+from dotenv import dotenv_values
+for key, value in dotenv_values(sys.argv[1], interpolate=False).items():
+    if value is not None:
+        sys.stdout.write(key + '\0' + value + '\0')
+PY
+  )
 fi
 
 # Unified auth: Lens verifies the elcano_auth cookie minted by the auth
 # service (auth.elcanotek.com) using that service's Ed25519 PUBLIC key. Get it
 # from the auth host with `auth pubkey`. Safe to paste — verify-only, can't
 # mint sessions. Without it the app redirects every request to auth.
-AUTH_SIGNING_PUBKEY="$(prompt AUTH_SIGNING_PUBKEY "auth service AUTH_SIGNING_PUBKEY (run 'auth pubkey' on the auth host; blank to set later)" "${AUTH_SIGNING_PUBKEY:-}")"
+AUTH_SIGNING_PUBKEY="$(prompt AUTH_SIGNING_PUBKEY "auth service AUTH_SIGNING_PUBKEY (run 'auth pubkey' on the auth host)" "${AUTH_SIGNING_PUBKEY:-}")"
+[[ -n "$AUTH_SIGNING_PUBKEY" ]] || die "AUTH_SIGNING_PUBKEY is required"
 LENS_AUTH_MODE="$(prompt LENS_AUTH_MODE "Authentication mode: elcano (legacy magic link) or central" "${LENS_AUTH_MODE:-elcano}")"
 case "$LENS_AUTH_MODE" in
   elcano) ;;
@@ -213,10 +221,10 @@ case "$LENS_AUTH_MODE" in
   *) die "LENS_AUTH_MODE must be elcano or central" ;;
 esac
 LENS_SESSION_SECRET="${LENS_SESSION_SECRET:-$(genbase64 32)}"
-OPENROUTER_API_KEY="$(prompt OPENROUTER_API_KEY "OpenRouter API key (blank to fill in later)" "${OPENROUTER_API_KEY:-}")"
+OPENROUTER_API_KEY="$(prompt_secret OPENROUTER_API_KEY "OpenRouter API key")"
 
 # ── Caddy / TLS intent (install happens in step 7) ────────
-HOSTNAME_FOR_TLS="$(prompt LENS_BOOTSTRAP_HOSTNAME "Public hostname for TLS (e.g. lens.example.com, blank to skip Caddy)" "${LENS_BOOTSTRAP_HOSTNAME:-}")"
+HOSTNAME_FOR_TLS="$(prompt LENS_BOOTSTRAP_HOSTNAME "Public hostname for TLS (e.g. lens.example.com, blank to skip Caddy)" "${LENS_BOOTSTRAP_HOSTNAME:-}" optional)"
 SETUP_CADDY="n"; USE_LETSENCRYPT="n"; LE_EMAIL=""
 if [[ -n "$HOSTNAME_FOR_TLS" && "$HOSTNAME_FOR_TLS" != "localhost" ]]; then
   SETUP_CADDY_ANS="$(prompt LENS_BOOTSTRAP_SETUP_CADDY "Set up Caddy + auto-TLS for $HOSTNAME_FOR_TLS? (Y/n)" Y)"
@@ -225,28 +233,25 @@ if [[ -n "$HOSTNAME_FOR_TLS" && "$HOSTNAME_FOR_TLS" != "localhost" ]]; then
     LE_ANS="$(prompt LENS_BOOTSTRAP_USE_LETSENCRYPT "Use Let's Encrypt (needs public 80/443)? (Y/n)" Y)"
     case "${LE_ANS,,}" in y|yes) USE_LETSENCRYPT="y" ;; esac
     if [[ "$USE_LETSENCRYPT" == "y" ]]; then
-      LE_EMAIL="$(prompt LENS_BOOTSTRAP_LE_EMAIL "LE contact email (blank to skip)" "${LENS_BOOTSTRAP_LE_EMAIL:-}")"
+      LE_EMAIL="$(prompt LENS_BOOTSTRAP_LE_EMAIL "LE contact email (blank to skip)" "${LENS_BOOTSTRAP_LE_EMAIL:-}" optional)"
     fi
   fi
 fi
 
 umask 077
-cat > "$ENV_FILE" <<EOF
-# Auto-generated by Lens bootstrap.sh on $(date -Iseconds)
-
-# Unified Elcano auth — verifies the elcano_auth cookie. From 'auth pubkey'.
-AUTH_SIGNING_PUBKEY="$AUTH_SIGNING_PUBKEY"
-LENS_AUTH_MODE="$LENS_AUTH_MODE"
-LENS_SESSION_SECRET="$LENS_SESSION_SECRET"
 LENS_ACCESS_DB="${LENS_ACCESS_DB:-/var/lib/lens/access.db}"
-AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}"
-LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
-AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}"
-AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
-# AUTH_LOGIN_URL="https://auth.elcanotek.com"   # override if auth lives elsewhere
-
-OPENROUTER_API_KEY="$OPENROUTER_API_KEY"
-EOF
+export AUTH_SIGNING_PUBKEY LENS_AUTH_MODE LENS_SESSION_SECRET LENS_ACCESS_DB OPENROUTER_API_KEY
+export AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}" LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
+export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}" AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
+# Merge only the configured keys; retain custom settings and comments on rerun.
+"$APP_DIR/.venv/bin/python" - "$ENV_FILE" <<'PY'
+import os, sys
+from dotenv import set_key
+for key in ('AUTH_SIGNING_PUBKEY', 'LENS_AUTH_MODE', 'LENS_SESSION_SECRET',
+            'LENS_ACCESS_DB', 'OPENROUTER_API_KEY', 'AUTH_ISSUER_URL',
+            'LENS_PUBLIC_URL', 'AUTH_CLIENT_ID', 'AUTH_CLIENT_SECRET'):
+    set_key(sys.argv[1], key, os.environ[key])
+PY
 chown "$APP_USER:$APP_USER" "$ENV_FILE"
 # Owner-only: the file carries the session secret, the central-auth client
 # secret, and the OpenRouter key.
@@ -257,7 +262,7 @@ ok "env seeded"
 # that tree. Stop an existing service so no session or allowlist write can land
 # between SQLite's online backup and the restart on the new database.
 systemctl stop lens.service 2>/dev/null || true
-python3 "$APP_DIR/scripts/migrate_access_db.py" \
+"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/migrate_access_db.py" \
   --legacy "$APP_DIR/data/access.db" \
   --target /var/lib/lens/access.db \
   --env-file "$ENV_FILE" \
@@ -286,7 +291,7 @@ systemctl enable lens.service
 systemctl restart lens.service
 healthy=0
 for _ in $(seq 1 15); do
-  code=$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8808/health 2>/dev/null || echo 000)
+  code=$(curl -s --connect-timeout 2 --max-time 3 -o /dev/null -w '%{http_code}' http://127.0.0.1:8808/health 2>/dev/null || echo 000)
   if [[ "$code" == "200" ]]; then healthy=1; break; fi
   sleep 1
 done
@@ -361,6 +366,7 @@ fi
 # Single source of truth is deploy/motd; update.sh keeps it in sync on
 # existing boxes.
 install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
+git -C "$INSTALL_SRC_DIR" rev-parse HEAD > "$APP_DIR/.deployed-revision"
 
 say
 printf '%s═══════════════════════════════════════════════%s\n' "$c_green" "$c_reset"
@@ -373,7 +379,8 @@ else
   say "  URL         ${c_bold}http://127.0.0.1:8808${c_reset}  (front with your reverse proxy for HTTPS)"
 fi
 say "  Logs        ${c_dim}lens logs${c_reset}"
-say "  CLI         ${c_dim}lens start|stop|restart|status|update|env|tls${c_reset}"
+say "  Diagnose    ${c_dim}lens doctor${c_reset}"
+say "  Maintain    ${c_dim}lens update --yes; lens host --help${c_reset}"
 say
 say "  Sign-in     ${c_dim}via the auth service (auth.elcanotek.com) — no local password${c_reset}"
 if [[ -z "$AUTH_SIGNING_PUBKEY" ]]; then

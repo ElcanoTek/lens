@@ -28,6 +28,7 @@ long-running web dashboard.
 - [Deep scraping (headless Chrome)](#deep-scraping-headless-chrome)
 - [Service management and the operator CLI](#service-management-and-the-operator-cli)
 - [Updating and rolling back](#updating-and-rolling-back)
+- [Doctor and host maintenance](#doctor-and-host-maintenance)
 - [Run artifacts and backup](#run-artifacts-and-backup)
 - [Health checks and monitoring](#health-checks-and-monitoring)
 - [Troubleshooting](#troubleshooting)
@@ -44,7 +45,7 @@ dashboard by hand (`uvicorn web_service:app`) or adapt the script.
 | Requirement | Notes |
 |---|---|
 | Root access | `bootstrap.sh` refuses to run as a non-root user |
-| A git checkout | The installer seeds `/opt/lens-src` *with* its `.git` so `lens update` can fetch later; it aborts if `.git` is missing |
+| curl | The public installer installs Git and clones main over HTTPS; no GitHub credentials needed |
 | An OpenRouter API key | Every classification is an OpenRouter call. Runs cost real money — budget before pointing it at a large list. |
 | Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API and the Google Play Store |
 | 2 vCPU / 8 GB RAM | The floor the Firecrawl memory limits are tuned for. Without Firecrawl, 1 vCPU / 2 GB is enough. |
@@ -57,22 +58,27 @@ continues with Firecrawl disabled rather than failing.
 ## Install
 
 ```bash
-sudo dnf install -y git
-sudo git clone https://github.com/ElcanoTek/lens.git /opt/lens-src
-sudo bash /opt/lens-src/scripts/bootstrap.sh
+curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | sudo bash
 ```
 
-The installer prompts for four things, all skippable with a blank answer:
+The installer function is parsed in full before it runs. In a root SSH shell, use `bash`
+instead of `sudo bash`. `install.sh` refuses to replace an existing checkout:
+use `lens update` for upgrades, or `/opt/lens-src/scripts/bootstrap.sh` to
+reconfigure. For a reviewed/pinned install, clone the repository, check out the
+desired commit, inspect its scripts and run `sudo bash scripts/bootstrap.sh`.
+
+The installer prompts for:
 
 1. **`AUTH_SIGNING_PUBKEY`** — the Ed25519 *public* key of the auth service
-   that mints the session cookie. Verify-only, so pasting it is safe. Leave it
-   blank and every request redirects to the login URL.
-2. **OpenRouter API key** — can be filled in later with `lens env edit`.
-3. **Public hostname** — blank skips Caddy entirely.
-4. **Let's Encrypt** — yes/no, plus a contact email.
+   that mints the session cookie. Required by startup validation.
+2. **Authentication mode** — legacy `elcano`, or `central` with issuer URL,
+   public Lens URL, client ID and client secret.
+3. **OpenRouter API key** — required; input is hidden.
+4. **Public hostname** — blank skips Caddy entirely.
+5. **Let's Encrypt** — yes/no, plus an optional contact email.
 
-Re-running is safe: an existing `/opt/lens/.env` is sourced first and only
-missing values are prompted for.
+Existing `/opt/lens/.env` values are parsed as data, and custom keys/comments
+are preserved. Reconfiguration restarts the application; finish active jobs first.
 
 ### Unattended install
 
@@ -89,7 +95,9 @@ sudo env \
 ```
 
 In non-interactive mode any prompt without an environment value **and** without
-a default aborts the run.
+a default aborts the run, except the optional hostname and contact email.
+For a fresh unattended host, download `install.sh` to a private temporary file,
+then pass these same variables to `bash` with that file.
 
 ### Bootstrap environment variables
 
@@ -127,7 +135,14 @@ Seven steps, in order:
    `/opt/lens` with `--delete`, preserving `.git`, `.venv`, `.env`,
    `managed-files`, the legacy `data` directory during migration, and podman's
    `.local`/`.config`/`.cache`.
-4. **venv** — `uv venv` + `uv pip install --reinstall -r requirements.txt`.
+4. **venv** — refresh uv-managed Python to the latest patch of the minor in
+   `.python-version` (3.12, covered by CI), then create a relocatable venv and
+   install `requirements.txt`. This avoids following Fedora's default Python
+   major before Lens dependencies have been tested on it. Downloads live under
+   the service user's `.local/share/uv`; Node/npm/Go are optional host tools.
+   Python refresh uses `uv python install` followed by `uv python upgrade`,
+   compatible with uv 0.7.22 and current uv. Patch availability comes from uv's
+   bundled catalogue: keep the distro's uv package current with `lens host update`.
 5. **Configuration and state** — writes `.env`, owned `lens:lens`, mode `0600`,
    then creates `/var/lib/lens` and atomically migrates the legacy
    `/opt/lens/data/access.db` when present. A custom `LENS_ACCESS_DB` is never
@@ -140,8 +155,9 @@ Seven steps, in order:
    http/https in firewalld and waits up to 45 s for TLS.
    Finally it installs `deploy/motd` to `/etc/motd`.
 
-Nothing in these steps is idempotency-hostile: run it again after changing a
-prompt answer.
+Bootstrap, deploys and host-changing operations share a non-blocking lock
+(`/run/lock/lens-deploy.lock`); a concurrent operation exits 75. Run bootstrap
+again to fill missing configuration; use `lens env edit` to change existing values.
 
 ## Layout and identity
 
@@ -429,7 +445,12 @@ Bootstrap installs `/usr/local/bin/lens`. Every subcommand shells out to
 | `lens status` | `systemctl status lens.service` |
 | `lens logs` | `journalctl -fu lens.service` |
 | `lens logs [args…]` | Passes arguments straight to journalctl, e.g. `lens logs -n 200 --since -1h` |
-| `lens update` | `scripts/update.sh`: fetch, confirm, staged rebuild, atomic swap, restart, health check |
+| `lens update [--yes]` | Fetch, staged build, restart, health check; restore previous code and venv on failure |
+| `lens doctor [--json] [--strict]` | Read-only diagnostics; exit 1 on failures (also warnings with `--strict`) |
+| `lens host check` | Refresh DNF metadata and show package updates |
+| `lens host update [--yes]` | Upgrade packages from enabled DNF repositories |
+| `lens host tools [--yes]` | Install/update distro Node, npm and Go |
+| `lens host upgrade [--yes]` | Download latest stable Fedora release upgrade; print offline reboot command |
 | `lens rebuild` | Rebuild and restart the *current* checkout without fetching. The correct command after a manual rollback. |
 | `lens env` | Print `/opt/lens/.env` with anything matching `TOKEN\|KEY\|SECRET\|PASSWORD\|PUBKEY` redacted |
 | `lens env edit` | Open `/opt/lens/.env` in `$EDITOR` (default `vi`); follow with `lens restart` |
@@ -451,7 +472,9 @@ build cannot take down a working install:
 1. **Fetch.** `git fetch origin`, resolve the target branch (the checked-out
    branch; if HEAD is detached, a branch pointing at HEAD, else `origin/HEAD`,
    overridable with `LENS_UPDATE_BRANCH`), print the incoming commits and ask
-   for confirmation. Already up to date exits 0 without touching anything.
+   for confirmation. Already up to date exits 0 only if the deployed revision
+   stamp also matches — a failed previous deployment can be retried normally.
+   Local source changes abort before deployment.
    The branch is fast-forwarded, never merged — a diverged branch aborts.
    If the update changed `update.sh` itself, the script re-execs the new copy
    in rebuild-only mode, because bash is still holding the old inode.
@@ -468,25 +491,38 @@ build cannot take down a working install:
 4. **Swap.** Stop the service, migrate a legacy access database to
    `/var/lib/lens`, then rsync the staged tree over `$APP_DIR` (preserving
    `.git`, `.venv`, `.env`, `managed-files`, legacy `data`, and podman's
-   caches). Move the old venv aside as `.venv.old`, move the new one in,
+   caches, `config.json`, `.env*`, `firecrawl/.env` and CLI state). Snapshot the
+   actual deployed source and venv under `/opt/lens.rollback.XXXXXX` before
+   stopping, then move the old venv aside and the new one in,
    `restorecon` it, reinstall the unit and CLI, refresh Firecrawl and
    `/etc/motd`, then restart.
-5. **Verify.** Poll `/health` for 10 s. On success `.venv.old` is deleted; on
-   failure the script exits non-zero and prints the venv rollback command.
+5. **Verify.** Poll `/health` with bounded requests. On success write
+   `.deployed-revision` and remove `.venv.old`. On any failure after stopping,
+   automatically restore the previous source, venv, unit and CLI and probe
+   readiness again. The command still exits non-zero, even if recovery succeeds.
+   Retain the snapshot for inspection; prune old `/opt/lens.rollback.*`
+   directories after confirming a good deployment. They exclude instance data
+   and do not replace backups. Power loss/SIGKILL requires manual recovery.
 
 Update environment variables: `LENS_UPDATE_YES`, `LENS_UPDATE_NO_PULL`,
 `LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`, `LENS_UPDATE_SKIP_FIRECRAWL`.
 
 ### Rolling back
 
-**Failed health check, venv suspected** — the previous venv is still on disk:
+**Failed deploy** — the updater attempts automatic recovery. If recovery itself
+fails, use the snapshot path printed by the updater:
 
 ```bash
 sudo systemctl stop lens.service
-sudo rm -rf /opt/lens/.venv
-sudo mv /opt/lens/.venv.old /opt/lens/.venv
+sudo bash -c 'source /opt/lens-src/scripts/lib/deploy.sh; lens_restore_release /opt/lens /opt/lens.rollback.XXXXXX /etc/systemd/system/lens.service /usr/local/bin/lens'
+sudo restorecon -RF /opt/lens/.venv
+sudo systemctl daemon-reload
 sudo systemctl start lens.service
+lens doctor
 ```
+
+Application rollback does not undo DNF packages, uv-managed Python patch
+updates, migrated auth state or Firecrawl image/queue changes.
 
 **Bad code** — check out the previous commit and rebuild, without fetching:
 
@@ -498,7 +534,54 @@ sudo lens rebuild
 
 Use `lens rebuild`, not `lens update`: from a detached HEAD, `update` resolves
 a branch and fast-forwards straight back to the tip you were trying to leave.
-The end of a successful update prints the exact sha to return to.
+The end of a successful update prints the retained snapshot path. Prefer that
+snapshot when a previous failed update already advanced the source checkout.
+
+## Doctor and host maintenance
+
+```bash
+lens doctor
+lens doctor --json --strict                     # monitoring/automation exit status
+lens doctor --public-url https://lens.example.com
+lens host update --dry-run
+lens host update --yes                          # latest packages in enabled repos
+lens host tools --yes                           # optional distro Node/npm/Go
+lens host upgrade --dry-run                     # current → latest stable Fedora
+```
+
+Doctor is read-only: configuration presence/key shape (no secret values), Python
+minor, dependency consistency, running interpreter, service/readiness, deployed
+revision, source drift, disk space, OS support deadline, rootless Podman and
+installed Firecrawl. `--public-url` also checks HTTPS and certificate validation.
+Missing optional containers are warnings; `--strict` makes warnings fail the check.
+It reports installed optional tool versions, not remote patch availability; use
+`lens host check` for DNF updates. DNF's “updates available” exit 100 is normalized
+to success, while repository failures remain errors.
+
+For periodic monitoring, run `lens doctor --json --strict` from your scheduler
+and alert on nonzero exit. For unattended application deploys, use
+`lens update --yes` during a quiet window. All mutating commands log their steps
+to the caller; forward stdout/stderr to your deployment system.
+
+### Fedora release upgrades
+
+The helper reads `https://fedoraproject.org/releases.json`, chooses the highest
+numeric stable version (never Beta or Rawhide), and refuses jumps of more than
+two releases. It fails closed if the feed cannot be read. RHEL release upgrades
+use vendor tooling instead. This targets conventional DNF hosts, not Atomic/ostree.
+
+1. Finish running Lens jobs; take a provider snapshot and back up instance state
+   as described below. Keep provider console access for the offline upgrade.
+2. `lens host update --yes`, then reboot onto the current release's updated kernel.
+3. `lens host upgrade --yes` updates packages and downloads the release transaction.
+4. Execute the printed offline reboot command: `sudo dnf5 offline reboot` on
+   DNF5, or `sudo dnf system-upgrade reboot` on DNF4.
+5. Reconnect and run `lens rebuild`, then `lens doctor --strict` and check public HTTPS.
+
+The helper never reboots automatically or removes conflicting packages with
+`--allowerasing`. Package conflicts are reported by DNF for the operator to resolve.
+`lens host tools` uses the distro's supported Node/npm pair and Go package;
+it does not mix in global `npm@latest` or replace other applications' runtime pins.
 
 ## Run artifacts and backup
 

@@ -234,7 +234,11 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 Production target: **Fedora/RHEL 9+**
 
 - `scripts/bootstrap.sh` — Full installer: creates the `lens` system user, installs to `/opt/lens`, keeps persistent central-auth state under `/var/lib/lens`, builds the venv with `uv`, writes `/opt/lens/.env` (`AUTH_SIGNING_PUBKEY` + `OPENROUTER_API_KEY`), installs the systemd units and operator CLI, and optionally sets up Caddy TLS. Lens owns no password of its own — sign-in is either the legacy shared `elcano_auth` cookie or central Auth's one-use application handoff.
-- `scripts/update.sh` — Staged update: git pull, build staging venv, migrate a legacy `/opt/lens/data/access.db` without overwriting existing state, atomic swap, health check
+- `install.sh` — Public HTTPS entry point: installs Git, clones main and runs bootstrap; refuses to overwrite an existing checkout.
+- `scripts/update.sh` — Locked staged update: fetch, build relocatable staging venv with uv-managed Python from `.python-version`, preserve instance config/state, migrate legacy auth DB, health check and automatic source+venv rollback. `.deployed-revision` distinguishes source checkout from deployed code so retries work.
+- `scripts/lib/deploy.sh` — Shared instance-state rsync exclusions, deploy lock, Python runtime build and release restoration. Keep bootstrap/update/rollback exclusions centralized here.
+- `scripts/doctor.sh` / `doctor.py` — Read-only deployment checks with JSON/strict modes; no pipeline imports or secret values in diagnostics.
+- `scripts/host.sh` — DNF check/update, optional distro Node/npm/Go, and latest stable Fedora upgrade download (max two releases; no automatic reboot).
 - `deploy/lens.service` — systemd unit; runs uvicorn on 127.0.0.1:8808; hardened with `ProtectSystem=full`, `ProtectKernelModules`, `LockPersonality` and a restricted address-family set. `NoNewPrivileges`, `ProtectControlGroups`, `ProtectKernelTunables`, `PrivateTmp` and `ProtectHome` are deliberately **absent** — each one breaks rootless podman (see the comments in the unit).
 - `deploy/lens.caddy` — Caddy reverse proxy config with security headers; `{{HOSTNAME}}` placeholder substituted by bootstrap
 - `deploy/nginx-lens.conf` — Nginx alternative reverse proxy config

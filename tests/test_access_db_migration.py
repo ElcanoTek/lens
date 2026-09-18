@@ -177,7 +177,8 @@ def test_deployment_protects_legacy_state_and_runs_the_migration(script_name) ->
     script = (REPO_ROOT / "scripts" / script_name).read_text()
 
     assert "migrate_access_db.py" in script
-    assert "--exclude='/data'" in script
+    assert '"${LENS_STATE_EXCLUDES[@]}"' in script
+    assert "--exclude='/data'" in (REPO_ROOT / "scripts/lib/deploy.sh").read_text()
 
 
 def test_update_stops_writes_before_migrating_and_syncing() -> None:
