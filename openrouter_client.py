@@ -475,6 +475,18 @@ class OpenRouterClient:
                     )
         raise last_exception
 
+    def _classification_options(self) -> Dict[str, Any]:
+        """Reserve output capacity for structured answers on Gemini classifiers.
+
+        Low effort is supported by Gemini thinking models, including the moving
+        Flash alias. Hiding reasoning alone would still spend the same tokens.
+        Evaluate the active model on every call so fallback models keep their
+        own defaults.
+        """
+        if self.model.lstrip("~").startswith("google/gemini-"):
+            return {"extra_body": {"reasoning": {"effort": "low"}}}
+        return {}
+
     async def classify_site(
         self,
         domain: str,
@@ -526,6 +538,7 @@ class OpenRouterClient:
                         top_p=0.9,
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
+                        **self._classification_options(),
                     )
 
                 return make_api_call
@@ -728,6 +741,7 @@ Analyze the website and provide your classification:"""
         research_model: str = "perplexity/sonar-pro",
         temperature: float = 0.2,
         max_tokens: int = 1500,
+        custom_questions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Research a website via a web-search-augmented model.
 
@@ -743,6 +757,7 @@ Analyze the website and provide your classification:"""
 
         try:
             prompt = self._build_website_research_prompt(domain)
+            prompt += self._custom_research_instructions(custom_questions)
 
             if not self._client:
                 raise RuntimeError("OpenRouter client has not been initialised")
@@ -781,7 +796,7 @@ Analyze the website and provide your classification:"""
             self.total_tokens_used += self._usage_tokens(response_data)
 
             insufficient = (
-                self.RESEARCH_INSUFFICIENT in research_content.upper()
+                self.RESEARCH_INSUFFICIENT == research_content.strip().upper()
                 or len(research_content.strip()) < 100
             )
             if insufficient:
@@ -820,6 +835,18 @@ Analyze the website and provide your classification:"""
 7. **Status**: Is the site active today, or is the domain parked, defunct, or redirecting elsewhere?
 
 Be factual and concise (under 400 words). If you cannot find any meaningful information about this domain, respond with exactly: {self.RESEARCH_INSUFFICIENT}"""
+
+    @staticmethod
+    def _custom_research_instructions(questions: Optional[List[str]]) -> str:
+        if not questions:
+            return ""
+        return (
+            "\n\nAlso gather factual evidence relevant to these user-defined categorization questions "
+            "within the summary budget. Do not assign labels; a separate step evaluates them. "
+            "Distinguish observed facts from missing information; explicitly say when evidence "
+            "is unavailable. If the entity itself cannot be identified, follow the insufficient-information rule.\n"
+            + json.dumps(questions, ensure_ascii=False)
+        )
 
     def _parse_classification_response(
         self, response_data: Dict[str, Any], expected_name: str = "classify_website"
@@ -1266,6 +1293,7 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                         tool_choice={"type": "function", "function": {"name": "classify_app"}},
                         temperature=self.temperature,
                         max_tokens=budget,
+                        **self._classification_options(),
                         top_p=0.9,
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
@@ -1650,6 +1678,7 @@ Analyze the app and provide your classification:"""
         research_model: str = "perplexity/sonar-pro",
         temperature: float = 0.3,
         max_tokens: int = 2000,
+        custom_questions: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """
         Research a CTV app using Perplexity Sonar Pro for in-depth information gathering.
@@ -1682,6 +1711,7 @@ Analyze the app and provide your classification:"""
                 url=url,
                 publisher=publisher,
             )
+            prompt += self._custom_research_instructions(custom_questions)
 
             if not self._client:
                 raise RuntimeError("OpenRouter client has not been initialised")
@@ -1782,7 +1812,8 @@ Please research and provide information on the following aspects:
 
 9. **Recent Developments**: Any recent news, updates, or changes to the app or its content offerings?
 
-Provide a comprehensive research summary that would help classify this CTV app for advertising purposes."""
+Provide a concise, factual research summary that would help classify this CTV app for advertising purposes.
+If you cannot identify this app or find meaningful information about it, respond with exactly: {self.RESEARCH_INSUFFICIENT}"""
 
         return prompt
 
@@ -1858,6 +1889,7 @@ Provide a comprehensive research summary that would help classify this CTV app f
                         tool_choice={"type": "function", "function": {"name": "classify_ctv_app"}},
                         temperature=temperature,
                         max_tokens=budget,
+                        **self._classification_options(),
                     )
 
                 return make_api_call

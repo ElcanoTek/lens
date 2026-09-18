@@ -757,7 +757,10 @@ def test_index_renders_advanced_model_picker(monkeypatch, tmp_path):
                     {"id": "cheap/model", "label": "Cheap Model · $0.1/M in · $0.4/M out"},
                 ],
                 "research": [
-                    {"id": web_service.RECOMMENDED_RESEARCH_MODEL, "label": "Sonar Pro"},
+                    {
+                        "id": web_service.RECOMMENDED_RESEARCH_MODEL,
+                        "label": "Sonar Pro · $3/M in · $15/M out · search from $5/1K requests",
+                    },
                     {"id": "perplexity/sonar", "label": "Sonar · $1/M in · $1/M out"},
                 ],
             },
@@ -771,6 +774,10 @@ def test_index_renders_advanced_model_picker(monkeypatch, tmp_path):
         assert 'id="llm-model-select"' in response.text
         assert "cheap/model" in response.text
         assert 'name="research_fallback"' in response.text
+        assert (
+            "Sonar Pro · $3/M in · $15/M out · search from $5/1K requests — recommended"
+            in response.text
+        )
 
 
 def test_enqueue_job_with_research_model(monkeypatch, tmp_path):

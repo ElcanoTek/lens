@@ -116,6 +116,18 @@ class TypeSafeCategories:
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=45))
         return self
 
+    def research_questions(self):
+        """Give the research step the evidence needs, not pre-decided labels."""
+        return [
+            category["question"]
+            + (
+                " Options: " + ", ".join(category["options"])
+                if category["type"] == "choice"
+                else ""
+            )
+            for category in self.spec["categories"]
+        ]
+
     async def __aexit__(self, *args):
         await self.session.close()
 

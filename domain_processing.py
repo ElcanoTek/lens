@@ -208,6 +208,11 @@ class DomainProcessor:
                 research_model=getattr(config, "RESEARCH_MODEL", "perplexity/sonar-pro"),
                 temperature=getattr(config, "RESEARCH_TEMPERATURE", 0.2),
                 max_tokens=getattr(config, "RESEARCH_MAX_TOKENS", 1500),
+                **(
+                    {"custom_questions": self.category_client.research_questions()}
+                    if self.category_client
+                    else {}
+                ),
             )
             if not research.get("success", False):
                 raise RuntimeError(f"Research failed: {research.get('error', 'unknown error')}")

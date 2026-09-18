@@ -69,6 +69,10 @@ RECOMMENDED_MODEL = "~google/gemini-flash-latest"
 # The research fallback needs a model with built-in web search; Sonar Pro is
 # also what the CTV pipeline has used all along.
 RECOMMENDED_RESEARCH_MODEL = "perplexity/sonar-pro"
+# Supporting a search parameter does not mean a plain chat request searches.
+# These bounded, non-reasoning models search automatically in our current call
+# path. Other families require explicit tools/plugins and separate validation.
+RESEARCH_MODELS = {"perplexity/sonar", "perplexity/sonar-pro"}
 OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
 # Classification is a high-volume, structurally simple task: cap the list at
 # workhorse pricing so a frontier-priced model can't be picked by accident.
@@ -135,6 +139,13 @@ def _filter_model_options(
             f"{name} · {_format_price_per_million(prompt_price)}/M in · "
             f"{_format_price_per_million(completion_price)}/M out"
         )
+        if required_parameter == "web_search_options":
+            try:
+                search_price = float(pricing["web_search"])
+            except (KeyError, TypeError, ValueError):
+                label += " · search fees extra"
+            else:
+                label += f" · search from ${search_price * 1000:g}/1K requests"
         options.append({"id": model_id, "label": label})
 
     # ~latest aliases first (they self-update), then everything else A→Z; the
@@ -163,7 +174,7 @@ def _build_model_options(
             recommended=RECOMMENDED_MODEL,
         ),
         "research": _filter_model_options(
-            models,
+            [model for model in models if model.get("id") in RESEARCH_MODELS],
             required_parameter="web_search_options",
             prompt_cap=RESEARCH_PROMPT_PRICE_CAP,
             completion_cap=RESEARCH_COMPLETION_PRICE_CAP,

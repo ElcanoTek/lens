@@ -227,6 +227,9 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     writer.writeheader()
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     custom = Mock()
+    custom.research_questions.return_value = TypeSafeCategories(
+        SPEC, api_key="test"
+    ).research_questions()
     custom.classify = AsyncMock(
         return_value={"TypeSafe_Status": "error", "TypeSafe_Error": "TypeSafe HTTP 401"}
         if custom_error
@@ -237,6 +240,8 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     router.classify_app = AsyncMock(return_value=CLASSIFICATION)
     router.classify_ctv_app = AsyncMock(return_value=CLASSIFICATION)
     evidence = "Original source evidence. " * 30
+    if kind in {"research", "ctv"}:
+        evidence = "INSUFFICIENT INFORMATION about one custom question. " + evidence
     router.research_website = AsyncMock(
         return_value={"success": True, "research_content": evidence}
     )
@@ -264,8 +269,10 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
         await method(DomainWorkItem("example.com"))
     elif kind == "ctv":
         await CTVProcessor(request_delay=0, **common).process_ctv_app(
-            CTVWorkItem(app_name="Demo TV")
+            CTVWorkItem(app_name="Demo TV", publisher="Demo Network")
         )
+        assert router.research_ctv_app.call_args.kwargs["publisher"] == "Demo Network"
+        assert router.classify_ctv_app.call_args.kwargs["publisher"] == "Demo Network"
     else:
         store = Mock()
         store.fetch_app_metadata = AsyncMock(
@@ -294,6 +301,33 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
         }[kind]
     )
     assert tracker.get_summary()["successful"] == 1
+    if kind in {"research", "ctv"}:
+        research = router.research_website if kind == "research" else router.research_ctv_app
+        assert (
+            research.call_args.kwargs["custom_questions"] == custom.research_questions.return_value
+        )
+
+
+@pytest.mark.parametrize("ctv", [False, True])
+async def test_custom_questions_reach_research_api(ctv):
+    from openrouter_client import OpenRouterClient
+
+    client = OpenRouterClient(api_key="test")
+    response = Mock()
+    response.model_dump.return_value = {
+        "choices": [{"message": {"content": "Factual source evidence. " * 30}}],
+        "usage": {"total_tokens": 10},
+    }
+    create = AsyncMock(return_value=response)
+    client._client = Mock()
+    client._client.chat.completions.create = create
+    custom = TypeSafeCategories(SPEC, api_key="test")
+    method = client.research_ctv_app if ctv else client.research_website
+    await method("example.com", custom_questions=custom.research_questions())
+    prompt = create.call_args.kwargs["messages"][-1]["content"]
+    assert SPEC["categories"][0]["question"] in prompt
+    assert "Education, Entertainment, Unknown" in prompt
+    assert "Do not assign labels" in prompt
 
 
 async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
@@ -318,6 +352,39 @@ async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
     row = next(csv.DictReader(io.StringIO(out.getvalue())))
     assert row["TypeSafe_Status"] == "skipped"
     assert row["Custom: Sexy"] == ""
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [None, "", "   ", "INSUFFICIENT INFORMATION", "  insufficient information\n"],
+)
+async def test_ctv_missing_research_never_classifies(tmp_path, evidence):
+    out = io.StringIO()
+    writer = csv.DictWriter(
+        out, fieldnames=list(config.CTV_CSV_FIELDNAMES) + category_columns(SPEC)
+    )
+    writer.writeheader()
+    router = Mock(
+        research_ctv_app=AsyncMock(return_value={"success": True, "research_content": evidence}),
+        classify_ctv_app=AsyncMock(),
+    )
+    custom = Mock(classify=AsyncMock())
+    processor = CTVProcessor(
+        progress_tracker=ProgressTracker(str(tmp_path / "progress.json")),
+        openrouter_client=router,
+        reporter=None,
+        results_writer=writer,
+        results_file=out,
+        category_client=custom,
+        request_delay=0,
+    )
+    await processor.process_ctv_app(CTVWorkItem(app_name="Unknown TV"))
+    router.classify_ctv_app.assert_not_called()
+    custom.classify.assert_not_called()
+    row = next(csv.DictReader(io.StringIO(out.getvalue())))
+    assert row["TypeSafe_Status"] == "skipped"
+    assert row["Quality"] == "Failed"
+    assert "No meaningful research evidence" in row["Justification"]
 
 
 @pytest.mark.parametrize("ctv", [False, True])

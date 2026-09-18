@@ -214,14 +214,15 @@
                 <label class="run-advanced-field" id="research-model-field">
                   <span class="run-advanced-label">Research model</span>
                   <select name="research_model" id="research-model-select">
-                    <option value="{{ recommended_research_model }}" selected>Perplexity Sonar Pro — recommended</option>
+                    {% set recommended_option = model_catalog.research | selectattr('id', 'equalto', recommended_research_model) | first %}
+                    <option value="{{ recommended_research_model }}" selected>{{ recommended_option.label if recommended_option else 'Perplexity Sonar Pro' }} — recommended</option>
                     {% for option in model_catalog.research %}
                     {% if option.id != recommended_research_model %}
                     <option value="{{ option.id }}">{{ option.label }}</option>
                     {% endif %}
                     {% endfor %}
                   </select>
-                  <span class="caption">Used only for the research pass above. All listed models have built-in web search.</span>
+                  <span class="caption">Used for website research fallback and all CTV research. All listed models have built-in web search.</span>
                 </label>
               </div>
             </details>
@@ -232,13 +233,16 @@
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="custom-categories-enabled">
                   <span><span class="run-advanced-label">Add your own categories</span>
-                  <span class="caption">Keep the standard Lens analysis and add labels you define. Multiple yes/no labels can apply to the same item.</span></span>
+                  <span class="caption">Add labels to this run alongside the standard Lens analysis. Optional; sends source text to TypeSafe for an additional API call per successfully analyzed item.</span></span>
                 </label>
                 <div id="custom-category-editor" hidden>
-                  <p class="caption">TypeSafe evaluates scraped text, app-store descriptions, or research summaries—not images. Define what each label means. Results and probabilities appear in the CSV.</p>
+                  <p class="caption">Give each category a name, choose an answer format, and write a specific question. Use “Add category” for another independent judgment.</p>
+                  <p class="caption">TypeSafe evaluates scraped text, app-store descriptions, or research summaries—not images or video. A missing detail in a research summary is not proof of absence.</p>
                   <div id="custom-category-list"></div>
                   <button class="btn btn-ghost" type="button" id="add-custom-category">Add category</button>
                   <p class="caption">Up to 12 categories. Yes/no uses a 50% cutoff; its probability is always P(yes). Choice selects one option. Include “Other” or “Unknown” when appropriate.</p>
+                  <p class="caption">Click Analyze above to start the run. Download its CSV from Runs to see your labels and probabilities. If TypeSafe fails, standard results are kept and custom labels are blank; check TypeSafe_Status and TypeSafe_Error.</p>
+                  <p class="caption">Definitions are remembered in this browser. After reloading the page, enable “Add your own categories” again to include them in a run.</p>
                 </div>
                 <input type="hidden" name="custom_categories" id="custom-categories-json" value="">
                 <noscript><p class="caption">JavaScript is required for the category editor. The CLI also accepts a JSON definition file.</p></noscript>

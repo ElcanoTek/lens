@@ -125,6 +125,13 @@ class CTVProcessor:
                     raise RuntimeError(
                         f"Research failed: {research_result.get('error', 'Unknown error')}"
                     )
+                evidence = research_result.get("research_content")
+                if (
+                    not isinstance(evidence, str)
+                    or not evidence.strip()
+                    or evidence.strip().upper() == "INSUFFICIENT INFORMATION"
+                ):
+                    raise RuntimeError("No meaningful research evidence available")
 
             except Exception as research_error:
                 # Handle research step failure specifically
@@ -264,9 +271,15 @@ class CTVProcessor:
             bundle_id=item.bundle_id or "",
             platform=item.platform or "",
             url=item.url or "",
+            publisher=item.publisher or "",
             research_model=self.research_model,
             temperature=self.research_temperature,
             max_tokens=self.research_max_tokens,
+            **(
+                {"custom_questions": self.category_client.research_questions()}
+                if self.category_client
+                else {}
+            ),
         )
 
     async def _classification_step(
@@ -295,6 +308,7 @@ class CTVProcessor:
             bundle_id=item.bundle_id or "",
             platform=item.platform or "",
             url=item.url or "",
+            publisher=item.publisher or "",
             classification_model=self.classification_model,
             temperature=self.classification_temperature,
             max_tokens=self.classification_max_tokens,
@@ -444,8 +458,8 @@ class CTVProcessor:
         """
         import re
 
-        if not text:
-            return text
+        if not isinstance(text, str):
+            return ""
 
         result = text
 
