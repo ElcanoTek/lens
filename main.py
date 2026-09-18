@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from config import config
+from custom_categories import load_categories
 from orchestration import SiteAnalysisOrchestrator
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--custom-categories",
+        metavar="JSON_FILE",
+        help="Add TypeSafe categories defined in a JSON file (requires TYPESAFE_API_KEY).",
+    )
+    parser.add_argument(
         "--input-csv",
         help="Override input CSV path for this run.",
     )
@@ -175,6 +181,9 @@ async def main(argv: Optional[List[str]] = None):
             scrape_mode=scrape_mode,
             reject_redirects=reject_redirects,
             ctv_mode=args.ctv,
+            custom_categories=load_categories(args.custom_categories)
+            if args.custom_categories
+            else None,
         )
         await orchestrator.run()
     except KeyboardInterrupt:

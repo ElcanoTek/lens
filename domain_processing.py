@@ -80,7 +80,9 @@ class DomainProcessor:
         results_writer,
         results_file: Optional[TextIO],
         defer_failures: bool = False,
+        category_client=None,
     ):
+        self.category_client = category_client
         self.progress_tracker = progress_tracker
         self.scraper_client = scraper_client
         self.openrouter_client = openrouter_client
@@ -227,6 +229,7 @@ class DomainProcessor:
 
             processing_time = time.perf_counter() - start_time
             scrape_result = {
+                "content": research_content,
                 "content_length": len(research_content),
                 "scraped_at": datetime.now().isoformat(),
             }
@@ -384,6 +387,15 @@ class DomainProcessor:
             "Scraped_At": scrape_result.get("scraped_at", datetime.now().isoformat()),
         }
 
+        if self.category_client:
+            record.update(
+                await self.category_client.classify(
+                    identifier=item.domain,
+                    content=scrape_result.get("content", ""),
+                    title=scrape_result.get("title", ""),
+                    source=scrape_mode,
+                )
+            )
         self._write_result(record)
 
         await self.progress_tracker.mark_domain_processed(
@@ -454,5 +466,10 @@ class DomainProcessor:
         if not self.results_writer or not self.results_file:
             raise RuntimeError("Results writer has not been initialised")
 
+        if self.category_client:
+            record.setdefault("TypeSafe_Status", "skipped")
+            record.setdefault(
+                "TypeSafe_Error", "Primary analysis failed; custom categories not evaluated"
+            )
         self.results_writer.writerow(record)
         self.results_file.flush()

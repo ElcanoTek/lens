@@ -118,6 +118,17 @@ Three-layer config: **defaults** → `config.json` → **environment variables**
 - `.env` — secrets and per-host settings: `OPENROUTER_API_KEY` (required), `AUTH_SIGNING_PUBKEY` (required for web sign-in — the auth service's Ed25519 public key; the dashboard verifies the `elcano_auth` cookie with it), `AUTH_LOGIN_URL` / `AUTH_COOKIE_NAME` (optional overrides), `SCRAPER_VERBOSE` (optional). See `.env.example`.
 - All config keys are uppercased as attributes on the global `config` singleton
 
+### Optional TypeSafe categories
+
+`custom_categories.py` validates per-run definitions and batches independent
+questions against original source evidence using TypeSafe's HTTP API. Enable
+with `--custom-categories JSON_FILE` or the dashboard editor; `TYPESAFE_API_KEY`
+is server-side and required only when enabled. Processors append custom columns
+after standard success; TypeSafe errors never fail the primary result or become
+negative labels. Definitions are snapshotted in jobs, progress and a CSV sidecar;
+changed definitions require new output/progress paths. See
+[`docs/CUSTOM_CATEGORIES.md`](docs/CUSTOM_CATEGORIES.md).
+
 ## Gotchas and Non-Obvious Patterns
 
 ### Config singleton import crash

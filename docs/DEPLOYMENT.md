@@ -587,6 +587,11 @@ do not enable global `rsync_full_access` or relabel `/opt` to work around this.
 For a persistent maintenance unit on Fedora, the equivalent setting is
 `SELinuxContext=system_u:system_r:unconfined_service_t:s0` in `[Service]`.
 
+For optional user-defined categories, add `TYPESAFE_API_KEY` to `/opt/lens/.env`
+with `lens env edit`, then `lens restart`. It is required only for runs that
+enable custom categories; the dashboard never receives the key. See
+[Custom categories](CUSTOM_CATEGORIES.md) for the UI, CLI and output contract.
+
 ### Fedora release upgrades
 
 The helper reads `https://fedoraproject.org/releases.json`, chooses the highest

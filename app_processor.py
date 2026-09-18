@@ -37,7 +37,9 @@ class AppProcessor:
         reporter: Optional[TerminalReporter],
         results_writer,
         results_file: Optional[TextIO],
+        category_client=None,
     ):
+        self.category_client = category_client
         """
         Initialize the app processor.
 
@@ -296,6 +298,15 @@ class AppProcessor:
             "Scraped_At": app_data.get("fetched_at", datetime.now().isoformat()),
         }
 
+        if self.category_client:
+            record.update(
+                await self.category_client.classify(
+                    identifier=item.identifier,
+                    title=app_name,
+                    content=app_data.get("content_for_llm") or app_data.get("description", ""),
+                    source=f"{platform}_store",
+                )
+            )
         self._write_result(record)
 
         await self.progress_tracker.mark_domain_processed(
@@ -361,5 +372,10 @@ class AppProcessor:
         if not self.results_writer or not self.results_file:
             raise RuntimeError("Results writer has not been initialised")
 
+        if self.category_client:
+            record.setdefault("TypeSafe_Status", "skipped")
+            record.setdefault(
+                "TypeSafe_Error", "Primary analysis failed; custom categories not evaluated"
+            )
         self.results_writer.writerow(record)
         self.results_file.flush()

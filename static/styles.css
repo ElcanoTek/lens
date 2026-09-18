@@ -713,6 +713,31 @@ input:focus-visible,
 
 /* ── Runs table ─────────────────────────────────────────────────────── */
 
+.custom-category-card {
+  display: grid;
+  gap: var(--space-3);
+  min-width: 0;
+  margin: var(--space-3) 0;
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.custom-category-card input,
+.custom-category-card textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: var(--space-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
+.custom-category-card textarea { resize: vertical; }
+.custom-category-card .btn { justify-self: start; }
+
 .table-wrap {
   overflow-x: auto;
   border: 1px solid var(--color-border);

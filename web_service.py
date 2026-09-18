@@ -37,6 +37,7 @@ from central_auth import (
     CodeExchangeRejectedError,
     verify_logout_token,
 )
+from custom_categories import parse_categories, validate_categories
 
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "managed-files" / "inputs"
@@ -414,6 +415,7 @@ class Job:
     llm_model: Optional[str] = None  # None = server default
     research_fallback: bool = True
     research_model: Optional[str] = None  # None = server default
+    custom_categories: Optional[dict] = None
     status: str = "queued"
     created_at: str = field(default_factory=_utc_now)
     started_at: Optional[str] = None
@@ -447,6 +449,7 @@ class JobManager:
                     "llm_model": job.llm_model,
                     "research_fallback": job.research_fallback,
                     "research_model": job.research_model,
+                    "custom_categories": job.custom_categories,
                     "status": job.status,
                     "created_at": job.created_at,
                     "started_at": job.started_at,
@@ -518,6 +521,16 @@ class JobManager:
 
             llm_model = _clean_model(raw.get("llm_model"))
             research_model = _clean_model(raw.get("research_model"))
+            try:
+                categories = (
+                    validate_categories(raw["custom_categories"])
+                    if raw.get("custom_categories") is not None
+                    else None
+                )
+            except ValueError:
+                categories = None
+                status = "failed"
+                raw["error"] = "Invalid saved custom category definitions"
 
             job = Job(
                 id=job_id,
@@ -527,6 +540,7 @@ class JobManager:
                 llm_model=llm_model,
                 research_fallback=bool(raw.get("research_fallback", True)),
                 research_model=research_model,
+                custom_categories=categories,
                 status=status,
                 created_at=created_at,
                 started_at=raw.get("started_at"),
@@ -571,6 +585,7 @@ class JobManager:
         llm_model: Optional[str] = None,
         research_fallback: bool = True,
         research_model: Optional[str] = None,
+        custom_categories: Optional[dict] = None,
     ) -> Job:
         if mode not in ALLOWED_MODES:
             raise ValueError(f"Invalid mode: {mode}")
@@ -585,6 +600,9 @@ class JobManager:
             llm_model=(llm_model or "").strip() or None,
             research_fallback=research_fallback,
             research_model=(research_model or "").strip() or None,
+            custom_categories=validate_categories(custom_categories)
+            if custom_categories is not None
+            else None,
         )
 
         async with self.lock:
@@ -701,6 +719,12 @@ class JobManager:
             cmd.extend(["--research-model", job.research_model])
 
         try:
+            if job.custom_categories:
+                category_path = Path(str(output_path) + ".categories.json")
+                category_path.write_text(
+                    json.dumps(job.custom_categories, indent=2), encoding="utf-8"
+                )
+                cmd.extend(["--custom-categories", str(category_path)])
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(BASE_DIR),
@@ -755,6 +779,8 @@ class JobManager:
                     path.unlink()
 
             self.jobs.pop(job_id, None)
+            if job.custom_categories:
+                (OUTPUT_DIR / f"{job.id}_output.csv.categories.json").unlink(missing_ok=True)
             try:
                 self.queue.remove(job_id)
             except ValueError:
@@ -1215,6 +1241,8 @@ def _job_settings_summary(job: Job) -> str:
     distinguishable from its neighbors after the fact.
     """
     parts: List[str] = []
+    if job.custom_categories:
+        parts.append("custom: " + ", ".join(c["name"] for c in job.custom_categories["categories"]))
     if job.llm_model:
         parts.append(f"model: {job.llm_model}")
     if not job.research_fallback:
@@ -1260,7 +1288,7 @@ async def index(request: Request):
         return raw
 
     def _job_id_from_output_filename(filename: str) -> Optional[str]:
-        for suffix in ("_output.csv", "_progress.json", ".log"):
+        for suffix in ("_output.csv.categories.json", "_output.csv", "_progress.json", ".log"):
             if filename.endswith(suffix):
                 return filename[: -len(suffix)]
         return None
@@ -1424,6 +1452,8 @@ async def index(request: Request):
         )
         if file_name.endswith("_output.csv"):
             group["output_file"] = file_name
+        elif file_name.endswith("_output.csv.categories.json"):
+            group["category_file"] = file_name
         elif file_name.endswith("_progress.json"):
             group["progress_file"] = file_name
         elif file_name.endswith(".log"):
@@ -1451,6 +1481,7 @@ async def index(request: Request):
                 "created_at_iso": job.created_at,
                 "created_at_display": _format_created_at(job.created_at),
                 "settings_summary": _job_settings_summary(job),
+                "category_file": group.get("category_file"),
             }
         )
 
@@ -1494,6 +1525,7 @@ async def index(request: Request):
                 "output_file": group.get("output_file"),
                 "progress_file": progress_file,
                 "log_file": group.get("log_file"),
+                "category_file": group.get("category_file"),
                 "created_at_iso": _job_id_timestamp_iso(job_id, None),
                 "created_at_display": _format_job_id_timestamp(job_id, None),
             }
@@ -1510,6 +1542,7 @@ async def index(request: Request):
             "model_catalog": await _get_model_catalog(),
             "recommended_model": RECOMMENDED_MODEL,
             "recommended_research_model": RECOMMENDED_RESEARCH_MODEL,
+            "typesafe_available": bool(os.getenv("TYPESAFE_API_KEY", "").strip()),
             "current_job_id": manager.current_job_id,
             "error": request.query_params.get("error", ""),
             "message": request.query_params.get("message", ""),
@@ -1642,6 +1675,7 @@ async def enqueue_job(
     llm_model: Optional[str] = Form(default=None),
     research_fallback: Optional[str] = Form(default=None),
     research_model: Optional[str] = Form(default=None),
+    custom_categories: Optional[str] = Form(default=None),
 ):
     _require_auth(request)
     try:
@@ -1654,6 +1688,17 @@ async def enqueue_job(
 
     if mode not in ALLOWED_MODES:
         return RedirectResponse(url="/?error=Invalid+mode", status_code=303)
+
+    categories = None
+    if custom_categories:
+        try:
+            categories = parse_categories(custom_categories)
+        except ValueError as exc:
+            return _redirect_with_params({"error": str(exc)})
+        if not os.getenv("TYPESAFE_API_KEY", "").strip():
+            return _redirect_with_params(
+                {"error": "Custom categories require TYPESAFE_API_KEY on the server."}
+            )
 
     model = (llm_model or "").strip() or None
     if model == RECOMMENDED_MODEL:
@@ -1685,6 +1730,7 @@ async def enqueue_job(
         llm_model=model,
         research_fallback=fallback_enabled,
         research_model=res_model,
+        custom_categories=categories,
     )
     return RedirectResponse(url="/?message=Job+queued", status_code=303)
 

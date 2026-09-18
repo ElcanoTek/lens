@@ -1,0 +1,15 @@
+{
+  "categories": [
+    {
+      "name": "Sexy",
+      "type": "boolean",
+      "question": "Does the website or app use sexually suggestive themes, erotic content, or descriptions of provocative imagery to attract its audience? Ordinary romance, health education, and non-sexual fashion do not count."
+    },
+    {
+      "name": "Primary purpose",
+      "type": "choice",
+      "question": "What is the main purpose of the website or app? Select Unknown if the evidence is insufficient.",
+      "options": ["News", "Entertainment", "Shopping", "Education", "Other", "Unknown"]
+    }
+  ]
+}

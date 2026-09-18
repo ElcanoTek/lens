@@ -3,6 +3,7 @@
 
 import asyncio
 import csv
+import json
 import logging
 import shutil
 import signal
@@ -17,6 +18,7 @@ from android_scraper import AndroidScraper
 from app_processor import AppProcessor
 from config import config
 from ctv_processor import CTVProcessor
+from custom_categories import TypeSafeCategories, category_columns, validate_categories
 from domain_processing import DomainProcessor
 
 # App processing imports
@@ -174,7 +176,14 @@ class SiteAnalysisOrchestrator:
         scrape_mode: Optional[str] = None,
         reject_redirects: bool = True,
         ctv_mode: bool = False,
+        custom_categories: Optional[dict] = None,
     ) -> None:
+        self.custom_categories = (
+            validate_categories(custom_categories) if custom_categories is not None else None
+        )
+        self.category_client = (
+            TypeSafeCategories(self.custom_categories) if self.custom_categories else None
+        )
         self.progress_tracker = ProgressTracker(config.PROGRESS_FILE_PATH)
         self.scraper_client: Optional[ScraperClient] = None
         self.openrouter_client: Optional[OpenRouterClient] = None
@@ -229,6 +238,7 @@ class SiteAnalysisOrchestrator:
         reporter_started = False
 
         try:
+            await self._prepare_custom_categories()
             # Route to CTV workflow if in CTV mode
             if self.ctv_mode:
                 await self._run_ctv_workflow()
@@ -293,6 +303,8 @@ class SiteAnalysisOrchestrator:
             )
 
             async with AsyncExitStack() as exit_stack:
+                if self.category_client:
+                    await exit_stack.enter_async_context(self.category_client)
                 await self._initialize_clients(exit_stack)
                 self._setup_output_file()
 
@@ -517,19 +529,46 @@ class SiteAnalysisOrchestrator:
 
         logger.info("✅ All required clients initialised successfully")
 
+    async def _prepare_custom_categories(self):
+        """Bind resumable output to its original definitions; never mix rubrics."""
+        previous = self.progress_tracker.progress_data.get("custom_categories")
+        processed = self.progress_tracker.progress_data.get("processed_domains")
+        if (processed or previous) and previous != self.custom_categories:
+            raise ValueError(
+                "Custom categories changed. Use new output and progress files for a new categorization run."
+            )
+        output = Path(config.OUTPUT_CSV_PATH)
+        sidecar = Path(str(output) + ".categories.json")
+        if output.exists() and output.stat().st_size:
+            existing = json.loads(sidecar.read_text()) if sidecar.exists() else None
+            if existing != self.custom_categories:
+                raise ValueError(
+                    "Output belongs to different custom categories. Use new output and progress files."
+                )
+        if self.custom_categories:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            sidecar.write_text(json.dumps(self.custom_categories, indent=2), encoding="utf-8")
+            self.progress_tracker.progress_data["custom_categories"] = self.custom_categories
+            Path(config.PROGRESS_FILE_PATH).parent.mkdir(parents=True, exist_ok=True)
+            await self.progress_tracker.save_progress()
+
+    def _output_columns(self, ctv=False):
+        base = config.CTV_CSV_FIELDNAMES if ctv else config.CSV_FIELDNAMES
+        return list(base) + category_columns(self.custom_categories)
+
     def _setup_output_file(self):
         """Setup the output CSV file and writer."""
         # Create output file if it doesn't exist
         if not Path(config.OUTPUT_CSV_PATH).exists():
             with open(config.OUTPUT_CSV_PATH, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=config.CSV_FIELDNAMES)
+                writer = csv.DictWriter(f, fieldnames=self._output_columns())
                 writer.writeheader()
         else:
             self._migrate_output_csv_schema()
 
         # Open file for appending
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")
-        self.results_writer = csv.DictWriter(self.output_file, fieldnames=config.CSV_FIELDNAMES)
+        self.results_writer = csv.DictWriter(self.output_file, fieldnames=self._output_columns())
 
     def _migrate_output_csv_schema(self) -> None:
         """Rewrite an output CSV left by an older version to the current schema.
@@ -542,7 +581,7 @@ class SiteAnalysisOrchestrator:
         try:
             with open(output_path, newline="") as f:
                 reader = csv.DictReader(f)
-                if reader.fieldnames == config.CSV_FIELDNAMES:
+                if reader.fieldnames == self._output_columns():
                     return
                 rows = list(reader)
 
@@ -551,7 +590,7 @@ class SiteAnalysisOrchestrator:
                 len(rows),
             )
             with open(output_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=config.CSV_FIELDNAMES, extrasaction="ignore")
+                writer = csv.DictWriter(f, fieldnames=self._output_columns(), extrasaction="ignore")
                 writer.writeheader()
                 writer.writerows(rows)
         except Exception as exc:
@@ -562,12 +601,14 @@ class SiteAnalysisOrchestrator:
         # Create output file if it doesn't exist
         if not Path(config.OUTPUT_CSV_PATH).exists():
             with open(config.OUTPUT_CSV_PATH, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=config.CTV_CSV_FIELDNAMES)
+                writer = csv.DictWriter(f, fieldnames=self._output_columns(ctv=True))
                 writer.writeheader()
 
         # Open file for appending
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")
-        self.results_writer = csv.DictWriter(self.output_file, fieldnames=config.CTV_CSV_FIELDNAMES)
+        self.results_writer = csv.DictWriter(
+            self.output_file, fieldnames=self._output_columns(ctv=True)
+        )
 
     def _teardown_output_file(self) -> None:
         """Close the output file and reset writer state."""
@@ -584,6 +625,7 @@ class SiteAnalysisOrchestrator:
         domain_processor = None
         if self.has_websites and self.scraper_client:
             domain_processor = DomainProcessor(
+                category_client=self.category_client,
                 progress_tracker=self.progress_tracker,
                 scraper_client=self.scraper_client,
                 openrouter_client=self.openrouter_client,
@@ -597,6 +639,7 @@ class SiteAnalysisOrchestrator:
         app_processor = None
         if self.has_ios_apps or self.has_android_apps:
             app_processor = AppProcessor(
+                category_client=self.category_client,
                 progress_tracker=self.progress_tracker,
                 ios_client=self.ios_client,
                 android_scraper=self.android_scraper,
@@ -920,6 +963,7 @@ class SiteAnalysisOrchestrator:
 
         self._defer_website_failures = False
         processor = DomainProcessor(
+            category_client=self.category_client,
             progress_tracker=self.progress_tracker,
             scraper_client=self.scraper_client,
             openrouter_client=self.openrouter_client,
@@ -1069,6 +1113,8 @@ class SiteAnalysisOrchestrator:
             )
 
             async with AsyncExitStack() as exit_stack:
+                if self.category_client:
+                    await exit_stack.enter_async_context(self.category_client)
                 await self._initialize_ctv_clients(exit_stack)
                 self._setup_ctv_output_file()
 
@@ -1151,6 +1197,7 @@ class SiteAnalysisOrchestrator:
 
         # Create CTV processor
         ctv_processor = CTVProcessor(
+            category_client=self.category_client,
             progress_tracker=self.progress_tracker,
             openrouter_client=self.openrouter_client,
             reporter=self.reporter,
