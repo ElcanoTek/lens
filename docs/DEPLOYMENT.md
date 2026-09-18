@@ -568,6 +568,25 @@ and alert on nonzero exit. For unattended application deploys, use
 `lens update --yes` during a quiet window. All mutating commands log their steps
 to the caller; forward stdout/stderr to your deployment system.
 
+On SELinux-enforcing Fedora, a plain `systemd-run` starts in `initrc_t`, which
+transitions rsync into the restricted `rsync_t` domain. A deployment can then
+fail with `Permission denied` creating files under `/opt`, even as root and
+without a visible AVC report. Running from the usual root SSH shell works.
+For a systemd-managed deployment, explicitly select the privileged maintenance
+context for that invocation:
+
+```bash
+sudo systemd-run --unit="lens-update-$(date +%s)" --wait --pipe \
+  -p SELinuxContext=system_u:system_r:unconfined_service_t:s0 \
+  /usr/local/bin/lens update --yes
+```
+
+This context is for the trusted root deployment command, not `lens.service`.
+Keep SELinux enforcing and the application's existing service configuration;
+do not enable global `rsync_full_access` or relabel `/opt` to work around this.
+For a persistent maintenance unit on Fedora, the equivalent setting is
+`SELinuxContext=system_u:system_r:unconfined_service_t:s0` in `[Service]`.
+
 ### Fedora release upgrades
 
 The helper reads `https://fedoraproject.org/releases.json`, chooses the highest
