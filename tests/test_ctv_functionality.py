@@ -825,7 +825,8 @@ class TestStripMarkdown:
         from ctv_processor import CTVProcessor
 
         assert CTVProcessor._strip_markdown("") == ""
-        assert CTVProcessor._strip_markdown(None) is None
+        # Missing research must remain safe to truncate and write on failure.
+        assert CTVProcessor._strip_markdown(None) == ""
 
     def test_strip_markdown_headers(self):
         """Test removal of Markdown headers."""

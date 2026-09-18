@@ -475,6 +475,18 @@ class OpenRouterClient:
                     )
         raise last_exception
 
+    def _classification_options(self) -> Dict[str, Any]:
+        """Reserve output capacity for structured answers on Gemini classifiers.
+
+        Low effort is supported by Gemini thinking models, including the moving
+        Flash alias. Hiding reasoning alone would still spend the same tokens.
+        Evaluate the active model on every call so fallback models keep their
+        own defaults.
+        """
+        if self.model.lstrip("~").startswith("google/gemini-"):
+            return {"extra_body": {"reasoning": {"effort": "low"}}}
+        return {}
+
     async def classify_site(
         self,
         domain: str,
@@ -526,6 +538,7 @@ class OpenRouterClient:
                         top_p=0.9,
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
+                        **self._classification_options(),
                     )
 
                 return make_api_call
@@ -1280,6 +1293,7 @@ Be factual and concise (under 400 words). If you cannot find any meaningful info
                         tool_choice={"type": "function", "function": {"name": "classify_app"}},
                         temperature=self.temperature,
                         max_tokens=budget,
+                        **self._classification_options(),
                         top_p=0.9,
                         frequency_penalty=0.1,
                         presence_penalty=0.1,
@@ -1798,7 +1812,8 @@ Please research and provide information on the following aspects:
 
 9. **Recent Developments**: Any recent news, updates, or changes to the app or its content offerings?
 
-Provide a comprehensive research summary that would help classify this CTV app for advertising purposes."""
+Provide a concise, factual research summary that would help classify this CTV app for advertising purposes.
+If you cannot identify this app or find meaningful information about it, respond with exactly: {self.RESEARCH_INSUFFICIENT}"""
 
         return prompt
 
@@ -1874,6 +1889,7 @@ Provide a comprehensive research summary that would help classify this CTV app f
                         tool_choice={"type": "function", "function": {"name": "classify_ctv_app"}},
                         temperature=temperature,
                         max_tokens=budget,
+                        **self._classification_options(),
                     )
 
                 return make_api_call

@@ -36,6 +36,25 @@ Recommendation: try Sonar per run for routine research; retain Sonar Pro as the
 default until a larger labeled sample covers obscure apps and custom rubrics.
 The production default has not been changed.
 
+## Classification reliability
+
+Gemini classification calls now request low reasoning effort for websites,
+mobile apps, and CTV. Previously, the Flash alias could spend the entire output
+budget reasoning and return no structured answer: the production Reuters smoke
+test needed 1,500-, 3,000-, and 6,000-token attempts before succeeding. Hiding
+reasoning text would not solve this because those tokens are still billed.
+
+An isolated live check of the updated client, using the full Lens taxonomy and
+the saved Sonar research summaries for Reuters, Defector, and Pluto TV, produced
+valid Premium classifications in one request each (2.45, 3.96, and 3.03 seconds).
+This is a reliability smoke test, not a controlled cost or accuracy benchmark.
+Other model families retain their defaults; retries still increase the output
+budget if necessary. Research models are unaffected by this setting.
+
+CTV research now carries publisher information through both steps and explicitly
+declines unidentified apps. Empty or insufficient research fails the row before
+classification or TypeSafe calls, rather than inviting an unsupported judgment.
+
 ## Catalog findings
 
 At the time of comparison, token prices per million were $1/$1 for Sonar versus

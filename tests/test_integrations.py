@@ -363,3 +363,28 @@ async def test_classify_site_fails_when_every_attempt_truncates():
     assert "Classification failed" in result["justification"]
     # initial attempt + two truncation retries, each with a doubled budget
     assert [c["max_tokens"] for c in calls] == [1500, 3000, 6000]
+
+
+@pytest.mark.parametrize("kind", ["website", "app", "ctv"])
+@pytest.mark.parametrize(
+    "model", ["~google/gemini-flash-latest", "google/gemini-2.5-flash", "other/model"]
+)
+async def test_classification_reasoning_effort_reaches_api(kind, model):
+    client = OpenRouterClient(api_key="test-key", model=model)
+    name = {"website": "classify_website", "app": "classify_app", "ctv": "classify_ctv_app"}[kind]
+    calls = _install_fake_completions(client, [_tool_call_response(name)])
+    if kind == "website":
+        result = await client.classify_site("example.com", content="Source evidence")
+    elif kind == "app":
+        result = await client.classify_app(
+            "123", app_name="Example", content_for_llm="Source evidence"
+        )
+    else:
+        result = await client.classify_ctv_app("Example", research_content="Source evidence")
+    assert result["success"]
+    assert calls
+    for call in calls:
+        if model == "other/model":
+            assert "extra_body" not in call
+        else:
+            assert call["extra_body"] == {"reasoning": {"effort": "low"}}

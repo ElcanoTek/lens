@@ -267,8 +267,10 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
         await method(DomainWorkItem("example.com"))
     elif kind == "ctv":
         await CTVProcessor(request_delay=0, **common).process_ctv_app(
-            CTVWorkItem(app_name="Demo TV")
+            CTVWorkItem(app_name="Demo TV", publisher="Demo Network")
         )
+        assert router.research_ctv_app.call_args.kwargs["publisher"] == "Demo Network"
+        assert router.classify_ctv_app.call_args.kwargs["publisher"] == "Demo Network"
     else:
         store = Mock()
         store.fetch_app_metadata = AsyncMock(
@@ -348,6 +350,39 @@ async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
     row = next(csv.DictReader(io.StringIO(out.getvalue())))
     assert row["TypeSafe_Status"] == "skipped"
     assert row["Custom: Sexy"] == ""
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [None, "", "   ", "INSUFFICIENT INFORMATION", "Insufficient information about this app."],
+)
+async def test_ctv_missing_research_never_classifies(tmp_path, evidence):
+    out = io.StringIO()
+    writer = csv.DictWriter(
+        out, fieldnames=list(config.CTV_CSV_FIELDNAMES) + category_columns(SPEC)
+    )
+    writer.writeheader()
+    router = Mock(
+        research_ctv_app=AsyncMock(return_value={"success": True, "research_content": evidence}),
+        classify_ctv_app=AsyncMock(),
+    )
+    custom = Mock(classify=AsyncMock())
+    processor = CTVProcessor(
+        progress_tracker=ProgressTracker(str(tmp_path / "progress.json")),
+        openrouter_client=router,
+        reporter=None,
+        results_writer=writer,
+        results_file=out,
+        category_client=custom,
+        request_delay=0,
+    )
+    await processor.process_ctv_app(CTVWorkItem(app_name="Unknown TV"))
+    router.classify_ctv_app.assert_not_called()
+    custom.classify.assert_not_called()
+    row = next(csv.DictReader(io.StringIO(out.getvalue())))
+    assert row["TypeSafe_Status"] == "skipped"
+    assert row["Quality"] == "Failed"
+    assert "No meaningful research evidence" in row["Justification"]
 
 
 @pytest.mark.parametrize("ctv", [False, True])

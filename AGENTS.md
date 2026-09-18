@@ -187,6 +187,12 @@ in picker labels. `--research-model` applies to both website and CTV research;
 custom-category questions are included as evidence needs in both research prompts.
 See [`docs/RESEARCH_MODELS.md`](docs/RESEARCH_MODELS.md) for the live cost comparison.
 
+Gemini classification requests use low reasoning effort to leave room for the
+structured answer; merely excluding reasoning text does not reduce billed tokens.
+This applies to website, mobile-app and CTV classification, not research calls.
+CTV rejects empty/insufficient research before classification, and passes the
+input publisher into both research and classification prompts.
+
 ### Web service spawns subprocesses
 
 `web_service.py` runs `main.py` as a subprocess for each job, passing CLI args. It does **not** import the pipeline directly. This means environment variables and CLI flags are the only way to configure job execution.
