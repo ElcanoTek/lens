@@ -225,17 +225,15 @@
                 </label>
               </div>
             </details>
+            {% if typesafe_available %}
             <details class="run-advanced custom-categories" id="custom-categories">
               <summary class="caption">Custom categories <span class="caption">· optional · TypeSafe</span></summary>
               <div class="run-advanced-body">
                 <label class="run-advanced-field run-advanced-check">
-                  <input type="checkbox" id="custom-categories-enabled" {% if not typesafe_available %}disabled{% endif %}>
+                  <input type="checkbox" id="custom-categories-enabled">
                   <span><span class="run-advanced-label">Add your own categories</span>
                   <span class="caption">Keep the standard Lens analysis and add labels you define. Multiple yes/no labels can apply to the same item.</span></span>
                 </label>
-                {% if not typesafe_available %}
-                <p class="caption">To enable this, configure TYPESAFE_API_KEY on the Lens server.</p>
-                {% endif %}
                 <div id="custom-category-editor" hidden>
                   <p class="caption">TypeSafe evaluates scraped text, app-store descriptions, or research summaries—not images. Define what each label means. Results and probabilities appear in the CSV.</p>
                   <div id="custom-category-list"></div>
@@ -246,6 +244,7 @@
                 <noscript><p class="caption">JavaScript is required for the category editor. The CLI also accepts a JSON definition file.</p></noscript>
               </div>
             </details>
+            {% endif %}
             <p class="caption run-hint">Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research.</p>
           </form>
         </div>

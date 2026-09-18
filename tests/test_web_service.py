@@ -82,6 +82,10 @@ def test_custom_categories_form_validation_and_key_stays_server_side(monkeypatch
             )
             assert "error=" in response.headers["location"]
         monkeypatch.delenv("TYPESAFE_API_KEY")
+        page = client.get("/")
+        assert 'id="custom-categories"' not in page.text
+        assert 'id="custom-categories-enabled"' not in page.text
+        assert 'name="custom_categories"' not in page.text
         response = client.post(
             "/jobs",
             data={"input_file": "list.csv", "custom_categories": json.dumps(spec)},

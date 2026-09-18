@@ -23,7 +23,7 @@ JSON definitions for reuse in the CLI.
 ## Server setup
 
 Set `TYPESAFE_API_KEY` in the server's `.env` (or environment) and restart Lens.
-The dashboard shows setup instructions until the key is configured. The key
+The dashboard hides the custom-category options until the key is configured. The key
 stays on the server and is never stored with jobs, in browser storage, or in CSVs.
 The existing `OPENROUTER_API_KEY` is still required.
 
