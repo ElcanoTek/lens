@@ -554,6 +554,8 @@ minor, dependency consistency, running interpreter, service/readiness, deployed
 revision, source drift, disk space, OS support deadline, rootless Podman and
 installed Firecrawl. `--public-url` also checks HTTPS and certificate validation.
 Missing optional containers are warnings; `--strict` makes warnings fail the check.
+The Podman probe runs from the service user's application directory, so root
+operators can invoke doctor from `/root` without causing a permissions false alarm.
 It reports installed optional tool versions, not remote patch availability; use
 `lens host check` for DNF updates. DNF's “updates available” exit 100 is normalized
 to success, while repository failures remain errors.

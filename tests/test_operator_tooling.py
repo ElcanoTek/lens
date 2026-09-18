@@ -171,6 +171,24 @@ def test_doctor_timeout_is_a_failure():
     assert doctor.run(sys.executable, "-c", "import time; time.sleep(5)", timeout=0.01) == (127, "")
 
 
+def test_doctor_podman_probe_uses_service_home_not_root_cwd(tmp_path, monkeypatch):
+    calls = []
+
+    def probe(*args, **kwargs):
+        if "podman" in args:
+            calls.append((args, kwargs))
+            return (0, "") if kwargs.get("cwd") == tmp_path else (125, "")
+        return 127, ""
+
+    monkeypatch.setattr(doctor, "run", probe)
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: name == "podman")
+    monkeypatch.setattr(doctor.os, "geteuid", lambda: 0)
+    monkeypatch.setattr(doctor.pwd, "getpwnam", lambda _: doctor.pwd.getpwuid(os.getuid()))
+    checks = doctor.diagnose(tmp_path, tmp_path, "lens")
+    assert next(c for c in checks if c["name"] == "podman")["status"] == "ok"
+    assert calls[0][0][:4] == ("runuser", "-u", "lens", "--")
+
+
 @pytest.mark.parametrize("strict,expected", [(False, 0), (True, 1)])
 def test_doctor_json_exit_contract(monkeypatch, capsys, strict, expected):
     monkeypatch.setattr(

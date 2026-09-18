@@ -15,9 +15,9 @@ import sys
 from pathlib import Path
 
 
-def run(*args, timeout=15):
+def run(*args, timeout=15, cwd=None):
     try:
-        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd=cwd)
         return result.returncode, result.stdout.strip()
     except (OSError, subprocess.TimeoutExpired):
         return 127, ""
@@ -200,6 +200,7 @@ def diagnose(app, src, user, public_url=None):
                 "podman",
                 "info",
                 timeout=20,
+                cwd=app,
             )
             add(
                 "podman",
