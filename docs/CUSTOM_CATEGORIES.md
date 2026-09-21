@@ -4,15 +4,17 @@ Lens can add your own labels alongside its standard quality and IAB analysis.
 Enable **Custom categories → Add your own categories** in the dashboard's
 **Ready to analyze** panel, then add up to 12 questions:
 
-- **Yes / no:** an independent label, e.g. “Does this website use sexually
-  suggestive themes to attract its audience?” Several labels can apply at once.
+- **Yes / no:** an independent label, e.g. “Would a mainstream brand be
+  comfortable appearing beside this content?” Several labels can apply at once.
 - **Choose one category:** your question plus 2–12 options, one per line. For
   example, choose a primary purpose from News, Entertainment, Shopping,
   Education, Other and Unknown.
 
-Define what the question means, including important exclusions. For example,
-distinguish erotic entertainment from ordinary romance, fashion, and health
-education. Include an Other or Unknown option when a choice may not fit.
+Define what the question means, including important exclusions. A **Brand
+safe** label is more useful when it measures trust rather than topic: say that
+honest journalism, health information, and edgy comedy can qualify, while
+deception, harassment, hate, and content that exists mainly to shock do not.
+Include an Other or Unknown option when a choice may not fit.
 
 Definitions stay in this browser for reuse. The feature starts **off** when the
 page reloads; turn it on for each run that needs it. Each queued run snapshots

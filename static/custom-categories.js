@@ -48,11 +48,11 @@ document.addEventListener("DOMContentLoaded", () => {
     row.innerHTML = `
       <legend>Category</legend>
       <label class="run-advanced-field"><span class="run-advanced-label">Category name · CSV column label</span>
-        <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="e.g. Sexy" title="Start with a letter; use letters, digits, spaces, underscores or hyphens."></label>
+        <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="e.g. Brand safe" title="Start with a letter; use letters, digits, spaces, underscores or hyphens."></label>
       <label class="run-advanced-field"><span class="run-advanced-label">Answer format</span>
         <select data-field="type"><option value="boolean">Yes / no · independent label</option><option value="choice">Multiple choice · select one option</option></select></label>
       <label class="run-advanced-field"><span class="run-advanced-label">What should TypeSafe decide?</span>
-        <textarea data-field="question" required maxlength="1000" rows="3" placeholder="Does this content use sexually suggestive themes or imagery descriptions to attract its audience?"></textarea></label>
+        <textarea data-field="question" required maxlength="1000" rows="3" placeholder="Would a mainstream brand be comfortable appearing beside this content? Judge trust and respect for the audience, not topic alone."></textarea></label>
       <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">Options · 2–12 choices, one per line</span>
         <textarea data-field="options" required maxlength="972" rows="4" placeholder="News\nEntertainment\nShopping\nOther\nUnknown"></textarea></label>
       <button type="button" class="btn btn-ghost">Remove category</button>`;

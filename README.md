@@ -233,7 +233,7 @@ and restart Lens; the editor appears only when a key is configured. Bootstrap
 offers an optional key prompt; existing installs can use `sudo lens env edit`
 and `sudo lens restart`.
 
-![Custom category editor with a yes/no label and a multiple-choice category](docs/images/custom-categories.png)
+![Custom category editor with a Brand safe yes/no label and a multiple-choice Purpose category](docs/images/custom-categories.png)
 
 ### Quick dashboard guide
 
@@ -242,10 +242,14 @@ and `sudo lens restart`.
 2. Enter a **category name**, which becomes a CSV column label. Choose **Yes / no**
    for an independent label, or **Multiple choice** for one answer from 2–12
    options (one option per line).
-3. Write a specific question. For example, name a label **Sexy** and ask
-   “Is erotic or sexually suggestive entertainment a primary focus?” For a
-   **Purpose** category, ask “What is the primary purpose?” and supply `News`,
-   `Entertainment`, `Education`, `Other`, and `Unknown` as separate options.
+3. Write a specific question, and define what the label means so TypeSafe
+   judges the idea rather than a list of topics. For example, name a label
+   **Brand safe** and ask “Would a mainstream household brand be comfortable
+   appearing beside this content? Judge trust, not topic: honest journalism,
+   health information, and edgy comedy can qualify; deception, harassment, hate,
+   and content that exists mainly to shock do not.” For a **Purpose** category,
+   ask “What is the primary purpose?” and supply `News`, `Entertainment`,
+   `Education`, `Other`, and `Unknown` as separate options.
 4. Use **Add category** for more questions (up to 12), then click **Analyze**
    above the settings.
 5. Download the CSV from **Runs**. Look for `Custom: <name>` and
