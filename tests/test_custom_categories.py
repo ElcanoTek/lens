@@ -30,7 +30,11 @@ from shared_types import CTVWorkItem, DomainWorkItem, WorkItem
 
 SPEC = {
     "categories": [
-        {"name": "Sexy", "type": "boolean", "question": "Does it contain erotic themes?"},
+        {
+            "name": "Brand safe",
+            "type": "boolean",
+            "question": "Would a mainstream brand be comfortable appearing beside this content?",
+        },
         {
             "name": "Purpose",
             "type": "choice",
@@ -93,8 +97,8 @@ async def test_batch_api_contract_preserves_raw_probabilities_and_bounds_content
     assert payload["state"]["truncated"] is True
     assert payload["questions"]["c0"]["type"] == "noul"
     assert payload["questions"]["c1"]["criteria"] == dict.fromkeys(SPEC["categories"][1]["options"])
-    assert result["Custom: Sexy"] == "No"
-    assert result["P(yes/choice): Sexy"] == 0.1  # P(yes), not confidence in No
+    assert result["Custom: Brand safe"] == "No"
+    assert result["P(yes/choice): Brand safe"] == 0.1  # P(yes), not confidence in No
     assert result["Custom: Purpose"] == "Education"
     assert result["P(yes/choice): Purpose"] == 0.95
     assert json.loads(result["TypeSafe_Answers"])["Purpose"]["confidence"] == 0.9
@@ -198,7 +202,7 @@ async def test_csv_resume_definitions_and_disabled_run_are_isolated(monkeypatch,
     await orchestrator._prepare_custom_categories()
     setup = orchestrator._setup_ctv_output_file if ctv else orchestrator._setup_output_file
     setup()
-    orchestrator.results_writer.writerow({"Quality": "Premium", "Custom: Sexy": "No"})
+    orchestrator.results_writer.writerow({"Quality": "Premium", "Custom: Brand safe": "No"})
     orchestrator._teardown_output_file()
     original = Path(config.OUTPUT_CSV_PATH).read_bytes()
     resumed = SiteAnalysisOrchestrator(custom_categories=SPEC)
@@ -351,7 +355,7 @@ async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
     custom.classify.assert_not_called()
     row = next(csv.DictReader(io.StringIO(out.getvalue())))
     assert row["TypeSafe_Status"] == "skipped"
-    assert row["Custom: Sexy"] == ""
+    assert row["Custom: Brand safe"] == ""
 
 
 @pytest.mark.parametrize(

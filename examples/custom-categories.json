@@ -1,9 +1,9 @@
 {
   "categories": [
     {
-      "name": "Sexy",
+      "name": "Brand safe",
       "type": "boolean",
-      "question": "Does the website or app use sexually suggestive themes, erotic content, or descriptions of provocative imagery to attract its audience? Ordinary romance, health education, and non-sexual fashion do not count."
+      "question": "Would a mainstream household brand be comfortable appearing beside this website or app's content without having to explain itself? Judge trust rather than topic: serious journalism, health information, and edgy comedy count as brand safe when they are honest and treat the audience with respect. Deceptive claims, harassment, hate, and content that exists mainly to shock or provoke are not brand safe, whatever the subject."
     },
     {
       "name": "Primary purpose",
