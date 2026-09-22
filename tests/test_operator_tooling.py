@@ -295,3 +295,103 @@ def test_doctor_does_not_accept_login_redirect_as_readiness(tmp_path, monkeypatc
     checks = doctor.diagnose(tmp_path, tmp_path, "lens", "https://lens.example.com")
     for name in ("readiness", "public-tls"):
         assert next(c for c in checks if c["name"] == name)["status"] == "fail"
+
+
+class _Account:
+    def __init__(self, uid, gid):
+        self.pw_uid = uid
+        self.pw_gid = gid
+
+
+class _Stat:
+    def __init__(self, mode, uid, gid):
+        self.st_mode = mode
+        self.st_uid = uid
+        self.st_gid = gid
+
+
+def test_service_user_can_read_rejects_a_root_owned_private_env(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("OPENROUTER_API_KEY=x\n")
+    monkeypatch.setattr(doctor.pwd, "getpwnam", lambda name: _Account(987, 987))
+    monkeypatch.setattr(doctor.os, "getgrouplist", lambda user, gid: [gid])
+
+    monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: _Stat(0o100600, 0, 0))
+    assert doctor.service_user_can_read(env, "lens") is False
+
+    monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: _Stat(0o100600, 987, 987))
+    assert doctor.service_user_can_read(env, "lens") is True
+
+    monkeypatch.setattr(Path, "stat", lambda self, *args, **kwargs: _Stat(0o100640, 0, 987))
+    assert doctor.service_user_can_read(env, "lens") is True
+
+
+def test_doctor_flags_env_the_service_user_cannot_read(tmp_path, monkeypatch):
+    env = tmp_path / ".env"
+    env.write_text("OPENROUTER_API_KEY=x\n")
+    env.chmod(0o600)
+    monkeypatch.setattr(doctor, "run", lambda *args, **kwargs: (127, ""))
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
+    monkeypatch.setattr(doctor, "service_user_can_read", lambda path, user: False)
+    checks = doctor.diagnose(tmp_path, tmp_path / "src", "lens")
+    readable = next(c for c in checks if c["name"] == "env-readable")
+    assert readable["status"] == "fail"
+    assert f"chown lens:lens {env}" in readable["detail"]
+    assert next(c for c in checks if c["name"] == "env-permissions")["status"] == "ok"
+
+
+def test_unreadable_dotenv_does_not_abort_startup(monkeypatch):
+    import config as config_module
+
+    def boom(*args, **kwargs):
+        raise PermissionError(13, "Permission denied", "/opt/lens/.env")
+
+    monkeypatch.setattr(config_module, "load_dotenv", boom)
+    config_module._load_dotenv()
+
+
+def test_lens_env_edit_returns_ownership_to_the_service_user(tmp_path):
+    app = tmp_path / "app"
+    app.mkdir()
+    env = app / ".env"
+    env.write_text("OPENROUTER_API_KEY=present\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "sudo.log"
+    editor = bin_dir / "ed"
+    editor.write_text("#!/bin/sh\nprintf 'OPENROUTER_API_KEY=edited\\n' > \"$1\"\n")
+    editor.chmod(0o755)
+    sudo = bin_dir / "sudo"
+    sudo.write_text(
+        "#!/bin/sh\n"
+        f"printf '%s\\n' \"$*\" >> {shlex.quote(str(log))}\n"
+        "while [ $# -gt 0 ]; do\n"
+        '  case "$1" in\n'
+        "    --preserve-env=*) shift ;;\n"
+        "    *) break ;;\n"
+        "  esac\n"
+        "done\n"
+        'cmd="$1"; shift\n'
+        'case "$cmd" in\n'
+        "  chown|chmod) exit 0 ;;\n"
+        "esac\n"
+        'exec "$cmd" "$@"\n'
+    )
+    sudo.chmod(0o755)
+    result = subprocess.run(
+        ["bash", str(ROOT / "deploy/lens-cli"), "env", "edit"],
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "LENS_APP_DIR": str(app),
+            "EDITOR": str(editor),
+            "LENS_APP_USER": "lens",
+        },
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    logged = log.read_text()
+    assert f"chown lens:lens {env}" in logged
+    assert f"chmod 0600 {env}" in logged
+    assert env.read_text() == "OPENROUTER_API_KEY=edited\n"

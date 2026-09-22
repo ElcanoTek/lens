@@ -9,6 +9,7 @@ This module provides functionality to auto-detect:
 """
 
 import logging
+import math
 import re
 from pathlib import Path
 from typing import List, Optional, Tuple
@@ -837,6 +838,12 @@ def is_ctv_input_file(df: pd.DataFrame) -> bool:
         logger.info("Detected CTV input file (found 'ctv' or 'connected' in column names)")
         return True
 
+    # SSP bundle exports often use a single "App Bundle" / "app_bundle" column
+    # of Roku ids, Fire TV ASINs and CTV package names. That is not a mobile list.
+    if any(_normalized_column(col) == "app bundle" for col in df.columns):
+        logger.info("Detected CTV input file (app bundle column)")
+        return True
+
     # Special case: Check for the exact CTV_Master.csv format (SSP + Bundle ID + App Name column)
     has_ssp = any("ssp" in col for col in columns_lower)
     has_bundle_id = any("bundle" in col and "id" in col for col in columns_lower)
@@ -847,6 +854,35 @@ def is_ctv_input_file(df: pd.DataFrame) -> bool:
         return True
 
     return False
+
+
+def _normalized_column(name: object) -> str:
+    """Lowercase a header and treat underscores as spaces."""
+    return " ".join(str(name).lower().replace("_", " ").split())
+
+
+def spreadsheet_cell(value: object) -> str:
+    """Text of one spreadsheet cell, without float artifacts or blank markers.
+
+    Excel stores whole numbers as floats and empty cells as NaN. ``str(nan)``
+    is the word ``nan``, and ``str(54092.0)`` keeps a trailing ``.0``, which
+    sends a Roku id to the wrong place and crashes callers that assume text.
+    """
+    if value is None or isinstance(value, bool):
+        return "" if value is None else str(value)
+    if isinstance(value, float):
+        if math.isnan(value):
+            return ""
+        if value.is_integer():
+            return str(int(value))
+    if isinstance(value, int):
+        return str(value)
+    text = str(value).strip()
+    if text.lower() in {"nan", "none", "<na>", "nat"}:
+        return ""
+    if text.endswith(".0") and text[:-2].isdigit():
+        return text[:-2]
+    return text
 
 
 def detect_ctv_columns(df: pd.DataFrame) -> dict:
@@ -929,6 +965,13 @@ def detect_ctv_columns(df: pd.DataFrame) -> dict:
             result["bundle_id"] = columns_lower[candidate]
             break
 
+    # "App Bundle" and "app_bundle" are the bundle id, not the display name.
+    if not result["bundle_id"]:
+        for col in columns:
+            if _normalized_column(col) == "app bundle":
+                result["bundle_id"] = col
+                break
+
     # Detect platform column
     for candidate in CTV_PLATFORM_COLUMNS:
         if candidate in columns_lower:
@@ -980,34 +1023,42 @@ def parse_ctv_work_items(df: pd.DataFrame) -> List[CTVWorkItem]:
 
     work_items = []
 
+    # Imported lazily: ctv_processor does not import this module.
+    from ctv_processor import CTVProcessor
+
     for _idx, row in df.iterrows():
-        app_name = str(row.get(columns["app_name"], "")).strip()
+        app_name = spreadsheet_cell(row.get(columns["app_name"], ""))
         if not app_name:
             continue
 
         bundle_id = None
         if columns["bundle_id"]:
-            bundle_id = str(row.get(columns["bundle_id"], "")).strip() or None
+            bundle_id = spreadsheet_cell(row.get(columns["bundle_id"], "")) or None
+
+        # A one-column bundle list has no separate title. Keep the id as the
+        # name the research step can quote, and as the bundle id.
+        if bundle_id and columns["app_name"] == columns["bundle_id"]:
+            app_name = bundle_id
 
         platform = None
         if columns["platform"]:
-            platform = str(row.get(columns["platform"], "")).strip() or None
+            platform = spreadsheet_cell(row.get(columns["platform"], "")) or None
+        if not platform and bundle_id:
+            detected = CTVProcessor._detect_ctv_platform(bundle_id)
+            if detected != "Unknown":
+                platform = detected
 
         url = None
         if columns["url"]:
-            url = str(row.get(columns["url"], "")).strip() or None
+            url = spreadsheet_cell(row.get(columns["url"], "")) or None
 
         ssp = ""
         if columns["ssp"]:
-            ssp = str(row.get(columns["ssp"], "")).strip()
-            if ssp.lower() == "nan":
-                ssp = ""
+            ssp = spreadsheet_cell(row.get(columns["ssp"], ""))
 
         publisher = ""
         if columns["publisher"]:
-            publisher = str(row.get(columns["publisher"], "")).strip()
-            if publisher.lower() == "nan":
-                publisher = ""
+            publisher = spreadsheet_cell(row.get(columns["publisher"], ""))
 
         # Store original row data for reference
         original_row = {str(k): str(v) for k, v in row.to_dict().items() if pd.notna(v)}

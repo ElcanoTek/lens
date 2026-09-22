@@ -451,6 +451,28 @@ def test_breakdown_counts_mixed_file(monkeypatch, tmp_path):
     assert '<span class="tchip"><span class="tdot seg-ios"></span>iOS <b>1</b></span>' in body
 
 
+def test_breakdown_app_bundle_column_is_ctv_and_ignores_blank_cells(monkeypatch, tmp_path):
+    """An App Bundle sheet is a CTV list, and a blank Excel cell does not wipe the bar."""
+    input_dir, _ = _client_dirs(monkeypatch, tmp_path)
+    path = input_dir / "App Bundle list.xlsx"
+    pd.DataFrame({"App Bundle": [54092, None, "B091RFCS5V", "com.plexapp.ctv"]}).to_excel(
+        path, index=False
+    )
+
+    breakdown = web_service._compute_breakdown(path)
+    assert breakdown == {"ctv": 3, "total": 3}
+
+
+def test_breakdown_numeric_sheet_with_blank_cell_still_counts(monkeypatch, tmp_path):
+    """A blank numeric cell is NaN. Counting must not crash and hide the bar."""
+    input_dir, _ = _client_dirs(monkeypatch, tmp_path)
+    path = input_dir / "ids.xlsx"
+    pd.DataFrame({"Domain": [333903271, None, "example.com"]}).to_excel(path, index=False)
+
+    breakdown = web_service._compute_breakdown(path)
+    assert breakdown == {"websites": 1, "ios": 1, "android": 0, "total": 2}
+
+
 def test_breakdown_headerless_domain_list(monkeypatch, tmp_path):
     """A headerless list counts every row — the first line isn't eaten as a
     header (the off-by-one fix)."""

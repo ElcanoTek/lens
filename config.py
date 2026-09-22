@@ -9,8 +9,22 @@ from typing import Dict
 
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+
+def _load_dotenv() -> None:
+    """Load `.env` when this process can read it.
+
+    systemd injects EnvironmentFile into the web process. Job subprocesses
+    inherit that environment and also call this on import. A root-owned 0600
+    `.env` (the usual result of `lens env edit`) raises PermissionError here
+    and kills the job before it can log, while the dashboard stays up.
+    """
+    try:
+        load_dotenv()
+    except OSError:
+        return
+
+
+_load_dotenv()
 
 
 # Keep this looking like a current browser: an ancient Chrome version is

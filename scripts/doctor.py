@@ -23,6 +23,31 @@ def run(*args, timeout=15, cwd=None):
         return 127, ""
 
 
+def service_user_can_read(path: Path, user: str) -> bool:
+    """Whether `user` can open `path`.
+
+    Doctor runs as root, so a mode of 0600 is not enough. systemd reads
+    EnvironmentFile as root and the dashboard stays up, while each job
+    subprocess runs as the service user and opens `.env` itself.
+    """
+    try:
+        stat = path.stat()
+        account = pwd.getpwnam(user)
+    except (OSError, KeyError):
+        return False
+    mode = stat.st_mode
+    if stat.st_uid == account.pw_uid:
+        return bool(mode & 0o400)
+    groups = {account.pw_gid}
+    try:
+        groups.update(os.getgrouplist(user, account.pw_gid))
+    except OSError:
+        pass
+    if stat.st_gid in groups:
+        return bool(mode & 0o040)
+    return bool(mode & 0o004)
+
+
 def inspect_env(app):
     # Parse with the application's dotenv implementation, never source secrets
     # as shell commands. Return key names and booleans, never secret values.
@@ -87,6 +112,17 @@ def diagnose(app, src, user, public_url=None):
     try:
         mode = env_file.stat().st_mode & 0o777
         add("env-permissions", mode in (0o600, 0o640), "private", "chmod 600 /opt/lens/.env")
+        # Mode 0600 owned by root still looks "private" and still crashes every
+        # job: the web process gets the variables from EnvironmentFile, and the
+        # analyzer opens the file as the service user.
+        add(
+            "env-readable",
+            service_user_can_read(env_file, user),
+            f"{user} can read .env",
+            f"chown {user}:{user} {env_file} && chmod 600 {env_file}. "
+            "Jobs run as the service user and load .env themselves. "
+            "A root-owned 0600 file passes the mode check and crashes every run.",
+        )
         code, data = inspect_env(app)
         env = json.loads(data) if code == 0 else {}
         good = env and not env["missing"] and env["key_ok"] and env["mode_ok"] and env["session_ok"]
