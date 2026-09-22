@@ -685,8 +685,16 @@ input:focus-visible,
   padding: var(--space-2);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm, 6px);
-  background: var(--color-surface, transparent);
-  color: inherit;
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
+}
+
+/* The opened menu uses each option's own colors. A transparent option on
+   this host's white menu inherits the control's light text, so every row
+   except the highlight is white on white. */
+.run-advanced-field select option {
+  background-color: var(--color-surface-1);
+  color: var(--color-text-primary);
 }
 
 .run-advanced-check {
