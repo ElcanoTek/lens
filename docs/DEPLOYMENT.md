@@ -553,7 +553,11 @@ lens host upgrade --dry-run                     # current → latest stable Fedo
 Doctor is read-only: configuration presence/key shape (no secret values), Python
 minor, dependency consistency, running interpreter, service/readiness, deployed
 revision, source drift, disk space, OS support deadline, rootless Podman and
-installed Firecrawl. `--public-url` also checks HTTPS and certificate validation.
+installed Firecrawl. `env-permissions` only checks that `.env` is mode 0600 or
+0640. `env-readable` checks that the service user can open it. A root-owned
+0600 file passes the mode check, the dashboard still starts (systemd reads
+EnvironmentFile as root), and every job crashes because the analyzer loads
+`.env` as `lens`. `lens env edit` puts ownership back afterwards. `--public-url` also checks HTTPS and certificate validation.
 Missing optional containers are warnings; `--strict` makes warnings fail the check.
 The Podman probe runs from the service user's application directory, so root
 operators can invoke doctor from `/root` without causing a permissions false alarm.

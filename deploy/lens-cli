@@ -8,6 +8,7 @@ set -euo pipefail
 SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 APP_DIR="${LENS_APP_DIR:-/opt/lens}"
 ENV_FILE="$APP_DIR/.env"
+APP_USER="${LENS_APP_USER:-lens}"
 SERVICE="lens.service"
 ROOT=()
 if [[ $EUID != 0 ]]; then
@@ -45,8 +46,14 @@ case "$cmd" in
       edit)
         # bootstrap.sh / update.sh point operators here to paste
         # AUTH_SIGNING_PUBKEY or the OpenRouter key.
+        # Do not exec the editor. A rewrite (vim, most GUI editors) replaces
+        # the inode and leaves .env owned by root. The dashboard still starts,
+        # because systemd reads EnvironmentFile as root, but every job opens
+        # the file as the service user and dies on PermissionError.
         [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }
-        exec "${ROOT[@]}" "${EDITOR:-vi}" "$ENV_FILE"
+        "${ROOT[@]}" "${EDITOR:-vi}" "$ENV_FILE"
+        "${ROOT[@]}" chown "$APP_USER:$APP_USER" "$ENV_FILE"
+        "${ROOT[@]}" chmod 0600 "$ENV_FILE"
         ;;
       show|"")
         [[ -f "$ENV_FILE" ]] || { echo "$ENV_FILE missing — run bootstrap.sh" >&2; exit 1; }

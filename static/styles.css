@@ -1208,6 +1208,12 @@ th {
 .ws-files {
   display: grid;
   gap: var(--space-2);
+  /* A few files stay on the page. The rest scroll here instead of
+     lengthening the whole dashboard. */
+  max-height: min(24rem, 55vh);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .filecard {
@@ -1529,6 +1535,10 @@ th {
   .ds-app-header__title,
   .page-header__intro {
     overflow-wrap: anywhere;
+  }
+
+  .ws-files {
+    max-height: min(18rem, 42vh);
   }
 
   .run-controls {

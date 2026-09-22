@@ -33,7 +33,10 @@ function applySegmentWidths(root) {
     if (Number.isFinite(pct)) el.style.width = `${Math.max(0, Math.min(100, pct))}%`;
   });
 }
-document.addEventListener("DOMContentLoaded", () => applySegmentWidths(document));
+// This handler is already running because DOMContentLoaded fired. A second
+// listener registered from inside it never runs, so the file-mix bars and the
+// run status bars stayed at width 0.
+applySegmentWidths(document);
 
   let activeMonitorJobId = null;
   let queuePollInFlight = false;
