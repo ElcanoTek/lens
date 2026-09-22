@@ -91,12 +91,14 @@ When enabled, CSVs gain:
 
 | Column | Meaning |
 |---|---|
-| `Custom: <name>` | Yes/No or the selected option |
+| `Custom: <name>` | Yes/No or the selected option. Filter this to keep one answer. |
 | `P(yes/choice): <name>` | Probability of **yes**, even for a No label; for choices, probability of the selected option |
-| `TypeSafe_Status` | `success`, `error`, or `skipped` |
+| `Confidence: <name>` | Choice only. How sure the selection is, separate from the option's probability |
+| `P: <name> / <option>` | Choice only. That option's probability, one column per option, in definition order. Sort or filter these without opening the JSON |
+| `TypeSafe_Status` | `success`, `error`, or `skipped`. After the answer columns |
 | `TypeSafe_Error` | Sanitized failure or skip reason |
 | `TypeSafe_Model` | Actual model used |
-| `TypeSafe_Answers` | JSON with answers, raw probabilities, full choice distributions and choice confidence |
+| `TypeSafe_Answers` | JSON with the same answers, for anything a column does not already show |
 
 Yes/no labels use a 0.5 cutoff. A value near 0.5 means uncertainty between yes
 and no, not medium intensity. It has no separate confidence score. Validate your

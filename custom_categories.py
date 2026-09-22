@@ -91,11 +91,22 @@ def load_categories(path):
 
 
 def category_columns(spec):
+    """CSV columns for a spec.
+
+    The label and one probability per choice come first, so a spreadsheet
+    filter can select a person or sort by how likely they are. Status and the
+    raw JSON follow, instead of sitting in front of the answer.
+    """
     if not spec:
         return []
-    columns = ["TypeSafe_Status", "TypeSafe_Error", "TypeSafe_Model", "TypeSafe_Answers"]
+    columns = []
     for category in spec["categories"]:
-        columns.extend([f"Custom: {category['name']}", f"P(yes/choice): {category['name']}"])
+        name = category["name"]
+        columns.extend([f"Custom: {name}", f"P(yes/choice): {name}"])
+        if category["type"] == "choice":
+            columns.append(f"Confidence: {name}")
+            columns.extend(f"P: {name} / {option}" for option in category["options"])
+    columns.extend(["TypeSafe_Status", "TypeSafe_Error", "TypeSafe_Model", "TypeSafe_Answers"])
     return columns
 
 
@@ -224,8 +235,13 @@ class TypeSafeCategories:
                     "probabilities": probs,
                     "confidence": probability(answer["confidence"]),
                 }
-            result[f"Custom: {category['name']}"] = label
-            result[f"P(yes/choice): {category['name']}"] = p
-            saved[category["name"]] = clean
+            name = category["name"]
+            result[f"Custom: {name}"] = label
+            result[f"P(yes/choice): {name}"] = p
+            if category["type"] == "choice":
+                result[f"Confidence: {name}"] = clean["confidence"]
+                for option, chance in probs.items():
+                    result[f"P: {name} / {option}"] = chance
+            saved[name] = clean
         result["TypeSafe_Answers"] = json.dumps(saved, ensure_ascii=False)
         return result
