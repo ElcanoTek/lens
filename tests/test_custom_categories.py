@@ -101,7 +101,19 @@ async def test_batch_api_contract_preserves_raw_probabilities_and_bounds_content
     assert result["P(yes/choice): Brand safe"] == 0.1  # P(yes), not confidence in No
     assert result["Custom: Purpose"] == "Education"
     assert result["P(yes/choice): Purpose"] == 0.95
+    assert result["Confidence: Purpose"] == 0.9
+    assert result["P: Purpose / Education"] == 0.95
+    assert result["P: Purpose / Entertainment"] == 0.03
+    assert result["P: Purpose / Unknown"] == 0.02
     assert json.loads(result["TypeSafe_Answers"])["Purpose"]["confidence"] == 0.9
+    assert category_columns(SPEC)[:2] == ["Custom: Brand safe", "P(yes/choice): Brand safe"]
+    assert category_columns(SPEC)[-4:] == [
+        "TypeSafe_Status",
+        "TypeSafe_Error",
+        "TypeSafe_Model",
+        "TypeSafe_Answers",
+    ]
+    assert "P: Purpose / Education" in category_columns(SPEC)
 
 
 @pytest.mark.parametrize(

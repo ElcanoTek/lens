@@ -252,9 +252,10 @@ and `sudo lens restart`.
    `Education`, `Other`, and `Unknown` as separate options.
 4. Use **Add category** for more questions (up to 12), then click **Analyze**
    above the settings.
-5. Download the CSV from **Runs**. Look for `Custom: <name>` and
-   `P(yes/choice): <name>` columns. Yes/no uses a 50% cutoff and reports P(yes);
-   multiple choice reports the probability of the selected option.
+5. Download the CSV from **Runs**. Filter `Custom: <name>` for the label.
+   Yes/no uses a 50% cutoff and reports P(yes) in `P(yes/choice): <name>`.
+   Multiple choice also has `P: <name> / <option>` for every option, so you
+   can sort by how likely one answer is without parsing JSON.
 
 Definitions are remembered in your browser, but the feature switches off after
 a page reload—enable it again for the next run. TypeSafe evaluates source text,
