@@ -92,7 +92,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--llm-model",
         help=(
             "Override the classification model for this run (an OpenRouter "
-            "model ID, e.g. '~google/gemini-flash-latest')."
+            "model ID, e.g. '~openai/gpt-luna-latest')."
         ),
     )
     parser.add_argument(

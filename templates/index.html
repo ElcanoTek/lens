@@ -193,8 +193,9 @@
               <div class="run-advanced-body">
                 <label class="run-advanced-field">
                   <span class="run-advanced-label">Classification model</span>
-                  <select name="llm_model" id="llm-model-select">
-                    <option value="{{ recommended_model }}" selected>Google Gemini Flash (latest) — recommended</option>
+                  <select name="llm_model" id="llm-model-select" data-previous-defaults="{{ previous_recommended_models | join(',') }}">
+                    {% set recommended_classify = model_catalog.classify | selectattr('id', 'equalto', recommended_model) | first %}
+                    <option value="{{ recommended_model }}" selected>{{ recommended_classify.label if recommended_classify else 'OpenAI: GPT Luna Latest' }} — recommended</option>
                     {% for option in model_catalog.classify %}
                     {% if option.id != recommended_model %}
                     <option value="{{ option.id }}">{{ option.label }}</option>

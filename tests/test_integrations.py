@@ -367,7 +367,13 @@ async def test_classify_site_fails_when_every_attempt_truncates():
 
 @pytest.mark.parametrize("kind", ["website", "app", "ctv"])
 @pytest.mark.parametrize(
-    "model", ["~google/gemini-flash-latest", "google/gemini-2.5-flash", "other/model"]
+    "model",
+    [
+        "~google/gemini-flash-latest",
+        "google/gemini-2.5-flash",
+        "~openai/gpt-luna-latest",
+        "other/model",
+    ],
 )
 async def test_classification_reasoning_effort_reaches_api(kind, model):
     client = OpenRouterClient(api_key="test-key", model=model)
@@ -384,7 +390,7 @@ async def test_classification_reasoning_effort_reaches_api(kind, model):
     assert result["success"]
     assert calls
     for call in calls:
-        if model == "other/model":
-            assert "extra_body" not in call
-        else:
+        if model.lstrip("~").startswith("google/gemini-"):
             assert call["extra_body"] == {"reasoning": {"effort": "low"}}
+        else:
+            assert "extra_body" not in call

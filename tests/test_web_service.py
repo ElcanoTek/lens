@@ -772,6 +772,8 @@ def test_index_renders_advanced_model_picker(monkeypatch, tmp_path):
         response = client.get("/")
         assert response.status_code == 200
         assert 'id="llm-model-select"' in response.text
+        assert 'data-previous-defaults="~google/gemini-flash-latest"' in response.text
+        assert "Gemini Flash Latest — recommended" in response.text
         assert "cheap/model" in response.text
         assert 'name="research_fallback"' in response.text
         assert (

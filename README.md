@@ -304,7 +304,7 @@ The ones you are most likely to touch:
 |---|---|---|
 | `scrape_mode` | `auto` | Which rung, or the whole ladder |
 | `concurrent_sessions` | `5` | Website fetch concurrency |
-| `llm_model` | `~google/gemini-flash-latest` | Classification model. `~vendor/…-latest` aliases auto-track the vendor's current model. |
+| `llm_model` | `~openai/gpt-luna-latest` | Classification model. Tracks the current GPT Luna release. |
 | `llm_fallback_model` | `~openai/gpt-mini-latest` | Cross-provider fallback |
 | `llm_max_tokens` | `1500` | Raise if classifications truncate |
 | `min_content_length` | `500` | Shortest page body accepted as real content |

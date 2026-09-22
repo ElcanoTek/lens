@@ -18,7 +18,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TextIO
 
-from config import config
+from config import DEFAULT_LLM_MODEL, config
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
 from reporting import TerminalReporter, shorten_error
@@ -80,7 +80,7 @@ class CTVProcessor:
 
         # Classification step configuration
         self.classification_model = classification_model or getattr(
-            config, "CTV_CLASSIFICATION_MODEL", "~google/gemini-flash-latest"
+            config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL
         )
         self.classification_temperature = classification_temperature
         self.classification_max_tokens = classification_max_tokens
