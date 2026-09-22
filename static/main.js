@@ -779,11 +779,27 @@ applySegmentWidths(document);
       }
     };
 
+    // One-time: a browser that saved the previous shipped default follows the
+    // new one. The epoch is stamped on the next save, so a later explicit
+    // pick of that same slug is kept.
+    const modelEpoch = "gpt-luna-latest";
+    const previousDefaults = (modelSelect.dataset.previousDefaults || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
     let saved = null;
     try {
       saved = JSON.parse(window.localStorage.getItem(storageKey) || "null");
     } catch (error) {
       saved = null;
+    }
+    let migratedModel = false;
+    if (saved && typeof saved === "object" && saved.modelEpoch !== modelEpoch) {
+      if (previousDefaults.includes(saved.model)) {
+        delete saved.model;
+        migratedModel = true;
+      }
     }
     if (saved && typeof saved === "object") {
       restoreSelect(modelSelect, saved.model);
@@ -815,12 +831,14 @@ applySegmentWidths(document);
             model: modelSelect.value,
             research: researchCheck.checked,
             researchModel: researchModelSelect ? researchModelSelect.value : undefined,
+            modelEpoch,
           })
         );
       } catch (error) {
         /* storage unavailable: settings just don't persist */
       }
     };
+    if (migratedModel) save();
     modelSelect.addEventListener("change", save);
     researchCheck.addEventListener("change", save);
     if (researchModelSelect) researchModelSelect.addEventListener("change", save);

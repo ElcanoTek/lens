@@ -94,7 +94,7 @@ class OpenRouterClient:
     def __init__(
         self,
         api_key: Optional[str],
-        model: str = "~google/gemini-flash-latest",
+        model: str = "~openai/gpt-luna-latest",
         temperature: float = 0.1,
         max_tokens: int = 1500,
         *,
@@ -495,7 +495,7 @@ class OpenRouterClient:
         meta_description: str = "",
         content_source: str = "scrape",
     ) -> Dict[str, Any]:
-        """Classify a website using the configured Gemini model.
+        """Classify a website using the configured classification model.
 
         *content_source* is "scrape" when *content* is the site's own page
         text, or "research" when it is an external research summary about the

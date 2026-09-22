@@ -16,7 +16,7 @@ import pandas as pd
 
 from android_scraper import AndroidScraper
 from app_processor import AppProcessor
-from config import config
+from config import DEFAULT_LLM_MODEL, config
 from ctv_processor import CTVProcessor
 from custom_categories import TypeSafeCategories, category_columns, validate_categories
 from domain_processing import DomainProcessor
@@ -1058,7 +1058,7 @@ class SiteAnalysisOrchestrator:
             logger.info(
                 "Research model: %s, Classification model: %s",
                 getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"),
-                getattr(config, "CTV_CLASSIFICATION_MODEL", "~google/gemini-flash-latest"),
+                getattr(config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL),
             )
             logger.info("CTV concurrency: %s", getattr(config, "CTV_MAX_CONCURRENT", 5))
 
@@ -1172,7 +1172,7 @@ class SiteAnalysisOrchestrator:
         # Initialize OpenRouter client (needed for CTV processing)
         openrouter = OpenRouterClient(
             api_key=getattr(config, "OPENROUTER_API_KEY", None),
-            model=getattr(config, "CTV_CLASSIFICATION_MODEL", "~google/gemini-flash-latest"),
+            model=getattr(config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL),
             temperature=getattr(config, "CTV_CLASSIFICATION_TEMPERATURE", 0.1),
             max_tokens=getattr(config, "CTV_CLASSIFICATION_MAX_TOKENS", 1500),
             max_retries=getattr(config, "LLM_REQUEST_MAX_RETRIES", 3),
@@ -1206,9 +1206,7 @@ class SiteAnalysisOrchestrator:
             research_model=getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"),
             research_temperature=getattr(config, "CTV_RESEARCH_TEMPERATURE", 0.3),
             research_max_tokens=getattr(config, "CTV_RESEARCH_MAX_TOKENS", 2000),
-            classification_model=getattr(
-                config, "CTV_CLASSIFICATION_MODEL", "~google/gemini-flash-latest"
-            ),
+            classification_model=getattr(config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL),
             classification_temperature=getattr(config, "CTV_CLASSIFICATION_TEMPERATURE", 0.1),
             classification_max_tokens=getattr(config, "CTV_CLASSIFICATION_MAX_TOKENS", 1500),
             request_delay=getattr(config, "CTV_REQUEST_DELAY", 2.0),

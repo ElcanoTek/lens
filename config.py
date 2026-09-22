@@ -50,7 +50,15 @@ _LEGACY_USER_AGENTS = {
 _DEAD_LLM_MODELS = {
     "x-ai/grok-4.1-fast",
 }
-_DEFAULT_LLM_MODEL = "~google/gemini-flash-latest"
+# OpenRouter's moving alias for the GPT Luna family. It currently resolves
+# to openai/gpt-5.6-luna ($0.20/$1.20 per million), inside the dashboard caps.
+DEFAULT_LLM_MODEL = "~openai/gpt-luna-latest"
+# Exact strings older releases wrote as the shipped default. A config.json
+# that still has one of these accepted the default; it did not pick a model.
+# Any other slug is left alone.
+PREVIOUS_DEFAULT_LLM_MODELS = {
+    "~google/gemini-flash-latest",
+}
 
 
 class Config:
@@ -70,7 +78,7 @@ class Config:
             "progress_file_path": "progress.json",
             "log_file_path": "site_analysis.log",
             "concurrent_sessions": 5,
-            "llm_model": _DEFAULT_LLM_MODEL,
+            "llm_model": DEFAULT_LLM_MODEL,
             "llm_fallback_model": "~openai/gpt-mini-latest",
             "llm_temperature": 0.1,
             "llm_max_tokens": 1500,
@@ -166,7 +174,7 @@ class Config:
             "ctv_research_model": "perplexity/sonar-pro",  # Perplexity Sonar Pro for research
             "ctv_research_temperature": 0.3,  # Slightly higher for research creativity
             "ctv_research_max_tokens": 2000,  # More tokens for detailed research
-            "ctv_classification_model": _DEFAULT_LLM_MODEL,  # Fast model for classification
+            "ctv_classification_model": DEFAULT_LLM_MODEL,  # Fast model for classification
             "ctv_classification_fallback_model": "~openai/gpt-mini-latest",  # Cross-provider fallback if primary is unavailable
             "ctv_classification_temperature": 0.1,  # Low temperature for consistent classification
             "ctv_classification_max_tokens": 1500,  # Standard classification tokens
@@ -189,13 +197,18 @@ class Config:
             default_config["user_agent"] = DEFAULT_USER_AGENT
 
         for model_key in ("llm_model", "ctv_classification_model"):
-            if default_config.get(model_key) in _DEAD_LLM_MODELS:
-                print(
-                    f"Warning: configured {model_key} "
-                    f"{default_config[model_key]!r} is deprecated on OpenRouter; "
-                    f"using {_DEFAULT_LLM_MODEL!r} instead"
+            configured = default_config.get(model_key)
+            if configured in _DEAD_LLM_MODELS or configured in PREVIOUS_DEFAULT_LLM_MODELS:
+                reason = (
+                    "is deprecated on OpenRouter"
+                    if configured in _DEAD_LLM_MODELS
+                    else "is a previous shipped default"
                 )
-                default_config[model_key] = _DEFAULT_LLM_MODEL
+                print(
+                    f"Warning: configured {model_key} {configured!r} {reason}; "
+                    f"using {DEFAULT_LLM_MODEL!r} instead"
+                )
+                default_config[model_key] = DEFAULT_LLM_MODEL
 
         # Set attributes from config
         for key, value in default_config.items():

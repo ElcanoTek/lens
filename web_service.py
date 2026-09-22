@@ -62,10 +62,14 @@ _FIRECRAWL_PROBE_TTL_SECONDS = 60.0
 _firecrawl_probe_cache: tuple[float, bool] = (0.0, False)
 
 # --- Classification model picker -------------------------------------------
-# The dropdown is populated live from OpenRouter's /models endpoint. The
-# ~vendor/…-latest aliases auto-track each vendor's current model, so the
-# recommended default never goes stale the way a pinned ID does.
-RECOMMENDED_MODEL = "~google/gemini-flash-latest"
+# The dropdown is populated live from OpenRouter's /models endpoint.
+# ~vendor/…-latest aliases auto-track each vendor's current model. The
+# recommended default is the GPT Luna alias, kept in lockstep with
+# config.DEFAULT_LLM_MODEL.
+RECOMMENDED_MODEL = "~openai/gpt-luna-latest"
+# Browsers that saved the old recommended slug should follow the new default
+# once. An explicit later pick of that slug still sticks; see main.js.
+PREVIOUS_RECOMMENDED_MODELS = ("~google/gemini-flash-latest",)
 # The research fallback needs a model with built-in web search; Sonar Pro is
 # also what the CTV pipeline has used all along.
 RECOMMENDED_RESEARCH_MODEL = "perplexity/sonar-pro"
@@ -1558,6 +1562,7 @@ async def index(request: Request):
             "input_files": _list_input_files(),
             "model_catalog": await _get_model_catalog(),
             "recommended_model": RECOMMENDED_MODEL,
+            "previous_recommended_models": PREVIOUS_RECOMMENDED_MODELS,
             "recommended_research_model": RECOMMENDED_RESEARCH_MODEL,
             "typesafe_available": bool(os.getenv("TYPESAFE_API_KEY", "").strip()),
             "current_job_id": manager.current_job_id,

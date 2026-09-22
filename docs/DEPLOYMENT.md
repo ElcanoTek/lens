@@ -230,7 +230,7 @@ the same list grouped by concern.
 | `output_csv_path` | `output.csv` | CLI results file (appended) |
 | `progress_file_path` | `progress.json` | Resumable state |
 | `log_file_path` | `site_analysis.log` | Run log |
-| `llm_model` | `~google/gemini-flash-latest` | Classification model |
+| `llm_model` | `~openai/gpt-luna-latest` | Classification model. Tracks the current GPT Luna release. |
 | `llm_fallback_model` | `~openai/gpt-mini-latest` | Used when the primary is unavailable |
 | `llm_temperature` | `0.1` | Low, for repeatable tiers |
 | `llm_max_tokens` | `1500` | Truncated classifications are retried, not faked |
@@ -282,7 +282,7 @@ the same list grouped by concern.
 | `ctv_research_model` | `perplexity/sonar-pro` | CTV step 1 |
 | `ctv_research_temperature` | `0.3` | — |
 | `ctv_research_max_tokens` | `2000` | — |
-| `ctv_classification_model` | `~google/gemini-flash-latest` | CTV step 2 |
+| `ctv_classification_model` | `~openai/gpt-luna-latest` | CTV step 2. Same moving alias as `llm_model`. |
 | `ctv_classification_fallback_model` | `~openai/gpt-mini-latest` | Cross-provider fallback |
 | `ctv_classification_temperature` | `0.1` | — |
 | `ctv_classification_max_tokens` | `1500` | — |
