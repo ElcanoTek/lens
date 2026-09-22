@@ -266,10 +266,17 @@ class CTVProcessor:
         """
         logger.debug("Starting research step for CTV app: %s", item.app_name)
 
+        platform = item.platform or ""
+        if not platform and item.bundle_id:
+            detected = self._detect_ctv_platform(item.bundle_id)
+            if detected != "Unknown":
+                platform = detected
+                item.platform = detected
+
         return await self.openrouter_client.research_ctv_app(
             app_name=item.app_name,
             bundle_id=item.bundle_id or "",
-            platform=item.platform or "",
+            platform=platform,
             url=item.url or "",
             publisher=item.publisher or "",
             research_model=self.research_model,
@@ -583,6 +590,14 @@ class CTVProcessor:
         # Starts with 9, alphanumeric (e.g., "9wzdncrfjv7w") = Xbox
         if bundle_id_stripped.startswith("9") and bundle_id_stripped.isalnum():
             return "Xbox"
+
+        lowered = bundle_id_stripped.lower()
+        if lowered.endswith(".roku"):
+            return "Roku"
+        if lowered.startswith("xbox."):
+            return "Xbox"
+        if lowered.startswith("playstation."):
+            return "PlayStation"
 
         return "Unknown"
 

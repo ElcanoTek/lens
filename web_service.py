@@ -1060,11 +1060,13 @@ def _compute_breakdown(path: Path) -> Dict[str, int]:
     file contains, using the same detection the pipeline runs on."""
     from input_detector import (
         detect_content_type,
+        detect_ctv_columns,
         detect_input_column,
         detect_input_column_by_content,
         detect_type_column,
         is_ctv_input_file,
         parse_content_type_hint,
+        spreadsheet_cell,
     )
     from shared_types import ContentType
 
@@ -1077,9 +1079,13 @@ def _compute_breakdown(path: Path) -> Dict[str, int]:
         return {}
 
     # CTV is recognised by its column headers, not per-row, so the whole
-    # file is CTV when it matches.
+    # file is CTV when it matches. Blank cells are not channels.
     if is_ctv_input_file(df):
-        total = int(len(df))
+        columns = detect_ctv_columns(df)
+        column = columns.get("bundle_id") or columns.get("app_name") or df.columns[0]
+        total = sum(1 for value in df[column] if spreadsheet_cell(value))
+        if not total:
+            return {}
         return {"ctv": total, "total": total}
 
     column = detect_input_column(df) or detect_input_column_by_content(df)
@@ -1089,8 +1095,8 @@ def _compute_breakdown(path: Path) -> Dict[str, int]:
     # Honor an explicit type column when present, exactly like the pipeline, so
     # the preview count matches how the file will actually be processed.
     type_column = detect_type_column(df, column)
-    ids = df[column].astype(str)
-    hints = df[type_column].astype(str) if type_column else None
+    ids = df[column]
+    hints = df[type_column] if type_column else None
 
     counts = {
         ContentType.WEBSITE: 0,
@@ -1099,8 +1105,8 @@ def _compute_breakdown(path: Path) -> Dict[str, int]:
     }
     total = 0
     for idx in range(len(df)):
-        value = ids.iloc[idx].strip()
-        if not value or value.lower() == "nan":
+        value = spreadsheet_cell(ids.iloc[idx])
+        if not value:
             continue
         content_type = parse_content_type_hint(hints.iloc[idx]) if hints is not None else None
         if content_type is None:

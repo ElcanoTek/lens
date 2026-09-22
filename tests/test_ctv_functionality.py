@@ -136,6 +136,9 @@ class TestCTVPlatformDetection:
         """Test Unknown is returned for unmatched patterns."""
         from ctv_processor import CTVProcessor
 
+        assert CTVProcessor._detect_ctv_platform("crunchyroll.roku") == "Roku"
+        assert CTVProcessor._detect_ctv_platform("xbox.crunchyroll") == "Xbox"
+        assert CTVProcessor._detect_ctv_platform("playstation.crunchyroll") == "PlayStation"
         assert CTVProcessor._detect_ctv_platform("randomstring") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("abc123xyz") == "Unknown"
         assert CTVProcessor._detect_ctv_platform("netflix") == "Unknown"
@@ -253,6 +256,13 @@ class TestCTVInputFileDetection:
             }
         )
         assert is_ctv_input_file(df) is False
+
+    def test_detect_app_bundle_column_as_ctv(self):
+        """A single App Bundle / app_bundle column is a CTV bundle export."""
+        spaced = pd.DataFrame({"App Bundle": ["54092", "B091RFCS5V", "com.plexapp.ctv"]})
+        underscored = pd.DataFrame({"app_bundle": ["54092", "vizio.example"]})
+        assert is_ctv_input_file(spaced) is True
+        assert is_ctv_input_file(underscored) is True
 
     def test_detect_non_ctv_file_with_url_column(self):
         """Test non-CTV file with URL column."""
@@ -389,6 +399,38 @@ class TestCTVWorkItemParsing:
         items = parse_ctv_work_items(df)
         assert len(items) == 2
         assert items[0].app_name == "Netflix"
+
+    def test_parse_app_bundle_column_as_ctv_ids(self):
+        """One-column bundle exports keep the id, drop blanks, and name the platform."""
+        df = pd.DataFrame(
+            {
+                "App Bundle": [
+                    54092,
+                    54092.0,
+                    float("nan"),
+                    "B091RFCS5V",
+                    "com.plexapp.ctv",
+                    "crunchyroll.roku",
+                ]
+            }
+        )
+        items = parse_ctv_work_items(df)
+        assert [item.bundle_id for item in items] == [
+            "54092",
+            "54092",
+            "B091RFCS5V",
+            "com.plexapp.ctv",
+            "crunchyroll.roku",
+        ]
+        assert [item.platform for item in items] == [
+            "Roku",
+            "Roku",
+            "Fire TV",
+            "Android TV",
+            "Roku",
+        ]
+        assert items[0].app_name == "54092"
+        assert all(".0" not in (item.bundle_id or "") for item in items)
 
     def test_parse_strips_whitespace(self):
         """Test that whitespace is stripped from values."""
