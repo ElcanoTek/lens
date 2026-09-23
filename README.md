@@ -341,8 +341,10 @@ uvicorn web_service:app --host 127.0.0.1 --port 8808
 
 In legacy mode, authentication is a signed cookie verified against a public
 key — Lens has no login or password of its own. Central mode exchanges Auth's
-one-use code for a Lens-local session and keeps its application allowlist in
-`/var/lib/lens/access.db`. Without `AUTH_SIGNING_PUBKEY` it fails closed.
+one-use code for a Lens-local session. Auth application grants and revokes
+automatically maintain Lens's local allowlist in `/var/lib/lens/access.db`
+through signed, versioned desired-state events; the `lens access` CLI remains
+available for recovery. Without `AUTH_SIGNING_PUBKEY` it fails closed.
 Central configuration and the access database are validated during startup and
 by the public `/health` readiness probe. Central logout revokes the Lens
 session and then redirects to Auth's `/logout?client_id=lens`, which ends

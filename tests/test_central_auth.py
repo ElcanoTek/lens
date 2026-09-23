@@ -15,11 +15,13 @@ import auth_provider
 import central_auth
 import central_auth_admin
 from central_auth import (
+    AccessProvisionEvent,
     AuthKeyResolver,
     CentralAuthClient,
     CentralAuthError,
     CentralAuthStore,
     CodeExchangeRejectedError,
+    verify_access_token,
     verify_logout_token,
 )
 
@@ -54,6 +56,37 @@ def _mint_logout(
     claims.update(overrides)
     for key in [k for k, v in overrides.items() if v is None]:
         del claims[key]
+    body = f"{_encode(header)}.{_encode(claims)}"
+    signature = base64.urlsafe_b64encode(private_key.sign(body.encode())).rstrip(b"=").decode()
+    return f"{body}.{signature}", base64.b64encode(public).decode()
+
+
+def _mint_access(
+    private_key: Ed25519PrivateKey,
+    *,
+    action: str = "grant",
+    version: object = 1,
+    **overrides: object,
+) -> tuple[str, str]:
+    public = private_key.public_key().public_bytes_raw()
+    kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    header = {"typ": "access+jwt", "alg": "EdDSA", "kid": kid}
+    claims = {
+        "iss": "https://auth.example.com",
+        "sub": "account-123",
+        "aud": "lens",
+        "email": "alice@example.com",
+        "iat": 1_000,
+        "exp": 1_300,
+        "jti": f"access-{version}",
+        "events": {
+            "urn:elcanotek:event:application-access": {
+                "action": action,
+                "version": version,
+            }
+        },
+    }
+    claims.update(overrides)
     body = f"{_encode(header)}.{_encode(claims)}"
     signature = base64.urlsafe_b64encode(private_key.sign(body.encode())).rstrip(b"=").decode()
     return f"{body}.{signature}", base64.b64encode(public).decode()
@@ -106,6 +139,88 @@ def test_logout_token_rejects_wrong_audience() -> None:
             public_keys=[public_key],
             now=1_010,
         )
+
+
+def test_access_token_rejects_wrong_audience_and_invalid_version() -> None:
+    private_key = Ed25519PrivateKey.generate()
+    raw, public_key = _mint_access(private_key, version=4)
+
+    event = verify_access_token(
+        raw,
+        issuer="https://auth.example.com",
+        audience="lens",
+        public_keys=[public_key],
+        now=1_010,
+    )
+    assert event == AccessProvisionEvent(
+        "access-4",
+        "account-123",
+        "alice@example.com",
+        "https://auth.example.com",
+        1_000,
+        4,
+        True,
+    )
+
+    with pytest.raises(CentralAuthError):
+        verify_access_token(
+            raw,
+            issuer="https://auth.example.com",
+            audience="explorer",
+            public_keys=[public_key],
+            now=1_010,
+        )
+
+    malformed, _ = _mint_access(private_key, version=True)
+    with pytest.raises(CentralAuthError):
+        verify_access_token(
+            malformed,
+            issuer="https://auth.example.com",
+            audience="lens",
+            public_keys=[public_key],
+            now=1_010,
+        )
+
+
+def test_access_provisioning_is_ordered_and_revocation_ends_sessions(tmp_path) -> None:
+    store = CentralAuthStore(tmp_path / "access.db")
+    grant = AccessProvisionEvent(
+        "grant-2",
+        "account-123",
+        "alice@example.com",
+        "https://auth.example.com",
+        1_000,
+        2,
+        True,
+    )
+    stale_revoke = AccessProvisionEvent(
+        "revoke-1",
+        grant.subject,
+        grant.email,
+        grant.issuer,
+        1_001,
+        1,
+        False,
+    )
+    revoke = AccessProvisionEvent(
+        "revoke-3",
+        grant.subject,
+        grant.email,
+        grant.issuer,
+        1_002,
+        3,
+        False,
+    )
+
+    assert store.apply_access_provisioning(grant, now=1_010)
+    issued = store.create_session(grant.subject, grant.email, now=1_011)
+    assert not store.apply_access_provisioning(stale_revoke, now=1_012)
+    assert store.is_allowed(grant.email)
+
+    assert store.apply_access_provisioning(revoke, now=1_013)
+    assert not store.is_allowed(grant.email)
+    assert store.get_identity(issued.token, now=1_014) is None
+    assert not store.apply_access_provisioning(revoke, now=1_015)
 
 
 def test_access_admin_cli_grants_lists_and_revokes(monkeypatch, tmp_path, capsys) -> None:
