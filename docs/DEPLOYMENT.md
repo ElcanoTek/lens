@@ -640,8 +640,9 @@ dashboard or on disk.
 
 Back up `managed-files/outputs/` (the results you paid OpenRouter for) and
 `/opt/lens/.env` (the credentials). In central mode, also back up
-`/var/lib/lens/access.db`; it contains the local allowlist, hashed sessions and
-revocation records and is not reproducible from git. Note that output CSVs
+`/var/lib/lens/access.db`; it contains the local allowlist, Auth provisioning
+versions, hashed sessions, and revocation records and is not reproducible from
+git. Note that output CSVs
 contain the identifiers you analysed and the access database contains client
 account metadata, so treat backups accordingly.
 
@@ -689,6 +690,13 @@ every application, so no still-valid Auth cookie can recreate a Lens session;
 the browser lands on Auth's login page. The public `/signed-out` page remains
 for direct visits. Legacy mode still delegates logout to the Elcano Auth
 service.
+
+Auth uses the same public back-channel endpoint for durable application-access
+events. Lens verifies the Ed25519 signature, issuer, audience, subject, and
+monotonic per-subject version before enabling or disabling the local allowlist
+entry. A revoke also ends active Lens sessions. Older/replayed events are
+ignored, and Auth keeps retrying its latest desired state until Lens
+acknowledges it, so access converges after an outage.
 
 Beyond that:
 
