@@ -47,7 +47,10 @@ lens_venv() {
   # fresh host. Patch availability comes from the installed uv's catalogue.
   runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python install "$version" || return
   runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python upgrade "$version" || return
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv venv --managed-python --python "$version" --relocatable "$tree/.venv" || return
+  # A bootstrap re-run rebuilds over the existing venv. uv 0.7 replaced it
+  # silently; current uv refuses without --clear, which 0.7 does not accept.
+  # The environment variable works on both.
+  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" UV_VENV_CLEAR=1 uv venv --managed-python --python "$version" --relocatable "$tree/.venv" || return
   runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv pip install \
     --python "$tree/.venv/bin/python" -r "$tree/requirements.txt"
 }
