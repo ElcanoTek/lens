@@ -330,9 +330,16 @@ if [[ "$SETUP_CADDY" == "y" ]]; then
   fi
 
   dnf install -y caddy >/dev/null
-  install -d /etc/caddy/conf.d
-  if [[ ! -f /etc/caddy/Caddyfile ]] || ! grep -qE '^[[:space:]]*import[[:space:]]' /etc/caddy/Caddyfile; then
-    { echo ""; echo "# Managed by Elcano service bootstraps"; echo "import conf.d/*.caddy"; } >> /etc/caddy/Caddyfile
+  # Use a directory this Caddyfile already imports, including Fedora's default
+  # Caddyfile.d/*.caddyfile. Checking only for "any import line" left the site
+  # in an unimported conf.d on stock Fedora, so Caddy never served Lens or
+  # requested a certificate. Same helper and contract as Explorer.
+  # shellcheck source=lib/caddy-site.sh
+  . "$SRC_DIR/scripts/lib/caddy-site.sh"
+  caddyfile=/etc/caddy/Caddyfile
+  lens_caddy_plan "$caddyfile" || die "no safe Caddy site path is available"
+  if [[ "$LENS_CADDY_ADD_IMPORT" == 1 ]]; then
+    { echo ""; echo "# Managed by Elcano service bootstraps"; echo "import conf.d/*.caddy"; } >> "$caddyfile"
   fi
   if [[ -n "$LE_EMAIL" ]] && ! grep -qE '^[[:space:]]*email[[:space:]]' /etc/caddy/Caddyfile; then
     tmp=$(mktemp); printf '{\n\temail %s\n}\n\n' "$LE_EMAIL" > "$tmp"
@@ -344,7 +351,30 @@ if [[ "$SETUP_CADDY" == "y" ]]; then
   if [[ "$USE_LETSENCRYPT" != "y" ]]; then
     awk -v host="$HOSTNAME_FOR_TLS" '$0 == host " {" { print; print "\ttls internal"; next } { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   fi
-  install -m 0644 "$tmp" /etc/caddy/conf.d/lens.caddy; rm -f "$tmp"
+  [[ ! -e $LENS_CADDY_TARGET && ! -L $LENS_CADDY_TARGET ]] ||
+    lens_caddy_is_ours "$LENS_CADDY_TARGET" ||
+    die "refusing to overwrite an unmarked Caddy site: $LENS_CADDY_TARGET"
+  install -d "$(dirname -- "$LENS_CADDY_TARGET")"
+  install -m 0644 "$tmp" "$LENS_CADDY_TARGET"; rm -f "$tmp"
+  removed=$(lens_caddy_remove_stale "$caddyfile" "$LENS_CADDY_TARGET") ||
+    die "could not remove a stale Lens Caddy site"
+  if [[ -n $removed ]]; then
+    while IFS= read -r stale; do info "removed stale Lens site: $stale"; done <<< "$removed"
+  fi
+
+  # The config must parse AND contain this site: a site file that is written
+  # but never imported fails silently until someone opens the URL.
+  caddy validate --config "$caddyfile" --adapter caddyfile >/dev/null 2>&1 ||
+    die "the Caddy configuration does not validate — run: caddy validate --config $caddyfile --adapter caddyfile"
+  adapted=$(mktemp)
+  caddy adapt --config "$caddyfile" --adapter caddyfile > "$adapted" 2>/dev/null ||
+    die "Caddy could not adapt $caddyfile"
+  if ! lens_caddy_adapted_has_site "$adapted" "$HOSTNAME_FOR_TLS" "127.0.0.1:8808"; then
+    rm -f "$adapted"
+    die "Caddy does not load a Lens proxy for $HOSTNAME_FOR_TLS from $LENS_CADDY_TARGET"
+  fi
+  rm -f "$adapted"
+  ok "Caddy site: $LENS_CADDY_TARGET"
 
   if systemctl is-active --quiet firewalld 2>/dev/null; then
     firewall-cmd --add-service=http --permanent >/dev/null 2>&1 || true

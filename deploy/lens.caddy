@@ -1,6 +1,8 @@
 # Caddy site block for Lens, imported by /etc/caddy/Caddyfile via
-# `import conf.d/*.caddy`. bootstrap.sh substitutes {{HOSTNAME}} and
-# injects `tls internal` when Let's Encrypt is disabled.
+# a glob it already imports (Fedora: Caddyfile.d/*.caddyfile; otherwise
+# conf.d/*.caddy). Keep this first line: bootstrap uses it to recognise its
+# own file. bootstrap.sh substitutes {{HOSTNAME}} and injects `tls internal`
+# when Let's Encrypt is disabled.
 
 {{HOSTNAME}} {
 	reverse_proxy 127.0.0.1:8808
