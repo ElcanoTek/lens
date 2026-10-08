@@ -17,9 +17,10 @@ from config import config
 from ctv_processor import CTVProcessor
 from custom_categories import (
     MAX_CONTENT_CHARS,
-    TypeSafeCategories,
+    DecisionCategories,
     category_columns,
     parse_categories,
+    typesafe_model_for,
     validate_categories,
 )
 from domain_processing import DomainProcessor
@@ -44,7 +45,8 @@ SPEC = {
     ]
 }
 ANSWER = {
-    "model": "jev-1.13.0",
+    "model": "typesafe/jev-1.13-20260917",
+    "provider": "TypeSafe",
     "answers": {
         "c0": {"type": "noul", "noul": 0.1},
         "c1": {
@@ -63,6 +65,12 @@ CLASSIFICATION = {
 }
 
 
+@pytest.fixture(autouse=True)
+def no_typesafe_fallback(monkeypatch):
+    """A developer's real TypeSafe key must not change which requests tests expect."""
+    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+
+
 class Response:
     def __init__(self, status=200, data=None):
         self.status = status
@@ -79,7 +87,7 @@ class Response:
 
 
 def client_with(*responses):
-    client = TypeSafeCategories(SPEC, api_key="never-log-this-secret")
+    client = DecisionCategories(SPEC, api_key="never-log-this-secret")
     client.session = Mock()
     client.session.post.side_effect = responses
     return client
@@ -89,10 +97,15 @@ async def test_batch_api_contract_preserves_raw_probabilities_and_bounds_content
     client = client_with(Response())
     result = await client.classify(identifier="example.com", content="x" * 30000, source="direct")
     args, kwargs = client.session.post.call_args
-    assert args == ("https://api.typesafe.ai/v1/systemone",)
+    assert args == ("https://openrouter.ai/api/alpha/decisions",)
     assert kwargs["headers"] == {"Authorization": "Bearer never-log-this-secret"}
     assert kwargs["allow_redirects"] is False
     payload = kwargs["json"]
+    assert payload["model"] == "~typesafe/jev-latest"
+    assert payload["questions"]["c0"]["criteria"] == {
+        "true": "The answer to the question is yes.",
+        "false": "The answer to the question is no.",
+    }
     assert len(payload["state"]["content"]) == MAX_CONTENT_CHARS
     assert payload["state"]["truncated"] is True
     assert payload["questions"]["c0"]["type"] == "noul"
@@ -105,13 +118,15 @@ async def test_batch_api_contract_preserves_raw_probabilities_and_bounds_content
     assert result["P: Purpose / Education"] == 0.95
     assert result["P: Purpose / Entertainment"] == 0.03
     assert result["P: Purpose / Unknown"] == 0.02
-    assert json.loads(result["TypeSafe_Answers"])["Purpose"]["confidence"] == 0.9
+    assert json.loads(result["Decision_Answers"])["Purpose"]["confidence"] == 0.9
     assert category_columns(SPEC)[:2] == ["Custom: Brand safe", "P(yes/choice): Brand safe"]
-    assert category_columns(SPEC)[-4:] == [
-        "TypeSafe_Status",
-        "TypeSafe_Error",
-        "TypeSafe_Model",
-        "TypeSafe_Answers",
+    assert result["Decision_Provider"] == "TypeSafe"
+    assert category_columns(SPEC)[-5:] == [
+        "Decision_Status",
+        "Decision_Error",
+        "Decision_Model",
+        "Decision_Provider",
+        "Decision_Answers",
     ]
     assert "P: Purpose / Education" in category_columns(SPEC)
 
@@ -132,7 +147,7 @@ async def test_bounded_retries_and_secret_safe_errors(
     )
     result = await client.classify(identifier="x", content="Evidence", source="research")
     assert client.session.post.call_count == expected_calls
-    assert (result["TypeSafe_Status"] == "success") == success
+    assert (result["Decision_Status"] == "success") == success
     assert "never-log-this-secret" not in json.dumps(result) + caplog.text
 
 
@@ -154,13 +169,13 @@ async def test_malformed_response_never_becomes_a_false_label(mutate):
     mutate(data)
     client = client_with(Response(data=data))
     result = await client.classify(identifier="x", content="Evidence", source="direct")
-    assert result == {"TypeSafe_Status": "error", "TypeSafe_Error": "Invalid TypeSafe response"}
+    assert result == {"Decision_Status": "error", "Decision_Error": "Invalid OpenRouter response"}
 
 
 async def test_no_evidence_skips_network_and_cancellation_propagates():
     client = client_with(asyncio.CancelledError())
     assert (await client.classify(identifier="x", content="", source="direct"))[
-        "TypeSafe_Status"
+        "Decision_Status"
     ] == "skipped"
     client.session.post.assert_not_called()
     with pytest.raises(asyncio.CancelledError):
@@ -197,19 +212,21 @@ def test_invalid_specs_rejected(value):
         validate_categories(value)
 
 
-def test_json_limits_cli_and_disabled_key_requirement(monkeypatch):
-    monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
-    SiteAnalysisOrchestrator()  # optional feature requires no new key
-    with pytest.raises(ValueError, match="TYPESAFE_API_KEY"):
-        SiteAnalysisOrchestrator(custom_categories=SPEC)
+def test_json_limits_cli_and_key_requirement(monkeypatch):
+    SiteAnalysisOrchestrator(custom_categories=SPEC)  # OpenRouter key only; no TypeSafe key
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    with pytest.raises(ValueError, match="OPENROUTER_API_KEY"):
+        DecisionCategories(SPEC)
+    with pytest.raises(ValueError, match="model ID"):
+        DecisionCategories(SPEC, "bad model; rm -rf", api_key="k")
     with pytest.raises(ValueError, match="too large"):
         parse_categories(" " * 32769)
     assert parse_args(["--custom-categories", "labels.json"]).custom_categories == "labels.json"
+    assert parse_args(["--decision-model", "openai/x"]).decision_model == "openai/x"
 
 
 @pytest.mark.parametrize("ctv", [False, True])
 async def test_csv_resume_definitions_and_disabled_run_are_isolated(monkeypatch, ctv):
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     orchestrator = SiteAnalysisOrchestrator(custom_categories=SPEC)
     await orchestrator._prepare_custom_categories()
     setup = orchestrator._setup_ctv_output_file if ctv else orchestrator._setup_output_file
@@ -243,13 +260,13 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     writer.writeheader()
     tracker = ProgressTracker(str(tmp_path / "progress.json"))
     custom = Mock()
-    custom.research_questions.return_value = TypeSafeCategories(
+    custom.research_questions.return_value = DecisionCategories(
         SPEC, api_key="test"
     ).research_questions()
     custom.classify = AsyncMock(
-        return_value={"TypeSafe_Status": "error", "TypeSafe_Error": "TypeSafe HTTP 401"}
+        return_value={"Decision_Status": "error", "Decision_Error": "OpenRouter HTTP 401"}
         if custom_error
-        else TypeSafeCategories(SPEC, api_key="test")._decode(ANSWER)
+        else DecisionCategories(SPEC, api_key="test")._decode(ANSWER)
     )
     router = Mock()
     router.classify_site = AsyncMock(return_value=CLASSIFICATION)
@@ -304,7 +321,7 @@ async def test_all_pipelines_use_original_evidence_and_keep_primary_results(
     rows = list(csv.DictReader(io.StringIO(out.getvalue())))
     assert len(rows) == 1
     assert rows[0]["Quality"] == "Premium"
-    assert rows[0]["TypeSafe_Status"] == ("error" if custom_error else "success")
+    assert rows[0]["Decision_Status"] == ("error" if custom_error else "success")
     assert custom.classify.call_args.kwargs["content"] == evidence
     assert (
         custom.classify.call_args.kwargs["source"]
@@ -337,7 +354,7 @@ async def test_custom_questions_reach_research_api(ctv):
     create = AsyncMock(return_value=response)
     client._client = Mock()
     client._client.chat.completions.create = create
-    custom = TypeSafeCategories(SPEC, api_key="test")
+    custom = DecisionCategories(SPEC, api_key="test")
     method = client.research_ctv_app if ctv else client.research_website
     await method("example.com", custom_questions=custom.research_questions())
     prompt = create.call_args.kwargs["messages"][-1]["content"]
@@ -366,7 +383,7 @@ async def test_failed_primary_analysis_has_no_custom_call(tmp_path):
     await processor.process_domain_research(DomainWorkItem("example.com"))
     custom.classify.assert_not_called()
     row = next(csv.DictReader(io.StringIO(out.getvalue())))
-    assert row["TypeSafe_Status"] == "skipped"
+    assert row["Decision_Status"] == "skipped"
     assert row["Custom: Brand safe"] == ""
 
 
@@ -398,14 +415,13 @@ async def test_ctv_missing_research_never_classifies(tmp_path, evidence):
     router.classify_ctv_app.assert_not_called()
     custom.classify.assert_not_called()
     row = next(csv.DictReader(io.StringIO(out.getvalue())))
-    assert row["TypeSafe_Status"] == "skipped"
+    assert row["Decision_Status"] == "skipped"
     assert row["Quality"] == "Failed"
     assert "No meaningful research evidence" in row["Justification"]
 
 
 @pytest.mark.parametrize("ctv", [False, True])
 async def test_full_orchestrator_run_wires_optional_client_and_resumes(monkeypatch, ctv):
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     Path(config.INPUT_CSV_PATH).write_text(
         "app_name,bundle_id\nDemo TV,com.demo.tv\n" if ctv else "Domain\nexample.com\n123456789\n"
     )
@@ -453,7 +469,7 @@ async def test_full_orchestrator_run_wires_optional_client_and_resumes(monkeypat
     assert len(rows) == (1 if ctv else 2)
     assert classify.await_count == len(rows)
     assert all(row["Custom: Purpose"] == "Education" for row in rows)
-    assert all(row["TypeSafe_Status"] == "success" for row in rows)
+    assert all(row["Decision_Status"] == "success" for row in rows)
     assert run.category_client.session.closed
     before = Path(config.OUTPUT_CSV_PATH).read_bytes()
     # A new process using identical definitions skips completed items.
@@ -464,9 +480,129 @@ async def test_full_orchestrator_run_wires_optional_client_and_resumes(monkeypat
 
 
 async def test_enabling_categories_on_existing_plain_output_requires_new_paths(monkeypatch):
-    monkeypatch.setenv("TYPESAFE_API_KEY", "test-key")
     original = "Domain,Quality\nexample.com,Premium\n"
     Path(config.OUTPUT_CSV_PATH).write_text(original)
     with pytest.raises(ValueError, match="different"):
         await SiteAnalysisOrchestrator(custom_categories=SPEC)._prepare_custom_categories()
     assert Path(config.OUTPUT_CSV_PATH).read_text() == original
+
+
+async def test_choice_without_distribution_leaves_probability_columns_blank():
+    data = copy.deepcopy(ANSWER)
+    data["provider"] = "OpenAI"
+    data["answers"]["c1"] = {"type": "choice", "choice": "Entertainment"}
+    result = await client_with(Response(data=data)).classify(
+        identifier="x", content="Evidence", source="direct"
+    )
+    assert result["Decision_Status"] == "success"
+    assert result["Decision_Provider"] == "OpenAI"
+    assert result["Custom: Purpose"] == "Entertainment"
+    assert result["P(yes/choice): Purpose"] == ""
+    assert result["Confidence: Purpose"] == ""
+    assert result["P: Purpose / Education"] == ""
+    assert json.loads(result["Decision_Answers"])["Purpose"] == {
+        "type": "choice",
+        "value": "Entertainment",
+    }
+
+
+def typesafe_client(*responses, model="~typesafe/jev-latest"):
+    client = DecisionCategories(
+        SPEC, model, api_key="openrouter-secret", typesafe_api_key="typesafe-secret"
+    )
+    client.session = Mock()
+    client.session.post.side_effect = responses
+    return client
+
+
+async def test_jev_falls_back_to_typesafe_directly_when_openrouter_fails(monkeypatch, caplog):
+    monkeypatch.setattr("custom_categories.asyncio.sleep", AsyncMock())
+    direct = copy.deepcopy(ANSWER)
+    direct.pop("provider")
+    direct["model"] = "jev-1.13.0"
+    client = typesafe_client(Response(402), Response(data=direct))
+    result = await client.classify(identifier="x", content="Evidence", source="direct")
+    first, second = client.session.post.call_args_list
+    assert first.args == ("https://openrouter.ai/api/alpha/decisions",)
+    assert first.kwargs["headers"] == {"Authorization": "Bearer openrouter-secret"}
+    assert second.args == ("https://api.typesafe.ai/v1/systemone",)
+    assert second.kwargs["headers"] == {"Authorization": "Bearer typesafe-secret"}
+    # TypeSafe's own endpoint gets its own model name and the payload it accepted before.
+    assert second.kwargs["json"]["model"] == "jev-latest"
+    assert "criteria" not in second.kwargs["json"]["questions"]["c0"]
+    assert second.kwargs["json"]["state"] == first.kwargs["json"]["state"]
+    assert result["Decision_Status"] == "success"
+    assert result["Decision_Provider"] == "TypeSafe (direct)"
+    assert result["Decision_Model"] == "jev-1.13.0"
+    assert "secret" not in caplog.text
+
+
+async def test_fallback_runs_only_after_openrouter_retries_are_exhausted(monkeypatch):
+    monkeypatch.setattr("custom_categories.asyncio.sleep", AsyncMock())
+    client = typesafe_client(Response(503), Response(503), Response(503), Response())
+    result = await client.classify(identifier="x", content="Evidence", source="direct")
+    urls = [call.args[0] for call in client.session.post.call_args_list]
+    assert urls == ["https://openrouter.ai/api/alpha/decisions"] * 3 + [
+        "https://api.typesafe.ai/v1/systemone"
+    ]
+    assert result["Decision_Status"] == "success"
+    assert result["Decision_Provider"] == "TypeSafe (direct)"
+
+
+async def test_fallback_failure_reports_both_routes(monkeypatch):
+    monkeypatch.setattr("custom_categories.asyncio.sleep", AsyncMock())
+    client = typesafe_client(Response(401), Response(401))
+    result = await client.classify(identifier="x", content="Evidence", source="direct")
+    assert result == {
+        "Decision_Status": "error",
+        "Decision_Error": "OpenRouter HTTP 401; TypeSafe HTTP 401",
+    }
+
+
+@pytest.mark.parametrize(
+    "model,typesafe_model",
+    [
+        ("~typesafe/jev-latest", "jev-latest"),
+        ("typesafe/jev-1.13", "jev-1.13"),
+        ("openai/gpt-6-luna-decisions", None),
+        ("typesafe/jev-router", None),
+    ],
+)
+def test_typesafe_model_mapping(model, typesafe_model):
+    assert typesafe_model_for(model) == typesafe_model
+
+
+async def test_non_jev_model_never_calls_typesafe(monkeypatch):
+    monkeypatch.setattr("custom_categories.asyncio.sleep", AsyncMock())
+    client = typesafe_client(Response(401), model="openai/gpt-6-luna-decisions")
+    result = await client.classify(identifier="x", content="Evidence", source="direct")
+    assert client.session.post.call_count == 1
+    assert result["Decision_Error"] == "OpenRouter HTTP 401"
+
+
+@pytest.mark.parametrize("ctv", [False, True])
+def test_resume_renames_legacy_typesafe_columns(ctv):
+    orchestrator = SiteAnalysisOrchestrator(custom_categories=SPEC)
+    base = list(config.CTV_CSV_FIELDNAMES if ctv else config.CSV_FIELDNAMES)
+    legacy = base + [c for c in category_columns(SPEC) if not c.startswith("Decision_")]
+    legacy += ["TypeSafe_Status", "TypeSafe_Error", "TypeSafe_Model", "TypeSafe_Answers"]
+    with open(config.OUTPUT_CSV_PATH, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=legacy)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "Custom: Brand safe": "No",
+                "TypeSafe_Status": "success",
+                "TypeSafe_Model": "jev-1.13.0",
+            }
+        )
+    (orchestrator._setup_ctv_output_file if ctv else orchestrator._setup_output_file)()
+    orchestrator._teardown_output_file()
+    with open(config.OUTPUT_CSV_PATH, newline="") as f:
+        reader = csv.DictReader(f)
+        rows = list(reader)
+    assert reader.fieldnames == orchestrator._output_columns(ctv=ctv)
+    assert rows[0]["Decision_Status"] == "success"
+    assert rows[0]["Decision_Model"] == "jev-1.13.0"
+    assert rows[0]["Decision_Provider"] == ""
+    assert rows[0]["Custom: Brand safe"] == "No"

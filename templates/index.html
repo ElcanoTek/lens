@@ -227,29 +227,40 @@
                 </label>
               </div>
             </details>
-            {% if typesafe_available %}
             <details class="run-advanced custom-categories" id="custom-categories">
-              <summary class="caption">Custom categories <span class="caption">· optional · TypeSafe</span></summary>
+              <summary class="caption">Custom categories <span class="caption">· optional · decision model</span></summary>
               <div class="run-advanced-body">
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="custom-categories-enabled">
                   <span><span class="run-advanced-label">Add your own categories</span>
-                  <span class="caption">Add labels to this run alongside the standard Lens analysis. Optional; sends source text to TypeSafe for an additional API call per successfully analyzed item.</span></span>
+                  <span class="caption">Add labels to this run alongside the standard Lens analysis. Optional; sends source text to the decision model below, through OpenRouter, for an additional API call per successfully analyzed item.</span></span>
                 </label>
                 <div id="custom-category-editor" hidden>
+                  <label class="run-advanced-field">
+                    <span class="run-advanced-label">Decision model</span>
+                    <select name="decision_model" id="decision-model-select">
+                      {% set recommended_decision = model_catalog.decision | selectattr('id', 'equalto', recommended_decision_model) | first %}
+                      <option value="{{ recommended_decision_model }}" selected>{{ recommended_decision.label if recommended_decision else 'TypeSafe: Jev Latest' }} — recommended</option>
+                      {% for option in model_catalog.decision %}
+                      {% if option.id != recommended_decision_model %}
+                      <option value="{{ option.id }}">{{ option.label }}</option>
+                      {% endif %}
+                      {% endfor %}
+                    </select>
+                    <span class="caption">Decision models return typed answers with probabilities, not prose. Output tokens are free. Jev returns a probability for every choice option; some other models return only the selected option, leaving those columns blank.</span>
+                  </label>
                   <p class="caption">Give each category a name, choose an answer format, and write a specific question. Use “Add category” for another independent judgment.</p>
-                  <p class="caption">TypeSafe evaluates scraped text, app-store descriptions, or research summaries—not images or video. A missing detail in a research summary is not proof of absence.</p>
+                  <p class="caption">The decision model evaluates scraped text, app-store descriptions, or research summaries—not images or video. A missing detail in a research summary is not proof of absence.</p>
                   <div id="custom-category-list"></div>
                   <button class="btn btn-ghost" type="button" id="add-custom-category">Add category</button>
                   <p class="caption">Up to 12 categories. Yes/no uses a 50% cutoff; its probability is always P(yes). Choice selects one option. Include “Other” or “Unknown” when appropriate.</p>
-                  <p class="caption">Click Analyze above to start the run. Download its CSV from Runs to see your labels and probabilities. If TypeSafe fails, standard results are kept and custom labels are blank; check TypeSafe_Status and TypeSafe_Error.</p>
+                  <p class="caption">Click Analyze above to start the run. Download its CSV from Runs to see your labels and probabilities. If the decision model fails, standard results are kept and custom labels are blank; check Decision_Status and Decision_Error.</p>
                   <p class="caption">Definitions are remembered in this browser. After reloading the page, enable “Add your own categories” again to include them in a run.</p>
                 </div>
                 <input type="hidden" name="custom_categories" id="custom-categories-json" value="">
                 <noscript><p class="caption">JavaScript is required for the category editor. The CLI also accepts a JSON definition file.</p></noscript>
               </div>
             </details>
-            {% endif %}
             <p class="caption run-hint">Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research.</p>
           </form>
         </div>

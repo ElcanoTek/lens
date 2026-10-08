@@ -225,7 +225,7 @@ case "$LENS_AUTH_MODE" in
 esac
 LENS_SESSION_SECRET="${LENS_SESSION_SECRET:-$(genbase64 32)}"
 OPENROUTER_API_KEY="$(prompt_secret OPENROUTER_API_KEY "OpenRouter API key")"
-TYPESAFE_API_KEY="$(prompt_secret TYPESAFE_API_KEY "TypeSafe API key for custom categories (optional, Enter to skip)" optional)"
+TYPESAFE_API_KEY="$(prompt_secret TYPESAFE_API_KEY "TypeSafe API key: optional direct fallback for Jev custom categories (Enter to skip)" optional)"
 
 # ── Caddy / TLS intent (install happens in step 7) ────────
 HOSTNAME_FOR_TLS="$(prompt LENS_BOOTSTRAP_HOSTNAME "Public hostname for TLS (e.g. lens.example.com, blank to skip Caddy)" "${LENS_BOOTSTRAP_HOSTNAME:-}" optional)"

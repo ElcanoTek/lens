@@ -59,6 +59,8 @@ DEFAULT_LLM_MODEL = "~openai/gpt-luna-latest"
 PREVIOUS_DEFAULT_LLM_MODELS = {
     "~google/gemini-flash-latest",
 }
+# Custom categories: OpenRouter's moving alias for TypeSafe's Jev decision model.
+DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
 
 
 class Config:
@@ -143,6 +145,8 @@ class Config:
             # Scrape_Mode="research" so downstream consumers know provenance.
             "research_fallback_enabled": True,
             "research_model": "perplexity/sonar-pro",
+            # Decision model for custom categories (OpenRouter Decisions API)
+            "decision_model": DEFAULT_DECISION_MODEL,
             "research_temperature": 0.2,
             "research_max_tokens": 1500,
             "research_max_concurrent": 4,

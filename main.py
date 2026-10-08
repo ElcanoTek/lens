@@ -115,7 +115,14 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--custom-categories",
         metavar="JSON_FILE",
-        help="Add TypeSafe categories defined in a JSON file (requires TYPESAFE_API_KEY).",
+        help="Add custom categories defined in a JSON file, answered by an OpenRouter decision model.",
+    )
+    parser.add_argument(
+        "--decision-model",
+        help=(
+            "Override the custom-category decision model for this run (an "
+            "OpenRouter decision model ID, e.g. '~typesafe/jev-latest')."
+        ),
     )
     parser.add_argument(
         "--input-csv",
@@ -163,6 +170,8 @@ async def main(argv: Optional[List[str]] = None):
     if args.research_model:
         config.RESEARCH_MODEL = args.research_model
         config.CTV_RESEARCH_MODEL = args.research_model
+    if args.decision_model:
+        config.DECISION_MODEL = args.decision_model
     if args.input_csv:
         config.INPUT_CSV_PATH = args.input_csv
     if args.output_csv:

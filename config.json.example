@@ -52,6 +52,7 @@
   "_comment_research": "Fourth and final rung: sites that block every crawler are classified from a web-search research summary instead of being marked Failed. The site is never contacted from this host. Needs a model with built-in web search.",
   "research_fallback_enabled": true,
   "research_model": "perplexity/sonar-pro",
+  "decision_model": "~typesafe/jev-latest",
   "research_temperature": 0.2,
   "research_max_tokens": 1500,
   "research_max_concurrent": 4,

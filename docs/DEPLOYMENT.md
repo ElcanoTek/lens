@@ -95,7 +95,7 @@ sudo env \
 ```
 
 In non-interactive mode any prompt without an environment value **and** without
-a default aborts the run, except the optional hostname, contact email and TypeSafe key.
+a default aborts the run, except the optional hostname, contact email and TypeSafe fallback key.
 For a fresh unattended host, download `install.sh` to a private temporary file,
 then pass these same variables to `bash` with that file.
 
@@ -104,7 +104,7 @@ then pass these same variables to `bash` with that file.
 | Variable | Default | Purpose |
 |---|---|---|
 | `LENS_BOOTSTRAP_NON_INTERACTIVE` | `0` | Never prompt; fail on a missing required value |
-| `TYPESAFE_API_KEY` | — | Optional custom categorization; hidden prompt interactively, skipped if absent in unattended installs; existing `.env` value preserved |
+| `TYPESAFE_API_KEY` | — | Optional direct fallback for Jev custom categories when OpenRouter fails; hidden prompt interactively, skipped if absent in unattended installs; existing `.env` value preserved |
 | `LENS_BOOTSTRAP_SKIP_CHROME` | `0` | Skip the `chromium` + `chromedriver` packages |
 | `LENS_BOOTSTRAP_SKIP_DEEP` | `0` | Skip podman and the Selenium Chrome image (also defaults `SKIP_FIRECRAWL` to 1) |
 | `LENS_BOOTSTRAP_SKIP_FIRECRAWL` | `$LENS_BOOTSTRAP_SKIP_DEEP` | Skip `podman-compose`, the Firecrawl images and `firecrawl.service` |
@@ -592,9 +592,10 @@ do not enable global `rsync_full_access` or relabel `/opt` to work around this.
 For a persistent maintenance unit on Fedora, the equivalent setting is
 `SELinuxContext=system_u:system_r:unconfined_service_t:s0` in `[Service]`.
 
-For optional user-defined categories, add `TYPESAFE_API_KEY` to `/opt/lens/.env`
-with `lens env edit`, then `lens restart`. It is required only for runs that
-enable custom categories; the dashboard never receives the key. See
+Custom categories need no extra setup: they run on `OPENROUTER_API_KEY`. To give
+Jev requests a direct fallback when OpenRouter's Decisions API is unavailable,
+add `TYPESAFE_API_KEY` to `/opt/lens/.env` with `lens env edit`, then
+`lens restart`; the dashboard never receives the key. See
 [Custom categories](CUSTOM_CATEGORIES.md) for the UI, CLI and output contract.
 
 ### Fedora release upgrades

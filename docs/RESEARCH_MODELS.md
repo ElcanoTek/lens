@@ -1,7 +1,7 @@
 # Research model selection
 
 Lens uses search-grounded research for websites that could not be scraped and
-for CTV apps. TypeSafe categories run on that research summary after standard
+for CTV apps. Custom categories run on that research summary after standard
 classification succeeds. Research requests include enabled custom questions so
 the summary can gather relevant evidence rather than only the standard rubric.
 
@@ -53,7 +53,7 @@ budget if necessary. Research models are unaffected by this setting.
 
 CTV research now carries publisher information through both steps and explicitly
 declines unidentified apps. Empty or insufficient research fails the row before
-classification or TypeSafe calls, rather than inviting an unsupported judgment.
+classification or custom-category calls, rather than inviting an unsupported judgment.
 
 ## Catalog findings
 
