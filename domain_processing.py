@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional, TextIO
 
+import cost_tracking
 from config import config
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
@@ -94,6 +95,7 @@ class DomainProcessor:
         # rather than terminal errors.
         self.defer_failures = defer_failures
 
+    @cost_tracking.per_item
     async def process_domain(self, item: DomainWorkItem) -> None:
         """Process a single domain through the complete workflow."""
         start_time = time.perf_counter()
@@ -188,6 +190,7 @@ class DomainProcessor:
                     cache_status=(scrape_result.get("cache_status") if scrape_result else None),
                 )
 
+    @cost_tracking.per_item
     async def process_domain_research(self, item: DomainWorkItem) -> None:
         """Classify a domain from external research when every scrape pass failed.
 
@@ -476,5 +479,6 @@ class DomainProcessor:
             record.setdefault(
                 "Decision_Error", "Primary analysis failed; custom categories not evaluated"
             )
+        record["Cost_USD"] = cost_tracking.item_cost_usd()
         self.results_writer.writerow(record)
         self.results_file.flush()

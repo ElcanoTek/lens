@@ -31,6 +31,8 @@ class ProgressTracker:
             "session_info": {},
         }
         self._lock = asyncio.Lock()
+        # Set by the orchestrator; its snapshot is saved with every write.
+        self.cost_meter = None
         self.load_progress()
 
     def load_progress(self) -> None:
@@ -49,6 +51,8 @@ class ProgressTracker:
         """Save current progress to the progress file."""
         async with self._lock:
             self.progress_data["last_update"] = datetime.now().isoformat()
+            if self.cost_meter is not None:
+                self.progress_data["cost"] = self.cost_meter.snapshot()
             try:
                 # Write to temporary file first, then rename for atomic operation
                 temp_file = f"{self.progress_file}.tmp"

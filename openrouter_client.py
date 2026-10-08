@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Optional
 
 from openai import AsyncOpenAI
 
+import cost_tracking
+
 logger = logging.getLogger(__name__)
 
 
@@ -343,6 +345,12 @@ class OpenRouterClient:
         for attempt in range(max_retries):
             try:
                 result = await api_call_func(*args, **kwargs)
+                # Every response OpenRouter returns has been billed, including
+                # ones that are then retried or rejected below.
+                cost_tracking.record(
+                    cost_tracking.cost_from_usage(getattr(result, "usage", None)),
+                    str(getattr(result, "model", "") or ""),
+                )
                 body_error = self._extract_body_error(result)
                 if body_error:
                     # Surface OpenRouter's body-embedded provider error as an

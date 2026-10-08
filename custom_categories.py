@@ -18,6 +18,7 @@ from pathlib import Path
 
 import aiohttp
 
+import cost_tracking
 from config import DEFAULT_DECISION_MODEL
 
 logger = logging.getLogger(__name__)
@@ -258,7 +259,14 @@ class DecisionCategories:
                     allow_redirects=False,
                 ) as response:
                     if response.status == 200:
-                        return self._decode(await response.json(), route), None
+                        data = await response.json()
+                        usage = data.get("usage") if isinstance(data, dict) else None
+                        model = data.get("model") if isinstance(data, dict) else None
+                        cost_tracking.record(
+                            cost_tracking.cost_from_usage(usage),
+                            model if isinstance(model, str) else "",
+                        )
+                        return self._decode(data, route), None
                     error = f"{route} HTTP {response.status}"
                     if response.status not in _RETRYABLE_STATUSES:
                         break

@@ -14,6 +14,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, Optional, TextIO
 
+import cost_tracking
 from android_scraper import AndroidScraper
 from ios_api_client import iOSAPIClient
 from openrouter_client import OpenRouterClient
@@ -60,6 +61,7 @@ class AppProcessor:
         self.results_writer = results_writer
         self.results_file = results_file
 
+    @cost_tracking.per_item
     async def process_ios_app(self, item: "WorkItem") -> None:
         """
         Process a single iOS app through the complete workflow.
@@ -151,6 +153,7 @@ class AppProcessor:
                     cache_status=None,
                 )
 
+    @cost_tracking.per_item
     async def process_android_app(self, item: "WorkItem") -> None:
         """
         Process a single Android app through the complete workflow.
@@ -377,5 +380,6 @@ class AppProcessor:
             record.setdefault(
                 "Decision_Error", "Primary analysis failed; custom categories not evaluated"
             )
+        record["Cost_USD"] = cost_tracking.item_cost_usd()
         self.results_writer.writerow(record)
         self.results_file.flush()

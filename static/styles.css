@@ -284,6 +284,7 @@ table {
 
 .caption,
 .queue-progress-eta,
+.queue-progress-cost,
 .completion-label,
 .validation-error {
   font-size: var(--font-size-caption);
@@ -292,6 +293,7 @@ table {
 
 .caption,
 .queue-progress-eta,
+.queue-progress-cost,
 .completion-label,
 .dropzone-subtext {
   color: var(--color-text-secondary);

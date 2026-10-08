@@ -222,9 +222,22 @@ python manage.py sample         # write sample_input.csv
 | `Content_Length`, `Processing_Time` | Per-item metrics |
 | `Scrape_Mode` | Which rung produced the data |
 | `Classifier_Mode`, `Scraped_At` | Provenance |
+| `Cost_USD` | What OpenRouter billed for this row's model calls (research, classification, retries and custom-category decisions), as OpenRouter reports it |
 
 CTV runs emit a wider set including `Bundle_ID`, `SSP`, `Publisher`,
 `Platform`, `Network_Affiliation`, `Target_Audience` and `Research_Summary`.
+
+### What a run costs
+
+Every OpenRouter response reports its exact cost, search fees included, and Lens
+adds it up: per row in `Cost_USD`, and per run in the progress file (`cost`: total,
+call count and a per-model breakdown). The dashboard shows each run's total in
+the Runs table and in the completion summary, and the log ends with
+`OpenRouter spend for this run: $…`. A resumed run continues from its saved
+total. Calls whose response carries no cost, such as the optional direct
+TypeSafe fallback, are counted separately and marked with `+` instead of being
+treated as free. A row's cost covers the pass that produced it; spend from an
+earlier failed pass on the same item is in the run total only.
 
 ## Optional custom categories
 

@@ -18,6 +18,7 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional, TextIO
 
+import cost_tracking
 from config import DEFAULT_LLM_MODEL, config
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
@@ -99,6 +100,7 @@ class CTVProcessor:
                 await asyncio.sleep(self.request_delay - elapsed)
             self._last_request_time = time.time()
 
+    @cost_tracking.per_item
     async def process_ctv_app(self, item: CTVWorkItem) -> None:
         """
         Process a single CTV app through the complete two-step workflow.
@@ -441,6 +443,7 @@ class CTVProcessor:
             record.setdefault(
                 "Decision_Error", "Primary analysis failed; custom categories not evaluated"
             )
+        record["Cost_USD"] = cost_tracking.item_cost_usd()
         self.results_writer.writerow(record)
         self.results_file.flush()
 
