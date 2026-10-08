@@ -30,7 +30,12 @@ INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 . "$SRC_DIR/scripts/lib/deploy.sh"
 # runuser keeps the caller's working directory. Started from /root, the service
 # user's uv and podman fail on the unreadable cwd (uv: "failed to open file
-# /root/uv.toml: Permission denied"). update.sh does the same.
+# /root/uv.toml: Permission denied"). update.sh does the same. Resolve paths
+# first so an environment override keeps its meaning after the cd.
+SRC_DIR="$(cd "$SRC_DIR" && pwd)"
+for dir in "$APP_DIR" "$INSTALL_SRC_DIR"; do
+  [[ "$dir" == /* ]] || { echo "APP_DIR and LENS_SRC_DIR must be absolute paths: $dir" >&2; exit 1; }
+done
 cd "$SRC_DIR"
 ENV_FILE="$APP_DIR/.env"
 CLI_TARGET="/usr/local/bin/lens"
