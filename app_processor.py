@@ -373,9 +373,9 @@ class AppProcessor:
             raise RuntimeError("Results writer has not been initialised")
 
         if self.category_client:
-            record.setdefault("TypeSafe_Status", "skipped")
+            record.setdefault("Decision_Status", "skipped")
             record.setdefault(
-                "TypeSafe_Error", "Primary analysis failed; custom categories not evaluated"
+                "Decision_Error", "Primary analysis failed; custom categories not evaluated"
             )
         self.results_writer.writerow(record)
         self.results_file.flush()

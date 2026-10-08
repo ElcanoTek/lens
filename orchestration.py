@@ -18,7 +18,12 @@ from android_scraper import AndroidScraper
 from app_processor import AppProcessor
 from config import DEFAULT_LLM_MODEL, config
 from ctv_processor import CTVProcessor
-from custom_categories import TypeSafeCategories, category_columns, validate_categories
+from custom_categories import (
+    LEGACY_COLUMN_NAMES,
+    DecisionCategories,
+    category_columns,
+    validate_categories,
+)
 from domain_processing import DomainProcessor
 
 # App processing imports
@@ -182,7 +187,9 @@ class SiteAnalysisOrchestrator:
             validate_categories(custom_categories) if custom_categories is not None else None
         )
         self.category_client = (
-            TypeSafeCategories(self.custom_categories) if self.custom_categories else None
+            DecisionCategories(self.custom_categories, config.DECISION_MODEL)
+            if self.custom_categories
+            else None
         )
         self.progress_tracker = ProgressTracker(config.PROGRESS_FILE_PATH)
         self.scraper_client: Optional[ScraperClient] = None
@@ -570,27 +577,33 @@ class SiteAnalysisOrchestrator:
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")
         self.results_writer = csv.DictWriter(self.output_file, fieldnames=self._output_columns())
 
-    def _migrate_output_csv_schema(self) -> None:
+    def _migrate_output_csv_schema(self, ctv: bool = False) -> None:
         """Rewrite an output CSV left by an older version to the current schema.
 
         Resumed runs append to the existing file, so a header from before a
         column was added (e.g. Bot_Protection) would silently misalign every
-        new row. Old rows get "" for columns they never had.
+        new row. Old rows get "" for columns they never had, and keep values
+        from columns that were renamed.
         """
         output_path = Path(config.OUTPUT_CSV_PATH)
+        columns = self._output_columns(ctv=ctv)
         try:
             with open(output_path, newline="") as f:
                 reader = csv.DictReader(f)
-                if reader.fieldnames == self._output_columns():
+                if reader.fieldnames == columns:
                     return
                 rows = list(reader)
+            for row in rows:
+                for old, new in LEGACY_COLUMN_NAMES.items():
+                    if old in row:
+                        row.setdefault(new, row.pop(old))
 
             logger.info(
                 "Output CSV uses an older column layout; rewriting %d row(s) to the current schema",
                 len(rows),
             )
             with open(output_path, "w", newline="") as f:
-                writer = csv.DictWriter(f, fieldnames=self._output_columns(), extrasaction="ignore")
+                writer = csv.DictWriter(f, fieldnames=columns, extrasaction="ignore")
                 writer.writeheader()
                 writer.writerows(rows)
         except Exception as exc:
@@ -603,6 +616,8 @@ class SiteAnalysisOrchestrator:
             with open(config.OUTPUT_CSV_PATH, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=self._output_columns(ctv=True))
                 writer.writeheader()
+        else:
+            self._migrate_output_csv_schema(ctv=True)
 
         # Open file for appending
         self.output_file = open(config.OUTPUT_CSV_PATH, "a", newline="")

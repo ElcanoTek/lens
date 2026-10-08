@@ -9,6 +9,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const add = document.getElementById("add-custom-category");
   const output = document.getElementById("custom-categories-json");
   const storageKey = "lens.customCategories.v1";
+  const modelSelect = document.getElementById("decision-model-select");
+  const modelKey = "lens.decisionModel.v1";
 
   function definitions() {
     return { categories: Array.from(list.children).map((row) => {
@@ -51,7 +53,7 @@ document.addEventListener("DOMContentLoaded", () => {
         <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="e.g. Brand safe" title="Start with a letter; use letters, digits, spaces, underscores or hyphens."></label>
       <label class="run-advanced-field"><span class="run-advanced-label">Answer format</span>
         <select data-field="type"><option value="boolean">Yes / no · independent label</option><option value="choice">Multiple choice · select one option</option></select></label>
-      <label class="run-advanced-field"><span class="run-advanced-label">What should TypeSafe decide?</span>
+      <label class="run-advanced-field"><span class="run-advanced-label">What should the model decide?</span>
         <textarea data-field="question" required maxlength="1000" rows="3" placeholder="Would a mainstream brand be comfortable appearing beside this content? Judge trust and respect for the audience, not topic alone."></textarea></label>
       <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">Options · 2–12 choices, one per line</span>
         <textarea data-field="options" required maxlength="972" rows="4" placeholder="News\nEntertainment\nShopping\nOther\nUnknown"></textarea></label>
@@ -73,7 +75,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
     if (Array.isArray(saved?.categories)) saved.categories.slice(0, 12).forEach(c => addCategory(c || {}));
   } catch (_) { /* Ignore invalid local preferences. */ }
-  // Definitions persist, but sending data to TypeSafe is opt-in for every run.
+  try {
+    const savedModel = localStorage.getItem(modelKey);
+    if (modelSelect && Array.from(modelSelect.options).some(o => o.value === savedModel)) modelSelect.value = savedModel;
+  } catch (_) { /* Storage is optional. */ }
+  modelSelect?.addEventListener("change", () => {
+    try { localStorage.setItem(modelKey, modelSelect.value); } catch (_) { /* Storage is optional. */ }
+  });
+  // Definitions persist, but sending data to the decision model is opt-in for every run.
   sync();
   enabled.addEventListener("change", () => {
     if (enabled.checked && !list.children.length) addCategory();

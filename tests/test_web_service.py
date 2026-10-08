@@ -81,18 +81,91 @@ def test_custom_categories_form_validation_and_key_stays_server_side(monkeypatch
                 follow_redirects=False,
             )
             assert "error=" in response.headers["location"]
-        monkeypatch.delenv("TYPESAFE_API_KEY")
-        page = client.get("/")
-        assert 'id="custom-categories"' not in page.text
-        assert 'id="custom-categories-enabled"' not in page.text
-        assert 'name="custom_categories"' not in page.text
+        # The recommended model is stored explicitly so the run matches the UI.
+        assert job.decision_model == "~typesafe/jev-latest"
         response = client.post(
             "/jobs",
-            data={"input_file": "list.csv", "custom_categories": json.dumps(spec)},
+            data={
+                "input_file": "list.csv",
+                "custom_categories": json.dumps(spec),
+                "decision_model": "openai/not-a-listed-decision-model",
+            },
             follow_redirects=False,
         )
-        assert "TYPESAFE_API_KEY" in response.headers["location"]
+        assert "Unknown+decision+model" in response.headers["location"]
         assert len(web_service.manager.jobs) == 1
+        # The feature no longer depends on a TypeSafe key; OpenRouter serves it.
+        monkeypatch.delenv("TYPESAFE_API_KEY")
+        page = client.get("/")
+        assert 'id="custom-categories-enabled"' in page.text
+        assert 'name="decision_model"' in page.text
+
+
+async def test_custom_categories_decision_model_is_validated_persisted_and_passed(monkeypatch):
+    spec = {"categories": [{"name": "Educational", "type": "boolean", "question": "Teach?"}]}
+    catalog = {
+        "classify": [],
+        "research": [],
+        "decision": [{"id": "openai/gpt-6-luna-decisions", "label": "OpenAI decisions"}],
+    }
+    monkeypatch.setattr(web_service, "manager", web_service.JobManager())
+    monkeypatch.setattr(web_service.manager, "worker_loop", AsyncMock())
+    monkeypatch.setattr(web_service, "_model_catalog_cache", (1e18, catalog))
+    web_service.INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    (web_service.INPUT_DIR / "list.csv").write_text("Domain\nexample.com\n")
+    with TestClient(web_service.app) as client:
+        client.cookies.set("elcano_auth", _auth_cookie())
+        assert 'value="openai/gpt-6-luna-decisions"' in client.get("/").text
+        # Without categories the model is irrelevant and is not stored.
+        client.post(
+            "/jobs",
+            data={"input_file": "list.csv", "decision_model": "openai/gpt-6-luna-decisions"},
+            follow_redirects=False,
+        )
+        response = client.post(
+            "/jobs",
+            data={
+                "input_file": "list.csv",
+                "custom_categories": json.dumps(spec),
+                "decision_model": "openai/gpt-6-luna-decisions",
+            },
+            follow_redirects=False,
+        )
+        assert "message=" in response.headers["location"]
+    jobs = list(web_service.manager.jobs.values())
+    plain = next(job for job in jobs if not job.custom_categories)
+    custom = next(job for job in jobs if job.custom_categories)
+    assert plain.decision_model is None
+    assert custom.decision_model == "openai/gpt-6-luna-decisions"
+    assert "decision: openai/gpt-6-luna-decisions" in web_service._job_settings_summary(custom)
+    web_service.manager._load_jobs()
+    assert web_service.manager.jobs[custom.id].decision_model == "openai/gpt-6-luna-decisions"
+
+
+def test_jobs_saved_before_decision_models_still_load():
+    spec = {"categories": [{"name": "Educational", "type": "boolean", "question": "Teach?"}]}
+    web_service.OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    web_service._jobs_state_path().write_text(
+        json.dumps(
+            {
+                "jobs": [
+                    {
+                        "id": "older-run",
+                        "input_file": "list.csv",
+                        "mode": "auto",
+                        "status": "queued",
+                        "custom_categories": spec,
+                    }
+                ]
+            }
+        )
+    )
+    manager = web_service.JobManager()
+    manager._load_jobs()
+    job = manager.jobs["older-run"]
+    assert job.status == "queued"
+    assert job.decision_model is None  # the subprocess falls back to config.DECISION_MODEL
+    assert list(manager.queue) == ["older-run"]
 
 
 async def test_custom_categories_subprocess_handoff_and_deletion(monkeypatch):
@@ -106,17 +179,21 @@ async def test_custom_categories_subprocess_handoff_and_deletion(monkeypatch):
     process.wait.return_value = 0
     spawn = AsyncMock(return_value=process)
     monkeypatch.setattr(web_service.asyncio, "create_subprocess_exec", spawn)
-    job = await manager.create_job("list.csv", "auto", custom_categories=spec)
+    job = await manager.create_job(
+        "list.csv", "auto", custom_categories=spec, decision_model="openai/gpt-6-luna-decisions"
+    )
     await manager._run_job(job.id)
     args = spawn.call_args.args
     definition_path = web_service.Path(args[args.index("--custom-categories") + 1])
     assert json.loads(definition_path.read_text()) == spec
+    assert args[args.index("--decision-model") + 1] == "openai/gpt-6-luna-decisions"
     assert job.status == "completed"
     await manager.delete_job(job.id)
     assert not definition_path.exists()
     plain = await manager.create_job("list.csv", "auto")
     await manager._run_job(plain.id)
     assert "--custom-categories" not in spawn.call_args.args
+    assert "--decision-model" not in spawn.call_args.args
 
 
 def test_corrupt_custom_categories_cannot_be_silently_queued():

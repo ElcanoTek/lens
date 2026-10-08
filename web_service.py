@@ -38,6 +38,7 @@ from central_auth import (
     verify_access_token,
     verify_logout_token,
 )
+from config import DEFAULT_DECISION_MODEL
 from custom_categories import parse_categories, validate_categories
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -78,7 +79,10 @@ RECOMMENDED_RESEARCH_MODEL = "perplexity/sonar-pro"
 # These bounded, non-reasoning models search automatically in our current call
 # path. Other families require explicit tools/plugins and separate validation.
 RESEARCH_MODELS = {"perplexity/sonar", "perplexity/sonar-pro"}
-OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models"
+# Custom categories use OpenRouter's Decisions API; Jev is the default.
+RECOMMENDED_DECISION_MODEL = DEFAULT_DECISION_MODEL
+# The default listing leaves decision models out; ask for both modalities.
+OPENROUTER_MODELS_URL = "https://openrouter.ai/api/v1/models?output_modalities=text,decisions"
 # Classification is a high-volume, structurally simple task: cap the list at
 # workhorse pricing so a frontier-priced model can't be picked by accident.
 # The caps are per-token (OpenRouter's native pricing unit).
@@ -87,12 +91,14 @@ MODEL_COMPLETION_PRICE_CAP = 10.0e-6  # $10 per million output tokens
 # Research models carry a web-search premium; sonar-pro sits at $3/$15.
 RESEARCH_PROMPT_PRICE_CAP = 3.0e-6
 RESEARCH_COMPLETION_PRICE_CAP = 15.0e-6
+# Decision models bill input only; every current one is well under $1/M.
+DECISION_PROMPT_PRICE_CAP = 1.0e-6
 _MODEL_CATALOG_TTL_SECONDS = 3600.0
 # After a failed fetch, don't retry for this long — without it, a box that
 # can't reach OpenRouter would stall every dashboard load on the fetch
 # timeout instead of rendering immediately with the recommended default.
 _MODEL_CATALOG_RETRY_SECONDS = 60.0
-_EMPTY_CATALOG: Dict[str, List[Dict[str, str]]] = {"classify": [], "research": []}
+_EMPTY_CATALOG: Dict[str, List[Dict[str, str]]] = {"classify": [], "research": [], "decision": []}
 _model_catalog_cache: tuple[float, Dict[str, List[Dict[str, str]]]] = (
     0.0,
     _EMPTY_CATALOG,
@@ -165,11 +171,42 @@ def _filter_model_options(
     return options
 
 
+def _filter_decision_options(models: List[Dict[str, object]]) -> List[Dict[str, str]]:
+    """Decision models for custom categories: paid, under the input cap, Jev first."""
+    options: List[Dict[str, str]] = []
+    for model in models:
+        model_id = str(model.get("id") or "")
+        architecture = model.get("architecture") or {}
+        modalities = (
+            architecture.get("output_modalities") if isinstance(architecture, dict) else None
+        )
+        if not model_id or not isinstance(modalities, list) or "decisions" not in modalities:
+            continue
+        try:
+            prompt_price = float((model.get("pricing") or {}).get("prompt") or 0)
+        except (AttributeError, TypeError, ValueError):
+            continue
+        if not 0 < prompt_price <= DECISION_PROMPT_PRICE_CAP:  # free tiers stall batches
+            continue
+        name = str(model.get("name") or model_id)
+        label = f"{name} · {_format_price_per_million(prompt_price)}/M in"
+        options.append({"id": model_id, "label": label})
+    options.sort(
+        key=lambda item: (
+            item["id"] != RECOMMENDED_DECISION_MODEL,
+            not item["id"].startswith("~"),
+            item["label"].lower(),
+        )
+    )
+    return options
+
+
 def _build_model_options(
     models: List[Dict[str, object]],
 ) -> Dict[str, List[Dict[str, str]]]:
-    """Both dropdowns from one payload: classification needs tool calling
-    (function-calling structured output); research needs built-in web search."""
+    """All dropdowns from one payload: classification needs tool calling
+    (function-calling structured output), research needs built-in web search,
+    and custom categories need a decision model."""
     return {
         "classify": _filter_model_options(
             models,
@@ -185,11 +222,12 @@ def _build_model_options(
             completion_cap=RESEARCH_COMPLETION_PRICE_CAP,
             recommended=RECOMMENDED_RESEARCH_MODEL,
         ),
+        "decision": _filter_decision_options(models),
     }
 
 
 async def _get_model_catalog() -> Dict[str, List[Dict[str, str]]]:
-    """Fetch (and cache) the price-capped model lists for both dropdowns.
+    """Fetch (and cache) the price-capped model lists for every dropdown.
 
     Returns empty lists when OpenRouter is unreachable; the UI then offers
     only the recommended defaults.
@@ -235,7 +273,11 @@ async def _get_model_catalog() -> Dict[str, List[Dict[str, str]]]:
 
 def _allowed_model_ids(kind: str = "classify") -> set:
     _, cached = _model_catalog_cache
-    recommended = RECOMMENDED_MODEL if kind == "classify" else RECOMMENDED_RESEARCH_MODEL
+    recommended = {
+        "classify": RECOMMENDED_MODEL,
+        "research": RECOMMENDED_RESEARCH_MODEL,
+        "decision": RECOMMENDED_DECISION_MODEL,
+    }[kind]
     return {option["id"] for option in cached.get(kind, [])} | {recommended}
 
 
@@ -432,6 +474,7 @@ class Job:
     research_fallback: bool = True
     research_model: Optional[str] = None  # None = server default
     custom_categories: Optional[dict] = None
+    decision_model: Optional[str] = None  # None = server default
     status: str = "queued"
     created_at: str = field(default_factory=_utc_now)
     started_at: Optional[str] = None
@@ -466,6 +509,7 @@ class JobManager:
                     "research_fallback": job.research_fallback,
                     "research_model": job.research_model,
                     "custom_categories": job.custom_categories,
+                    "decision_model": job.decision_model,
                     "status": job.status,
                     "created_at": job.created_at,
                     "started_at": job.started_at,
@@ -537,6 +581,7 @@ class JobManager:
 
             llm_model = _clean_model(raw.get("llm_model"))
             research_model = _clean_model(raw.get("research_model"))
+            decision_model = _clean_model(raw.get("decision_model"))
             try:
                 categories = (
                     validate_categories(raw["custom_categories"])
@@ -557,6 +602,7 @@ class JobManager:
                 research_fallback=bool(raw.get("research_fallback", True)),
                 research_model=research_model,
                 custom_categories=categories,
+                decision_model=decision_model,
                 status=status,
                 created_at=created_at,
                 started_at=raw.get("started_at"),
@@ -602,6 +648,7 @@ class JobManager:
         research_fallback: bool = True,
         research_model: Optional[str] = None,
         custom_categories: Optional[dict] = None,
+        decision_model: Optional[str] = None,
     ) -> Job:
         if mode not in ALLOWED_MODES:
             raise ValueError(f"Invalid mode: {mode}")
@@ -619,6 +666,7 @@ class JobManager:
             custom_categories=validate_categories(custom_categories)
             if custom_categories is not None
             else None,
+            decision_model=(decision_model or "").strip() or None,
         )
 
         async with self.lock:
@@ -741,6 +789,8 @@ class JobManager:
                     json.dumps(job.custom_categories, indent=2), encoding="utf-8"
                 )
                 cmd.extend(["--custom-categories", str(category_path)])
+                if job.decision_model:
+                    cmd.extend(["--decision-model", job.decision_model])
             process = await asyncio.create_subprocess_exec(
                 *cmd,
                 cwd=str(BASE_DIR),
@@ -1265,6 +1315,8 @@ def _job_settings_summary(job: Job) -> str:
     parts: List[str] = []
     if job.custom_categories:
         parts.append("custom: " + ", ".join(c["name"] for c in job.custom_categories["categories"]))
+        if job.decision_model:
+            parts.append(f"decision: {job.decision_model}")
     if job.llm_model:
         parts.append(f"model: {job.llm_model}")
     if not job.research_fallback:
@@ -1565,7 +1617,7 @@ async def index(request: Request):
             "recommended_model": RECOMMENDED_MODEL,
             "previous_recommended_models": PREVIOUS_RECOMMENDED_MODELS,
             "recommended_research_model": RECOMMENDED_RESEARCH_MODEL,
-            "typesafe_available": bool(os.getenv("TYPESAFE_API_KEY", "").strip()),
+            "recommended_decision_model": RECOMMENDED_DECISION_MODEL,
             "current_job_id": manager.current_job_id,
             "error": request.query_params.get("error", ""),
             "message": request.query_params.get("message", ""),
@@ -1716,6 +1768,7 @@ async def enqueue_job(
     research_fallback: Optional[str] = Form(default=None),
     research_model: Optional[str] = Form(default=None),
     custom_categories: Optional[str] = Form(default=None),
+    decision_model: Optional[str] = Form(default=None),
 ):
     _require_auth(request)
     try:
@@ -1735,10 +1788,17 @@ async def enqueue_job(
             categories = parse_categories(custom_categories)
         except ValueError as exc:
             return _redirect_with_params({"error": str(exc)})
-        if not os.getenv("TYPESAFE_API_KEY", "").strip():
-            return _redirect_with_params(
-                {"error": "Custom categories require TYPESAFE_API_KEY on the server."}
-            )
+
+    # The decision model only matters when custom categories are enabled. The
+    # chosen model is always stored, so the run uses what the dashboard showed
+    # even if config.json names a different default.
+    dec_model = (decision_model or "").strip() or None if categories else None
+    if categories and dec_model is None:
+        dec_model = RECOMMENDED_DECISION_MODEL
+    elif dec_model not in (None, RECOMMENDED_DECISION_MODEL):
+        await _get_model_catalog()
+        if dec_model not in _allowed_model_ids("decision"):
+            return RedirectResponse(url="/?error=Unknown+decision+model", status_code=303)
 
     model = (llm_model or "").strip() or None
     if model == RECOMMENDED_MODEL:
@@ -1771,6 +1831,7 @@ async def enqueue_job(
         research_fallback=fallback_enabled,
         research_model=res_model,
         custom_categories=categories,
+        decision_model=dec_model,
     )
     return RedirectResponse(url="/?message=Job+queued", status_code=303)
 

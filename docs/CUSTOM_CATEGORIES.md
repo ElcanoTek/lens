@@ -1,8 +1,13 @@
-# Custom categories with TypeSafe
+# Custom categories
 
 Lens can add your own labels alongside its standard quality and IAB analysis.
+A *decision model* answers them: a model that returns typed answers with
+probabilities instead of prose. Lens reaches every decision model through
+OpenRouter, so no extra key is needed. TypeSafe's Jev is the default.
+
 Enable **Custom categories → Add your own categories** in the dashboard's
-**Ready to analyze** panel, then add up to 12 questions:
+**Ready to analyze** panel, pick a **Decision model**, then add up to 12
+questions:
 
 - **Yes / no:** an independent label, e.g. “Would a mainstream brand be
   comfortable appearing beside this content?” Several labels can apply at once.
@@ -24,40 +29,55 @@ JSON definitions for reuse in the CLI.
 
 ## Server setup
 
-Set `TYPESAFE_API_KEY` in the server's `.env` (or environment) and restart Lens.
+None beyond the `OPENROUTER_API_KEY` Lens already requires. Lens calls
+OpenRouter's Decisions API (`POST https://openrouter.ai/api/alpha/decisions`)
+with the existing async HTTP dependency.
 
-For website research fallback and CTV research, Lens also sends the custom
-questions (including multiple-choice options) to the research model so its
-summary can include relevant evidence. TypeSafe still makes the custom judgment
-in a separate call. A research summary is indirect evidence: missing details are
-not proof of absence, and these labels do not inspect images or video.
+The dashboard's **Decision model** dropdown lists OpenRouter's paid decision
+models, refreshed hourly; free tiers are left out because their rate limits
+stall batch runs. `~typesafe/jev-latest` is recommended and tracks Jev's newest
+release. The CLI and `config.json` use `decision_model`, and `--decision-model`
+overrides it for one run. Each dashboard run stores the model it was queued
+with, and the model OpenRouter actually used is saved with every result.
 
-Fresh installs offer an optional, hidden-input TypeSafe key prompt during
-bootstrap—press Enter to skip. Unattended bootstrap accepts `TYPESAFE_API_KEY`
-from its environment and skips the feature when it is absent. Re-running
-bootstrap preserves a key already in `.env`.
+Jev always returns a probability for every choice option and a confidence.
+OpenRouter's schema makes both optional, so some other decision models return
+only the selected option. Lens then leaves those columns blank rather than
+inventing values.
 
-For an existing installation:
+### Optional TypeSafe fallback
+
+The Decisions API is still alpha. For resilience, set `TYPESAFE_API_KEY` in the
+server's `.env` and restart Lens. When the selected model is Jev
+(`~typesafe/jev-latest` or a pinned `typesafe/jev-<version>`) and the OpenRouter
+request fails after its retries, Lens sends the same question once to TypeSafe's
+own endpoint (`https://api.typesafe.ai/v1/systemone`). Those rows show
+`Decision_Provider=TypeSafe (direct)`. Other models never use the fallback.
 
 ```bash
 sudo lens env edit   # add TYPESAFE_API_KEY=your-key
 sudo lens restart
 ```
 
-The dashboard hides the custom-category options until the key is configured. The key
-stays on the server and is never stored with jobs, in browser storage, or in CSVs.
-The existing `OPENROUTER_API_KEY` is still required.
+Bootstrap offers an optional, hidden-input prompt for this key; press Enter to
+skip. Unattended bootstrap accepts `TYPESAFE_API_KEY` from its environment and
+preserves a key already in `.env`. Keys stay on the server and are never stored
+with jobs, in browser storage, or in CSVs.
 
-Lens calls `https://api.typesafe.ai/v1/systemone` with `jev-latest`, using the
-existing async HTTP dependency. No additional package installation is needed.
-The resolved model returned by TypeSafe is saved with each successful result.
+For website research fallback and CTV research, Lens also sends the custom
+questions (including multiple-choice options) to the research model so its
+summary can include relevant evidence. The decision model still makes the
+custom judgment in a separate call. A research summary is indirect evidence:
+missing details are not proof of absence, and these labels do not inspect
+images or video.
 
 ## CLI
 
 ```bash
 python main.py --input-csv inventory.csv \
   --output-csv custom-output.csv --progress-file custom-progress.json \
-  --custom-categories examples/custom-categories.json
+  --custom-categories examples/custom-categories.json \
+  --decision-model '~typesafe/jev-latest'   # optional; this is the default
 ```
 
 The optional `--custom-categories JSON_FILE` flag accepts this format:
@@ -83,7 +103,7 @@ same in the dashboard and CLI.
 Custom categories run after a successful standard analysis, using the original
 scraped text, store metadata, or research summary—not the standard classifier's
 short description. Research-based answers are judgments about that summary.
-There is no screenshot or image analysis. TypeSafe receives the identifier,
+There is no screenshot or image analysis. The decision model receives the identifier,
 title, source type, and up to 24,000 characters of evidence. All questions for
 one item are batched into one request, with at most four requests in flight.
 
@@ -95,23 +115,27 @@ When enabled, CSVs gain:
 | `P(yes/choice): <name>` | Probability of **yes**, even for a No label; for choices, probability of the selected option |
 | `Confidence: <name>` | Choice only. How sure the selection is, separate from the option's probability |
 | `P: <name> / <option>` | Choice only. That option's probability, one column per option, in definition order. Sort or filter these without opening the JSON |
-| `TypeSafe_Status` | `success`, `error`, or `skipped`. After the answer columns |
-| `TypeSafe_Error` | Sanitized failure or skip reason |
-| `TypeSafe_Model` | Actual model used |
-| `TypeSafe_Answers` | JSON with the same answers, for anything a column does not already show |
+| `Decision_Status` | `success`, `error`, or `skipped`. After the answer columns |
+| `Decision_Error` | Sanitized failure or skip reason |
+| `Decision_Model` | Actual model used, e.g. `typesafe/jev-1.13-20260917` |
+| `Decision_Provider` | Who served it, as OpenRouter reports it, or `TypeSafe (direct)` for the fallback |
+| `Decision_Answers` | JSON with the same answers, for anything a column does not already show |
+
+Earlier releases named these columns `TypeSafe_*`. Resuming such a run renames
+them in place and keeps their values.
 
 Yes/no labels use a 0.5 cutoff. A value near 0.5 means uncertainty between yes
 and no, not medium intensity. It has no separate confidence score. Validate your
 questions and thresholds on examples representative of your inventory.
 
-A TypeSafe failure leaves the successful quality/IAB result intact and the
-custom labels **blank**, with `TypeSafe_Status=error`. It is never converted to
+A decision-model failure leaves the successful quality/IAB result intact and
+the custom labels **blank**, with `Decision_Status=error`. It is never converted to
 No or Unknown. Transient HTTP/connection errors retry at most twice with backoff;
 authentication and validation errors do not retry. Primary-analysis failures
 skip custom categorization. Standard progress counts still describe standard
-analysis; inspect `TypeSafe_Status` for custom-category coverage.
+analysis; inspect `Decision_Status` for custom-category coverage.
 
-The optional feature makes no TypeSafe calls and adds no columns when off.
+The optional feature makes no decision-model calls and adds no columns when off.
 
 ## Resuming and rerunning
 
@@ -120,5 +144,5 @@ Lens saves definitions in the progress file and beside the CSV as
 enabling, or disabling categories on existing results is rejected rather than
 mixing different meanings under the same columns. Use **new output and progress
 paths** (or a new dashboard run) to change definitions or retry custom errors.
-Standard successes remain processed even when their optional TypeSafe request
+Standard successes remain processed even when their optional decision request
 failed; a resume does not repeat them or charge for their primary analysis again.

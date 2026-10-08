@@ -43,8 +43,9 @@ output, progress and log artifacts.](docs/images/dashboard.png)
 - **Rich output.** Quality tier, justification, IAB tiers 1–3, description,
   language, political leaning, audience size, bot protection, content length,
   which rung of the ladder produced the data, and a timestamp.
-- **Your own categories.** Optional TypeSafe yes/no labels or multiple-choice
-  categories alongside standard results, with raw probabilities.
+- **Your own categories.** Optional yes/no labels or multiple-choice
+  categories alongside standard results, with raw probabilities, answered by
+  an OpenRouter decision model (TypeSafe's Jev by default).
   [Setup and examples](docs/CUSTOM_CATEGORIES.md).
 - **A web dashboard, or just the CLI.** The FastAPI dashboard adds uploads, a
   one-at-a-time job queue, live progress and artifact downloads. The CLI needs
@@ -228,10 +229,10 @@ CTV runs emit a wider set including `Bundle_ID`, `SSP`, `Publisher`,
 ## Optional custom categories
 
 Add your own yes/no labels or multiple-choice categories alongside Lens's
-standard analysis, powered by TypeSafe. Configure `TYPESAFE_API_KEY` on the server
-and restart Lens; the editor appears only when a key is configured. Bootstrap
-offers an optional key prompt; existing installs can use `sudo lens env edit`
-and `sudo lens restart`.
+standard analysis, answered by a decision model through OpenRouter: TypeSafe's
+Jev by default, or any other decision model picked from the dropdown. It uses
+the same `OPENROUTER_API_KEY` as the rest of Lens. An optional `TYPESAFE_API_KEY`
+adds a direct-to-TypeSafe fallback for Jev requests that fail on OpenRouter.
 
 ![Custom category editor with a Brand safe yes/no label and a multiple-choice Purpose category](docs/images/custom-categories.png)
 
@@ -239,10 +240,10 @@ and `sudo lens restart`.
 
 1. Upload and select your input file. Open **Custom categories** and check
    **Add your own categories**.
-2. Enter a **category name**, which becomes a CSV column label. Choose **Yes / no**
+2. Pick a **Decision model** (Jev is recommended). Enter a **category name**, which becomes a CSV column label. Choose **Yes / no**
    for an independent label, or **Multiple choice** for one answer from 2–12
    options (one option per line).
-3. Write a specific question, and define what the label means so TypeSafe
+3. Write a specific question, and define what the label means so the model
    judges the idea rather than a list of topics. For example, name a label
    **Brand safe** and ask “Would a mainstream household brand be comfortable
    appearing beside this content? Judge trust, not topic: honest journalism,
@@ -258,11 +259,12 @@ and `sudo lens restart`.
    can sort by how likely one answer is without parsing JSON.
 
 Definitions are remembered in your browser, but the feature switches off after
-a page reload—enable it again for the next run. TypeSafe evaluates source text,
+a page reload—enable it again for the next run. The model evaluates source text,
 app-store descriptions, or research summaries, **not images or video**, and adds
 an API call per successfully analyzed item. Missing research details are not
-proof of absence. If TypeSafe fails, standard results remain available, custom
-labels stay blank, and `TypeSafe_Status` / `TypeSafe_Error` explain the failure.
+proof of absence. If the decision model fails, standard results remain available,
+custom labels stay blank, and `Decision_Status` / `Decision_Error` explain the
+failure.
 
 For CLI use, add `--custom-categories examples/custom-categories.json` to your
 normal command. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for the JSON
