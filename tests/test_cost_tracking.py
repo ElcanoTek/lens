@@ -108,6 +108,18 @@ async def test_every_billed_openrouter_response_is_recorded_including_retried_on
     }
 
 
+async def test_connection_check_is_part_of_the_run_total():
+    run = run_meter()
+    client = OpenRouterClient(api_key="k")
+    response = Mock(usage={"cost": 0.000004}, model="openai/gpt-6-luna")
+    response.model_dump.return_value = {"choices": [{"message": {"content": "OK"}}]}
+    client._client = Mock()
+    client._client.chat.completions.create = AsyncMock(return_value=response)
+    client._extract_body_error = lambda r: None
+    assert await client.test_connection() is True
+    assert run.snapshot()["calls"] == 1 and run.snapshot()["usd"] == 0.000004
+
+
 class Response:
     def __init__(self, status=200, data=None):
         self.status, self.data = status, data

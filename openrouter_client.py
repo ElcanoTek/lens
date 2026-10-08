@@ -314,6 +314,14 @@ class OpenRouterClient:
             self._fallback_active = True
             return True
 
+    @staticmethod
+    def _record_cost(response: Any) -> None:
+        """Add a response's OpenRouter-reported cost to the run and item meters."""
+        cost_tracking.record(
+            cost_tracking.cost_from_usage(getattr(response, "usage", None)),
+            str(getattr(response, "model", "") or ""),
+        )
+
     async def _call_api_with_retry(
         self,
         api_call_func,
@@ -347,10 +355,7 @@ class OpenRouterClient:
                 result = await api_call_func(*args, **kwargs)
                 # Every response OpenRouter returns has been billed, including
                 # ones that are then retried or rejected below.
-                cost_tracking.record(
-                    cost_tracking.cost_from_usage(getattr(result, "usage", None)),
-                    str(getattr(result, "model", "") or ""),
-                )
+                self._record_cost(result)
                 body_error = self._extract_body_error(result)
                 if body_error:
                     # Surface OpenRouter's body-embedded provider error as an
@@ -1517,6 +1522,8 @@ Analyze the app and provide your classification:"""
                 temperature=0.0,
                 max_tokens=16,
             )
+            # Not routed through _call_api_with_retry, but billed all the same.
+            self._record_cost(response)
 
             body_error = self._extract_body_error(response)
             if body_error:
