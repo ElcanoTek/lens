@@ -177,7 +177,7 @@ again to fill missing configuration; use `lens env edit` to change existing valu
 /etc/systemd/system/lens.service
 /etc/systemd/system/firecrawl.service   (optional)
 /usr/local/bin/lens                     operator CLI
-/etc/caddy/conf.d/lens.caddy            (optional)
+/etc/caddy/Caddyfile.d/lens.caddyfile   (optional; or conf.d/lens.caddy)
 /etc/motd
 ```
 
@@ -299,10 +299,15 @@ state, not part of a release.
 
 ### Caddy (recommended, and what bootstrap installs)
 
-Give bootstrap a hostname and it does the rest: `dnf install caddy`, appends
-`import conf.d/*.caddy` to `/etc/caddy/Caddyfile` if absent, writes the ACME
-contact email as a global option, and renders `deploy/lens.caddy` into
-`/etc/caddy/conf.d/lens.caddy` with `{{HOSTNAME}}` substituted. The site block
+Give bootstrap a hostname and it does the rest: `dnf install caddy`, writes the
+ACME contact email as a global option, and renders `deploy/lens.caddy` with
+`{{HOSTNAME}}` substituted into a directory `/etc/caddy/Caddyfile` already
+imports. On stock Fedora that is `/etc/caddy/Caddyfile.d/lens.caddyfile`; when
+no usable import exists, bootstrap appends `import conf.d/*.caddy` and writes
+`/etc/caddy/conf.d/lens.caddy`. Before opening the firewall it checks that the
+configuration validates and that Caddy actually loads a Lens proxy for the
+hostname, and it removes its own copies left in a directory that is no longer
+imported (files without the first-line marker are never touched). The site block
 reverse-proxies to `127.0.0.1:8808` and sets HSTS, `X-Content-Type-Options`,
 `X-Frame-Options: DENY` and a strict referrer policy.
 
