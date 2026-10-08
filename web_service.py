@@ -28,6 +28,7 @@ from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
 
 import auth_cookie
+import cost_tracking
 from auth_provider import CentralAuthProvider, ElcanoAuthProvider, get_auth_provider
 from central_auth import (
     LOGIN_TRANSACTION_SECONDS,
@@ -398,6 +399,34 @@ def _stamp_retry_rate(progress: Dict[str, object]) -> Dict[str, object]:
     return progress
 
 
+def _format_cost(usd: float) -> str:
+    if usd <= 0:
+        return "$0"
+    if usd < 0.001:
+        return "<$0.001"
+    return f"${usd:.3f}" if usd < 1 else f"${usd:,.2f}"
+
+
+def _cost_fields(payload: Dict[str, object]) -> Dict[str, object]:
+    """Run spend saved by the job (OpenRouter-reported), for the Runs table."""
+    cost = payload.get("cost")
+    if not isinstance(cost, dict):
+        return {"cost_text": "", "cost_title": ""}
+    usd = cost_tracking.parse_cost(cost.get("usd")) or 0.0
+    calls = cost.get("calls") if isinstance(cost.get("calls"), int) else 0
+    unpriced = cost.get("unpriced_calls") if isinstance(cost.get("unpriced_calls"), int) else 0
+    title = f"OpenRouter spend reported for this run: ${usd:.4f} over {calls} model calls"
+    if unpriced:
+        title += f"; {unpriced} without a reported cost (not included)"
+    return {
+        "cost_usd": usd,
+        "cost_calls": calls,
+        "cost_unpriced_calls": unpriced,
+        "cost_text": _format_cost(usd) + ("+" if unpriced else ""),
+        "cost_title": title,
+    }
+
+
 def _read_progress(path: Path) -> Dict[str, object]:
     if not path.exists() or not path.is_file():
         return {}
@@ -412,7 +441,7 @@ def _read_progress(path: Path) -> Dict[str, object]:
 
     summary = payload.get("summary")
     if isinstance(summary, dict):
-        return _stamp_retry_rate(dict(summary))
+        return _stamp_retry_rate({**summary, **_cost_fields(payload)})
 
     # The progress JSON written by ProgressTracker stores raw counters with
     # different key names than the summary dict the UI expects.  Derive the
@@ -460,6 +489,7 @@ def _read_progress(path: Path) -> Dict[str, object]:
         out["start_time"] = payload["start_time"]
     if "last_update" in payload:
         out["last_update"] = payload["last_update"]
+    out.update(_cost_fields(payload))
 
     return _stamp_retry_rate(out)
 
@@ -1507,6 +1537,8 @@ async def index(request: Request):
             "ok_pct": _seg(successful_n),
             "retry_pct": _seg(retrying_n),
             "fail_pct": _seg(errors_n),
+            "cost_text": progress.get("cost_text", ""),
+            "cost_title": progress.get("cost_title", ""),
         }
 
     # Group persisted artifacts on disk by the job id encoded in their names.
@@ -1595,6 +1627,8 @@ async def index(request: Request):
                     "ok_pct": round(successful / total * 100.0, 2) if total else 0.0,
                     "retry_pct": 0.0,
                     "fail_pct": round(errors / total * 100.0, 2) if total else 0.0,
+                    "cost_text": progress.get("cost_text", ""),
+                    "cost_title": progress.get("cost_title", ""),
                 },
                 "output_file": group.get("output_file"),
                 "progress_file": progress_file,

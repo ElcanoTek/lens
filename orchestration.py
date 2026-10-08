@@ -14,6 +14,7 @@ from typing import Dict, Iterable, List, Optional
 
 import pandas as pd
 
+import cost_tracking
 from android_scraper import AndroidScraper
 from app_processor import AppProcessor
 from config import DEFAULT_LLM_MODEL, config
@@ -244,6 +245,13 @@ class SiteAnalysisOrchestrator:
         run_start = time.perf_counter()
         reporter_started = False
 
+        # Resumed runs keep counting from the spend already recorded.
+        cost_meter = cost_tracking.CostMeter.restore(
+            self.progress_tracker.progress_data.get("cost")
+        )
+        self.progress_tracker.cost_meter = cost_meter
+        cost_tracking.start_run(cost_meter)
+        calls_at_start = cost_meter.calls
         try:
             await self._prepare_custom_categories()
             # Route to CTV workflow if in CTV mode
@@ -357,6 +365,18 @@ class SiteAnalysisOrchestrator:
         finally:
             if reporter_started and self.reporter:
                 self.reporter.stop()
+            if cost_meter.calls != calls_at_start:
+                # Calls made after the last item save (or with no items at
+                # all, like the connection test) still belong to the run.
+                await self.progress_tracker.save_progress()
+                logger.info(
+                    "OpenRouter spend for this run: $%.4f over %d calls%s",
+                    cost_meter.usd,
+                    cost_meter.calls,
+                    f" ({cost_meter.unpriced_calls} without a reported cost)"
+                    if cost_meter.unpriced_calls
+                    else "",
+                )
 
     def _load_input_data(self) -> List[WorkItem]:
         """Load and validate input data with auto-detection of content types."""

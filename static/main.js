@@ -517,6 +517,12 @@ applySegmentWidths(document);
       eta.textContent = estimateEta(progress, job.started_at, job.status);
     }
 
+    const cost = jobRow.querySelector(".queue-progress-cost");
+    if (cost && progress.cost_text) {
+      cost.textContent = progress.cost_text;
+      cost.title = progress.cost_title || "";
+    }
+
     setBadge(jobRow.querySelector(".status-badge"), job.status);
     jobRow.dataset.status = String(job.status || "").toLowerCase();
   }
@@ -670,6 +676,9 @@ applySegmentWidths(document);
           `<div class="completion-stat"><span class="completion-label">Succeeded</span><span class="completion-value completion-success">${s}</span></div>` +
           `<div class="completion-stat"><span class="completion-label">Failed</span><span class="completion-value completion-fail">${e}</span></div>` +
           `<div class="completion-stat"><span class="completion-label">Duration</span><span class="completion-value">${durationText}</span></div>` +
+          (prog.cost_text
+            ? `<div class="completion-stat" title="${escapeHtml(prog.cost_title || "")}"><span class="completion-label">Cost</span><span class="completion-value">${escapeHtml(prog.cost_text)}</span></div>`
+            : "") +
           `</div>`;
         completionBanner.hidden = false;
       } else {

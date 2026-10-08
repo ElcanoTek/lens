@@ -251,6 +251,7 @@ class Config:
             "Scrape_Mode",  # Scrape mode: direct, deep, ios_api, android_scrape
             "Classifier_Mode",  # Classifier mode: openrouter
             "Scraped_At",  # ISO timestamp of when data was fetched
+            "Cost_USD",  # OpenRouter-reported spend for this row's model calls
         ]
 
         # CTV-specific CSV fieldnames
@@ -279,6 +280,7 @@ class Config:
             "Research_Model",  # Model used for research
             "Classification_Model",  # Model used for classification
             "Processed_At",  # ISO timestamp of when data was processed
+            "Cost_USD",  # OpenRouter-reported spend for this row's model calls
         ]
 
     def save_config(self):

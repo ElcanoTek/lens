@@ -197,6 +197,17 @@ This applies to website, mobile-app and CTV classification, not research calls.
 CTV rejects empty/insufficient research before classification, and passes the
 input publisher into both research and classification prompts.
 
+### Cost tracking
+
+`cost_tracking.py` records OpenRouter's reported `usage.cost` for every billed
+response: `OpenRouterClient._call_api_with_retry` (every chat call, including
+ones that are then retried) and the Decisions request in `custom_categories.py`.
+Two `ContextVar` meters keep concurrent items apart: the orchestrator installs a
+run meter (restored from and saved to the progress file's `cost` key), and
+`@cost_tracking.per_item` on each processor entry point opens an item meter that
+`_write_result` reads into `Cost_USD`. A new processor entry point needs the
+decorator, and a new model call path must call `cost_tracking.record`.
+
 ### Web service spawns subprocesses
 
 `web_service.py` runs `main.py` as a subprocess for each job, passing CLI args. It does **not** import the pipeline directly. This means environment variables and CLI flags are the only way to configure job execution.
