@@ -28,6 +28,10 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 # shellcheck source=lib/deploy.sh
 . "$SRC_DIR/scripts/lib/deploy.sh"
+# runuser keeps the caller's working directory. Started from /root, the service
+# user's uv and podman fail on the unreadable cwd (uv: "failed to open file
+# /root/uv.toml: Permission denied"). update.sh does the same.
+cd "$SRC_DIR"
 ENV_FILE="$APP_DIR/.env"
 CLI_TARGET="/usr/local/bin/lens"
 

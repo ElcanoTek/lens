@@ -95,6 +95,13 @@ def test_bootstrap_typesafe_env_roundtrip_preserves_existing_key(tmp_path, exist
     assert "existing-secret" not in result.stdout + result.stderr
 
 
+@pytest.mark.parametrize("script", ["bootstrap.sh", "update.sh"])
+def test_service_user_commands_never_run_from_the_callers_cwd(script):
+    # runuser keeps the cwd; from root's unreadable home, uv and podman fail.
+    source = (ROOT / "scripts" / script).read_text()
+    assert 0 <= source.index('cd "$SRC_DIR"') < source.index("runuser -u")
+
+
 @pytest.mark.skipif(not shutil.which("rsync"), reason="deployment integration needs rsync")
 def test_deploy_and_rollback_preserve_instance_data(tmp_path):
     live, stage, backup = [tmp_path / name for name in ("live", "stage", "backup")]
