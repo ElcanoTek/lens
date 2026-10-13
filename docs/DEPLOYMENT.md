@@ -240,13 +240,13 @@ the same list grouped by concern.
 | `retry_follow_redirects` | `true` | Deep retry pass follows cross-host brand→parent redirects (e.g. `foxnewsdigital.com` → `foxnews.com`) that the direct pass rejects. A legacy `firecrawl_follow_redirects` is honoured when this is unset. |
 | `deep_scrape_podman_binary` | `podman` | Container runtime |
 | `deep_scrape_image` | `docker.io/selenium/standalone-chrome:latest` | Fully qualified on purpose — Podman refuses short names without a TTY |
-| `deep_scrape_container_name` | `elcano-lens-chromedriver` | Container name |
-| `deep_scrape_port` | `4444` | ChromeDriver port |
+| `deep_scrape_container_name` | `elcano-lens-chromedriver` | Container name prefix; each run uses `<name>-<pid>` on free ports so parallel jobs never share a browser |
+| `deep_scrape_port` | `4444` | ChromeDriver port, used only with `deep_scrape_keep_container` |
 | `deep_scrape_vnc_port` | `7900` | noVNC port for watching a scrape |
 | `deep_scrape_extra_args` | `[]` | Extra `podman run` arguments |
 | `deep_scrape_startup_timeout` | `45` | Seconds to wait for ChromeDriver |
 | `deep_scrape_wait_after_load` | `1.0` | Settle time after page load |
-| `deep_scrape_keep_container` | `false` | Leave the container up after a run |
+| `deep_scrape_keep_container` | `false` | Leave the container up after a run and reuse it by its fixed name and port (one job at a time) |
 | `deep_scrape_pull_policy` | `always` | Refresh Chrome every run |
 | `research_fallback_enabled` | `true` | Classify blocked sites from public research instead of failing them |
 | `research_model` | `perplexity/sonar` | Needs built-in web search. `perplexity/sonar-pro` is also supported. |
