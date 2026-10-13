@@ -580,6 +580,7 @@ def test_id_token_identity_comes_from_the_signed_token() -> None:
         ({}, {"aud": "explorer"}),
         ({}, {"aud": ["lens"]}),
         ({}, {"iss": "https://evil.example.com"}),
+        ({}, {"iss": "https://auth.example.com/"}),
         ({}, {"iss": None}),
         ({}, {"exp": 900}),
         ({}, {"exp": None}),
@@ -702,3 +703,123 @@ def test_code_exchange_accepts_a_key_only_published_in_jwks(monkeypatch) -> None
         code="c", verifier="v", expected_nonce="expected-nonce", key_resolver=resolver
     )
     assert principal.subject == "account-123"
+
+
+def _resign(raw: str, private_key: Ed25519PrivateKey, **header_changes: object) -> str:
+    """The same claims under a changed header, validly signed."""
+    header_part, claims_part, _ = raw.split(".")
+    header = json.loads(base64.urlsafe_b64decode(header_part + "=" * (-len(header_part) % 4)))
+    header.update(header_changes)
+    body = f"{_encode(header)}.{claims_part}"
+    signature = base64.urlsafe_b64encode(private_key.sign(body.encode())).rstrip(b"=").decode()
+    return f"{body}.{signature}"
+
+
+@pytest.mark.parametrize("kid", ["é", "kid with spaces", "", 7, None])
+def test_a_malformed_kid_is_an_invalid_token_not_a_crash(kid) -> None:
+    signer = Ed25519PrivateKey.generate()
+    id_token, public_b64 = _mint_id_token(signer)
+    logout, _ = _mint_logout(signer)
+    access, _ = _mint_access(signer)
+    common = {"issuer": "https://auth.example.com", "audience": "lens", "public_keys": [public_b64]}
+    with pytest.raises(CentralAuthError):
+        verify_id_token(
+            _resign(id_token, signer, kid=kid), expected_nonce="expected-nonce", now=1_010, **common
+        )
+    with pytest.raises(CentralAuthError):
+        verify_logout_token(_resign(logout, signer, kid=kid), now=1_200, **common)
+    with pytest.raises(CentralAuthError):
+        verify_access_token(_resign(access, signer, kid=kid), now=1_200, **common)
+
+
+@pytest.mark.parametrize("field", ["nonce", "sub", "email"])
+def test_id_token_with_unencodable_text_is_refused_not_a_crash(field) -> None:
+    signer = Ed25519PrivateKey.generate()
+    value = {"nonce": "\ud800", "sub": "account-\ud800", "email": "al\ud800ice@example.com"}[field]
+    raw, public_b64 = _mint_id_token(signer, **{field: value})
+    with pytest.raises(CentralAuthError):
+        verify_id_token(
+            raw,
+            issuer="https://auth.example.com",
+            audience="lens",
+            expected_nonce="expected-nonce",
+            public_keys=[public_b64],
+            now=1_010,
+        )
+
+
+def test_an_empty_id_token_is_refused_without_fetching_keys(monkeypatch) -> None:
+    fetches = []
+
+    def fetch(url, timeout):
+        fetches.append(url)
+        return _jwks_for()
+
+    resolver = AuthKeyResolver("https://auth.example.com", [], fetch=fetch, now=lambda: 1_000.0)
+    _token_endpoint(monkeypatch, {"id_token": ""})
+    with pytest.raises(CentralAuthError):
+        _client().exchange(
+            code="c", verifier="v", expected_nonce="expected-nonce", key_resolver=resolver
+        )
+    assert fetches == []
+
+
+def _rotation_fixture(fetch):
+    static = Ed25519PrivateKey.generate()
+    static_b64 = base64.b64encode(static.public_key().public_bytes_raw()).decode()
+    remote = Ed25519PrivateKey.generate()
+    remote_b64 = base64.b64encode(remote.public_key().public_bytes_raw()).decode()
+    clock = {"now": 1_000.0}
+    published = {"keys": [static_b64, remote_b64], "fail": False, "calls": 0}
+
+    def jwks(url, timeout):
+        published["calls"] += 1
+        if published["fail"]:
+            raise OSError("auth unreachable")
+        return _jwks_for(*published["keys"])
+
+    resolver = AuthKeyResolver(
+        "https://auth.example.com", [static_b64], fetch=fetch or jwks, now=lambda: clock["now"]
+    )
+    return resolver, clock, published, (static, static_b64), (remote, remote_b64)
+
+
+def test_a_retired_jwks_key_stops_verifying_once_the_cache_is_stale() -> None:
+    resolver, clock, published, _, (remote, remote_b64) = _rotation_fixture(None)
+    token, _ = _mint_id_token(remote)
+    assert remote_b64 in resolver.keys_for_token(token)
+    clock["now"] += 5 * 60
+    assert remote_b64 in resolver.keys_for_token(token), "fresh cache is trusted"
+    published["keys"] = published["keys"][:1]  # Auth retires the remote key
+    clock["now"] += 6 * 60  # past the 10-minute cache
+    assert remote_b64 not in resolver.keys_for_token(token)
+    with pytest.raises(CentralAuthError):
+        verify_id_token(
+            token,
+            issuer="https://auth.example.com",
+            audience="lens",
+            expected_nonce="expected-nonce",
+            public_keys=resolver.keys_for_token(token),
+            now=1_010,
+        )
+
+
+def test_a_cached_jwks_key_survives_a_failed_refresh() -> None:
+    resolver, clock, published, _, (remote, remote_b64) = _rotation_fixture(None)
+    token, _ = _mint_id_token(remote)
+    assert remote_b64 in resolver.keys_for_token(token)
+    published["fail"] = True
+    clock["now"] += 11 * 60
+    assert remote_b64 in resolver.keys_for_token(token)
+    assert published["calls"] == 2, "a stale remote key prompts a refresh"
+
+
+def test_a_static_key_never_waits_on_jwks() -> None:
+    def must_not_fetch(url, timeout):
+        raise AssertionError("a static-key token fetched /jwks.json")
+
+    resolver, clock, _, (static, static_b64), _ = _rotation_fixture(must_not_fetch)
+    token, _ = _mint_id_token(static)
+    assert static_b64 in resolver.keys_for_token(token)  # cold cache
+    clock["now"] += 60 * 60
+    assert static_b64 in resolver.keys_for_token(token)  # long-stale cache

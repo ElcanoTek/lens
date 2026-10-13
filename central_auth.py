@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import time
@@ -134,6 +135,18 @@ def _decode_b64url(segment: str) -> bytes:
         raise CentralAuthError("The logout token was invalid") from exc
 
 
+_KID = re.compile(r"[A-Za-z0-9_-]+")
+
+
+def _equal_text(received: str, expected: str) -> bool:
+    """Constant-time string equality; text that cannot be UTF-8 encoded (a
+    lone surrogate from a JSON escape) is simply not equal."""
+    try:
+        return hmac.compare_digest(received.encode("utf-8"), expected.encode("utf-8"))
+    except UnicodeEncodeError:
+        return False
+
+
 def _verify_signed_token(raw: str, *, typ: str, public_keys: list[str], error: str) -> dict:
     """Claims of an Auth-signed compact JWS, once its structure, header and
     Ed25519 signature check out. `typ` and `alg` must match exactly and `kid`
@@ -152,6 +165,8 @@ def _verify_signed_token(raw: str, *, typ: str, public_keys: list[str], error: s
         or not isinstance(claims, dict)
         or header.get("typ") != typ
         or header.get("alg") != "EdDSA"
+        or not isinstance(header.get("kid"), str)
+        or not _KID.fullmatch(header["kid"])
     ):
         raise CentralAuthError(error)
     for encoded in public_keys:
@@ -160,7 +175,8 @@ def _verify_signed_token(raw: str, *, typ: str, public_keys: list[str], error: s
             kid = (
                 base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
             )
-            if len(public) != 32 or not hmac.compare_digest(str(header.get("kid", "")), kid):
+            # kid names a public key, so plain equality leaks nothing.
+            if len(public) != 32 or header["kid"] != kid:
                 continue
             Ed25519PublicKey.from_public_bytes(public).verify(
                 signature, f"{header_part}.{claims_part}".encode("ascii")
@@ -293,9 +309,10 @@ def verify_id_token(
         or len(subject) > 255
         or not isinstance(email, str)
         or not isinstance(nonce, str)
-        or not hmac.compare_digest(nonce.encode(), expected_nonce.encode())
-        or not isinstance(token_issuer, str)
-        or token_issuer.rstrip("/") != issuer.rstrip("/")
+        or not _equal_text(nonce, expected_nonce)
+        # Exact: Auth emits its issuer without a trailing slash, and the
+        # configured issuer is canonicalised the same way (_origin).
+        or token_issuer != issuer.rstrip("/")
         or claims.get("aud") != audience
         or isinstance(expires_at, bool)
         or not isinstance(expires_at, int)
@@ -307,8 +324,10 @@ def verify_id_token(
     ):
         raise CentralAuthError(error)
     try:
+        subject.encode("utf-8")
         normalized = normalize_email(email)
-    except ValueError as exc:
+        normalized.encode("utf-8")
+    except ValueError as exc:  # UnicodeEncodeError is a ValueError
         raise CentralAuthError(error) from exc
     return AuthenticatedPrincipal(subject, normalized, nonce)
 
@@ -411,14 +430,18 @@ class AuthKeyResolver:
         return True
 
     def keys_for_token(self, raw_token: str) -> list[str]:
-        """Keys to try for one token: refresh once if its kid is unknown."""
+        """Keys to try for one token.
+
+        A kid naming a static (env) key never waits on Auth's JWKS endpoint,
+        so revocation and provisioning keep working while Auth restarts. A key
+        known only from /jwks.json is trusted while the cache is fresh; once
+        stale, the document is fetched again, so a key Auth has retired stops
+        verifying (a failed fetch keeps the cached keys). An unknown kid
+        triggers one throttled refresh.
+        """
         kid = _token_kid(raw_token)
-        # A token naming an already configured/cached key must not wait on
-        # Auth's JWKS endpoint. Besides avoiding a cold-start delay, this keeps
-        # revocation and provisioning available while Auth itself is restarting.
-        keys = list(dict.fromkeys(self.static_keys + self._remote_keys))
-        if kid is not None and any(_kid_for_key(key) == kid for key in keys):
-            return keys
+        if kid is not None and any(_kid_for_key(key) == kid for key in self.static_keys):
+            return list(dict.fromkeys(self.static_keys + self._remote_keys))
         keys = self.public_keys()
         if kid is not None and not any(_kid_for_key(key) == kid for key in keys):
             if self.refresh():
@@ -589,13 +612,13 @@ class CentralAuthClient:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise CentralAuthError("The authentication response was invalid") from exc
         id_token = payload.get("id_token") if isinstance(payload, dict) else None
-        if not isinstance(id_token, str):
+        if not isinstance(id_token, str) or not id_token:
             raise CentralAuthError("The authentication response was invalid")
-        # TLS and client authentication already bind this response to Auth,
-        # which OIDC accepts on its own for a direct /token call. Verifying
-        # the signature as well means a wrong AUTH_ISSUER_URL, an intercepting
-        # proxy or a mis-issued certificate still cannot name the signed-in
-        # user: only Auth's signing key can.
+        # Auth's contract: the identity is the signed id_token, verified
+        # against Auth's published keys, not the unsigned copy of its claims
+        # in this JSON. The keys come from the same issuer over the same TLS,
+        # so this does not defend against a mis-pointed AUTH_ISSUER_URL or a
+        # party terminating that TLS; it binds the sign-in to Auth's key.
         return verify_id_token(
             id_token,
             issuer=self.issuer_url,

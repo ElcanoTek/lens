@@ -45,9 +45,10 @@ class FakeCentralClient:
         return AuthenticatedPrincipal("account-123", "alice@example.com", expected_nonce)
 
 
-def _logout_token(private_key: Ed25519PrivateKey) -> str:
+def _logout_token(private_key: Ed25519PrivateKey, *, kid: str | None = None) -> str:
     public = private_key.public_key().public_bytes_raw()
-    kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    if kid is None:
+        kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
 
     def encode(value):
         return (
@@ -142,9 +143,11 @@ async def test_central_login_creates_lens_only_session_and_backchannel_revokes(
         assert "Try again" in rejected.text
 
 
-def _id_token(private_key: Ed25519PrivateKey, nonce: str) -> str:
+def _id_token(private_key: Ed25519PrivateKey, nonce: str, *, kid: str | None = None) -> str:
     public = private_key.public_key().public_bytes_raw()
-    kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    default_kid = (
+        base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    )
 
     def encode(value):
         return (
@@ -166,7 +169,8 @@ def _id_token(private_key: Ed25519PrivateKey, nonce: str) -> str:
         "amr": ["pwd"],
         "acr": "urn:elcanotek:loa:1",
     }
-    body = f"{encode({'typ': 'JWT', 'alg': 'EdDSA', 'kid': kid})}.{encode(claims)}"
+    header = {"typ": "JWT", "alg": "EdDSA", "kid": kid if kid is not None else default_kid}
+    body = f"{encode(header)}.{encode(claims)}"
     signature = base64.urlsafe_b64encode(private_key.sign(body.encode())).rstrip(b"=").decode()
     return f"{body}.{signature}"
 
@@ -194,6 +198,9 @@ async def test_callback_signs_in_only_with_an_id_token_signed_by_auth(
     )
     signer = {"key": auth_key}
     nonces: dict[str, str] = {}
+    # Per code: replace this login's nonce, or the token's kid.
+    forced_nonce: dict[str, str] = {}
+    forced_kid: dict[str, str] = {}
 
     class Response:
         def __init__(self, body: bytes) -> None:
@@ -214,7 +221,9 @@ async def test_callback_signs_in_only_with_an_id_token_signed_by_auth(
                 raise OSError("Auth's JWKS is not reachable in this test")
             assert request.full_url == "http://auth.example.com/token"
             code = parse_qs(request.data.decode())["code"][0]
-            token = _id_token(signer["key"], nonces[code])
+            token = _id_token(
+                signer["key"], forced_nonce.get(code, nonces[code]), kid=forced_kid.get(code)
+            )
             return Response(json.dumps({"id_token": token}).encode())
 
     monkeypatch.setattr("central_auth.urllib.request.build_opener", lambda *_args: Opener())
@@ -248,6 +257,23 @@ async def test_callback_signs_in_only_with_an_id_token_signed_by_auth(
         forged = await sign_in("code-2")
         assert forged.status_code == 502
         assert client.cookies.get("lens_session") is None
+
+        # Malformed values Auth would never sign are a failed sign-in (502),
+        # never a server error, and leave no session.
+        signer["key"] = auth_key
+        forced_nonce["code-3"] = "\ud800"
+        forced_kid["code-4"] = "é"
+        for code in ("code-3", "code-4"):
+            refused = await sign_in(code)
+            assert refused.status_code == 502, code
+            assert client.cookies.get("lens_session") is None
+
+        # The back-channel answers a non-ASCII kid with 400, not 500.
+        bad_kid = await client.post(
+            "/auth/backchannel-logout",
+            data={"logout_token": _logout_token(auth_key, kid="é")},
+        )
+        assert bad_kid.status_code == 400
 
 
 @pytest.mark.asyncio
