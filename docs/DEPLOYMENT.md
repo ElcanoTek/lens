@@ -455,12 +455,13 @@ build cannot take down a working install:
    `.deployed-revision` and remove `.venv.old`. On any failure after stopping,
    automatically restore the previous source, venv, unit and CLI and probe
    readiness again. The command still exits non-zero, even if recovery succeeds.
-   Retain the snapshot for inspection; prune old `/opt/lens.rollback.*`
-   directories after confirming a good deployment. They exclude instance data
-   and do not replace backups. Power loss/SIGKILL requires manual recovery.
+   After a successful update only the newest two `/opt/lens.rollback.*`
+   snapshots are kept (`LENS_KEEP_ROLLBACKS` changes the count); a failed
+   update prunes nothing. Snapshots exclude instance data and do not replace
+   backups. Power loss/SIGKILL requires manual recovery.
 
 Update environment variables: `LENS_UPDATE_YES`, `LENS_UPDATE_NO_PULL`,
-`LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`.
+`LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`, `LENS_KEEP_ROLLBACKS`.
 
 ### Retiring the old Firecrawl stack
 

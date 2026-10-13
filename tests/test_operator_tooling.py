@@ -401,3 +401,29 @@ def test_lens_env_edit_returns_ownership_to_the_service_user(tmp_path):
     assert f"chown lens:lens {env}" in logged
     assert f"chmod 0600 {env}" in logged
     assert env.read_text() == "OPENROUTER_API_KEY=edited\n"
+
+
+@pytest.mark.parametrize("keep, survivors", [("", 2), ("1", 1), ("3", 3), ("junk", 2), ("0", 2)])
+def test_prune_rollbacks_keeps_the_newest(tmp_path, keep, survivors):
+    app = tmp_path / "lens"
+    app.mkdir()
+    snapshots = []
+    for n in range(5):
+        snap = tmp_path / f"lens.rollback.{n:06d}"
+        (snap / ".venv").mkdir(parents=True)
+        os.utime(snap, (1_000_000 + n, 1_000_000 + n))
+        snapshots.append(snap)
+    (tmp_path / "lens-other").mkdir()  # not a rollback snapshot
+    script = '. "$1"; lens_prune_rollbacks "$2" "$3"'
+    result = bash(script, ROOT / "scripts/lib/deploy.sh", app, keep)
+    assert result.returncode == 0, result.stderr
+    remaining = sorted(p.name for p in tmp_path.glob("lens.rollback.*"))
+    assert remaining == [s.name for s in snapshots[-survivors:]]
+    assert app.exists() and (tmp_path / "lens-other").exists()
+
+
+def test_prune_rollbacks_without_snapshots_is_quiet(tmp_path):
+    result = bash(
+        '. "$1"; lens_prune_rollbacks "$2" 2', ROOT / "scripts/lib/deploy.sh", tmp_path / "lens"
+    )
+    assert result.returncode == 0 and result.stdout == ""

@@ -312,6 +312,10 @@ printf '%s\n' "$after_sha" > "$APP_DIR/.deployed-revision"
 rm -rf "$APP_DIR/.venv.old"
 ok "lens /health → 200; previous release retained at $BACKUP"
 
+# Every update leaves a full code + venv snapshot (~250 MB); keep only the
+# newest few so a box updated weekly doesn't fill its disk.
+lens_prune_rollbacks "$APP_DIR" "${LENS_KEEP_ROLLBACKS:-2}"
+
 say
 printf '%s═══════════════════════════════════════════════%s\n' "$c_green" "$c_reset"
 printf '%s ✓ Updated %s → %s%s\n' "$c_bold" "${before_sha:0:12}" "${after_sha:0:12}" "$c_reset"

@@ -68,3 +68,15 @@ lens_restore_release() {
 lens_latest_fedora() {
   python3 -c 'import json,sys; print(max(int(r["version"]) for r in json.load(sys.stdin) if r.get("version", "").isascii() and r.get("version", "").isdigit()))'
 }
+
+# Keep the newest KEEP (default 2, minimum 1) <app_dir>.rollback.* snapshots
+# and delete the rest. Older snapshots are never restore candidates.
+lens_prune_rollbacks() {
+  local app_dir="$1" keep="${2:-2}"
+  [[ "$keep" =~ ^[0-9]+$ && "$keep" -ge 1 ]] || keep=2
+  local old=()
+  mapfile -t old < <(ls -1dt "${app_dir}".rollback.* 2>/dev/null | tail -n +"$((keep + 1))")
+  (( ${#old[@]} )) || return 0
+  rm -rf -- "${old[@]}"
+  printf 'pruned %d older rollback snapshot(s); kept the newest %d\n' "${#old[@]}" "$keep"
+}
