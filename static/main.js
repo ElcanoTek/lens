@@ -773,6 +773,7 @@ applySegmentWidths(document);
     const storageKey = "lens-advanced-settings";
     const modelSelect = document.getElementById("llm-model-select");
     const researchCheck = document.getElementById("research-fallback-check");
+    const deepCheck = document.getElementById("deep-retry-check");
     const researchModelSelect = document.getElementById("research-model-select");
     const advanced = document.querySelector(".run-advanced");
     if (!modelSelect || !researchCheck || !advanced) return;
@@ -827,6 +828,9 @@ applySegmentWidths(document);
       if (typeof saved.research === "boolean") {
         researchCheck.checked = saved.research;
       }
+      if (deepCheck && typeof saved.deep === "boolean") {
+        deepCheck.checked = saved.deep;
+      }
       // Non-default choices restored: open the panel so they're visible,
       // not silently applied.
       const researchModelChanged =
@@ -835,7 +839,8 @@ applySegmentWidths(document);
       if (
         modelSelect.value !== modelSelect.options[0].value ||
         researchModelChanged ||
-        !researchCheck.checked
+        !researchCheck.checked ||
+        (deepCheck && !deepCheck.checked)
       ) {
         advanced.setAttribute("open", "");
       }
@@ -850,6 +855,7 @@ applySegmentWidths(document);
           JSON.stringify({
             model: modelSelect.value,
             research: researchCheck.checked,
+            deep: deepCheck ? deepCheck.checked : undefined,
             researchModel: researchModelSelect ? researchModelSelect.value : undefined,
             modelEpoch,
             researchEpoch,
@@ -862,6 +868,7 @@ applySegmentWidths(document);
     if (migratedModel) save();
     modelSelect.addEventListener("change", save);
     researchCheck.addEventListener("change", save);
+    if (deepCheck) deepCheck.addEventListener("change", save);
     if (researchModelSelect) researchModelSelect.addEventListener("change", save);
   })();
 });

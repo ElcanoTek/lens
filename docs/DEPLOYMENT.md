@@ -237,6 +237,7 @@ the same list grouped by concern.
 | `reject_redirects` | `true` | Direct pass fails off-host redirects (a domain ↔ its own subdomains is not off-host) |
 | `user_agent` | current-Chrome string | An ancient UA is itself a bot signal |
 | `skip_deep_retry_on_block` | `true` | Deep pass skips sites the direct pass proved are blocked (401/403/429 or a block page) rather than retrying from the same IP |
+| `deep_retry_enabled` | `true` | Run the deep retry pass at all. Per run: dashboard "Retry with headless Chrome", `lens submit --no-deep`, `main.py --deep-retry off` |
 | `retry_follow_redirects` | `true` | Deep retry pass follows cross-host brand→parent redirects (e.g. `foxnewsdigital.com` → `foxnews.com`) that the direct pass rejects. A legacy `firecrawl_follow_redirects` is honoured when this is unset. |
 | `deep_scrape_podman_binary` | `podman` | Container runtime |
 | `deep_scrape_image` | `docker.io/selenium/standalone-chrome:latest` | Fully qualified on purpose — Podman refuses short names without a TTY |
@@ -409,7 +410,8 @@ lens submit /tmp/apps.csv --ctv --decision-model '~typesafe/jev-latest'
 
 Options: `--name`, `--categories JSON` (same format as the CLI's
 `--custom-categories`), `--ctv`, `--llm-model`, `--research-model`,
-`--decision-model`, `--no-research-fallback`. It prints the job id once the
+`--decision-model`, `--no-research-fallback`, `--no-deep` (skip the
+headless-Chrome retry; much faster on large lists). It prints the job id once the
 service has queued it.
 
 The hand-off goes through `/opt/lens/managed-files/spool/` (mode 0700, owned by

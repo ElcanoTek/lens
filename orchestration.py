@@ -834,6 +834,8 @@ class SiteAnalysisOrchestrator:
 
     def _deep_crawl_available(self) -> bool:
         """Check whether the deep (headless Chrome) crawler can run on this host."""
+        if not getattr(config, "DEEP_RETRY_ENABLED", True):
+            return False
         podman = getattr(config, "DEEP_SCRAPE_PODMAN_BINARY", "podman")
         if shutil.which(podman) is None:
             return False

@@ -161,6 +161,7 @@ What no scrape backend can do is beat commercial anti-bot (Cloudflare/DataDome/P
 
 - `skip_deep_retry_on_block` (default on): the deep pass **skips** domains the direct pass proved are anti-bot blocked (401/403/429 or a block page). The deep crawler renders from the same IP, so it would fail identically while adding load. It still runs for non-block failures (timeouts, too-short/JS-only pages). Blocked domains go straight to the research fallback.
 - `retry_follow_redirects` (default on; the legacy `firecrawl_follow_redirects` key is honoured when it is unset): the deep retry pass follows cross-host redirects (the `direct` pass still rejects them, except same-site moves between a domain and its subdomains such as `example.com → home.example.com`). Publishers that redirect a brand domain to a parent (`foxnewsdigital.com → foxnews.com`, `abcnews.go.com → abcnews.com`) classify on the destination's content instead of failing.
+- `deep_retry_enabled` (default on): master switch for the deep retry pass; also togglable per job from the web UI ("Retry with headless Chrome"), `lens submit --no-deep` and `--deep-retry off`. The deep crawler runs one browser per job, so it dominates run time on large lists.
 - `research_fallback_enabled` (default on): master switch for the research pass; also togglable per job from the web UI ("Research unscrapeable sites") and per run with `--research-fallback on|off`.
 
 Scraping the hardened sites through a residential proxy is not currently supported. Do not raise retry counts to "try harder" — that increases ban risk without helping.
@@ -287,6 +288,7 @@ Production target: **Fedora/RHEL 9+**
 | `--jsonl` | Write per-item JSONL log |
 | `--scrape-mode auto\|direct\|deep` | Auto ladder (direct → deep → research), HTTP-only, or Selenium deep scrape |
 | `--llm-model MODEL` | Override the classification model (OpenRouter ID) for this run |
+| `--deep-retry on\|off` | Enable/disable the deep (headless Chrome) retry pass for this run |
 | `--research-fallback on\|off` | Enable/disable the research fallback pass for this run |
 | `--research-model MODEL` | Override the research-fallback model (needs built-in web search) |
 | `--deep-scrape` | Shortcut for `--scrape-mode deep` |

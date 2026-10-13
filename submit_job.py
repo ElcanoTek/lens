@@ -38,6 +38,11 @@ def parse_args(argv):
     p.add_argument("--llm-model", type=_model, help="classification model override")
     p.add_argument("--research-model", type=_model, help="research model override")
     p.add_argument("--no-research-fallback", action="store_true", help="turn the research rung off")
+    p.add_argument(
+        "--no-deep",
+        action="store_true",
+        help="skip the headless-Chrome retry; research failures directly",
+    )
     p.add_argument("--ctv", action="store_true", help="force the CTV workflow")
     p.add_argument("--timeout", type=float, default=30, help="seconds to wait for the service")
     return p.parse_args(argv)
@@ -60,6 +65,7 @@ def main(argv=None) -> int:
         "research_model": args.research_model,
         "decision_model": args.decision_model,
         "research_fallback": not args.no_research_fallback,
+        "deep_retry": not args.no_deep,
     }
     if args.categories:
         try:

@@ -115,6 +115,10 @@ class Config:
             # identically while adding load and ban risk. It still runs for
             # sites that failed for other reasons (timeouts, service hiccups).
             "skip_deep_retry_on_block": True,
+            # Master switch for auto mode's deep retry pass. The deep crawler
+            # runs one browser per job, so on large lists it dominates run
+            # time; off sends direct-pass failures straight to research.
+            "deep_retry_enabled": True,
             # Research fallback: auto mode's final pass. Websites every scrape
             # backend failed on (typically hardened anti-bot publishers like
             # wsj.com or reuters.com) are classified from a web-search research

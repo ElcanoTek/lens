@@ -94,6 +94,16 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--deep-retry",
+        choices=["on", "off"],
+        help=(
+            "Enable/disable auto mode's headless-Chrome retry pass for this run "
+            "(overrides config.json). Off sends sites the direct fetch could not "
+            "read straight to the research fallback, which is much faster on "
+            "large lists."
+        ),
+    )
+    parser.add_argument(
         "--research-fallback",
         choices=["on", "off"],
         help=(
@@ -163,6 +173,8 @@ async def main(argv: Optional[List[str]] = None):
     if args.llm_model:
         config.LLM_MODEL = args.llm_model
         config.CTV_CLASSIFICATION_MODEL = args.llm_model
+    if args.deep_retry:
+        config.DEEP_RETRY_ENABLED = args.deep_retry == "on"
     if args.research_fallback:
         config.RESEARCH_FALLBACK_ENABLED = args.research_fallback == "on"
     if args.research_model:
