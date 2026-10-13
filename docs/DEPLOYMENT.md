@@ -212,6 +212,7 @@ working directory via python-dotenv for CLI runs).
 | `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | Central mode | — | Per-deployment Auth client credentials. |
 | `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for signed login state. |
 | `LENS_ACCESS_DB` | No | `/var/lib/lens/access.db` | Persistent local access/session/revocation SQLite database. |
+| `LENS_MAX_PARALLEL_JOBS` | No | `1` | Dashboard jobs run at once (1–8). Website jobs each run their own crawler pool and share Firecrawl, so 2–3 suits a small host. |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` enables extra CLI diagnostics. Same as `--verbose`. |
 | `PYTHONUNBUFFERED` | No | set to `1` by the unit | Keeps log lines flowing into journald. |
 
@@ -491,8 +492,8 @@ The hand-off goes through `/opt/lens/managed-files/spool/` (mode 0700, owned by
 the service user): the CLI copies the file in as root, then validation and the
 request run as the service user. The service checks the spool every two
 seconds and applies the same file checks as an upload. If the service is down,
-the request waits in the spool and is queued when it starts. The queue still
-runs one job at a time.
+the request waits in the spool and is queued when it starts. Jobs run one at a
+time unless `LENS_MAX_PARALLEL_JOBS` allows more.
 
 ## Updating and rolling back
 
