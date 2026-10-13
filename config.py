@@ -61,6 +61,10 @@ PREVIOUS_DEFAULT_LLM_MODELS = {
 }
 # Custom categories: OpenRouter's moving alias for TypeSafe's Jev decision model.
 DEFAULT_DECISION_MODEL = "~typesafe/jev-latest"
+# Search-grounded research for blocked websites and CTV apps. Sonar matched
+# Sonar Pro's quality tiers on 96% of a production CTV sample at about a third
+# of the cost; see docs/RESEARCH_MODELS.md.
+DEFAULT_RESEARCH_MODEL = "perplexity/sonar"
 
 
 class Config:
@@ -144,7 +148,7 @@ class Config:
             # Failed rather than being guessed at. Rows rescued this way carry
             # Scrape_Mode="research" so downstream consumers know provenance.
             "research_fallback_enabled": True,
-            "research_model": "perplexity/sonar-pro",
+            "research_model": DEFAULT_RESEARCH_MODEL,
             # Decision model for custom categories (OpenRouter Decisions API)
             "decision_model": DEFAULT_DECISION_MODEL,
             "research_temperature": 0.2,
@@ -175,7 +179,7 @@ class Config:
             "android_max_retries": 3,
             "android_retry_delay": 5.0,  # 5-second delay between retries
             # CTV (Connected TV) processing settings
-            "ctv_research_model": "perplexity/sonar-pro",  # Perplexity Sonar Pro for research
+            "ctv_research_model": DEFAULT_RESEARCH_MODEL,
             "ctv_research_temperature": 0.3,  # Slightly higher for research creativity
             "ctv_research_max_tokens": 2000,  # More tokens for detailed research
             "ctv_classification_model": DEFAULT_LLM_MODEL,  # Fast model for classification

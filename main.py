@@ -109,7 +109,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--research-model",
         help=(
             "Override the research-fallback model for this run (an OpenRouter "
-            "model ID with built-in web search, e.g. 'perplexity/sonar-pro')."
+            "model ID with built-in web search, e.g. 'perplexity/sonar')."
         ),
     )
     parser.add_argument(

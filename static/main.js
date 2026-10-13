@@ -810,6 +810,18 @@ applySegmentWidths(document);
         migratedModel = true;
       }
     }
+    // Same one-time migration for the research model (Sonar Pro -> Sonar).
+    const researchEpoch = "sonar";
+    const previousResearchDefaults = ((researchModelSelect && researchModelSelect.dataset.previousDefaults) || "")
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (saved && typeof saved === "object" && saved.researchEpoch !== researchEpoch) {
+      if (previousResearchDefaults.includes(saved.researchModel)) {
+        delete saved.researchModel;
+        migratedModel = true;
+      }
+    }
     if (saved && typeof saved === "object") {
       restoreSelect(modelSelect, saved.model);
       restoreSelect(researchModelSelect, saved.researchModel);
@@ -841,6 +853,7 @@ applySegmentWidths(document);
             research: researchCheck.checked,
             researchModel: researchModelSelect ? researchModelSelect.value : undefined,
             modelEpoch,
+            researchEpoch,
           })
         );
       } catch (error) {

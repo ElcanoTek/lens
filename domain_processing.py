@@ -208,7 +208,7 @@ class DomainProcessor:
 
             research = await self.openrouter_client.research_website(
                 item.domain,
-                research_model=getattr(config, "RESEARCH_MODEL", "perplexity/sonar-pro"),
+                research_model=getattr(config, "RESEARCH_MODEL", "perplexity/sonar"),
                 temperature=getattr(config, "RESEARCH_TEMPERATURE", 0.2),
                 max_tokens=getattr(config, "RESEARCH_MAX_TOKENS", 1500),
                 **(

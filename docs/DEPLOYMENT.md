@@ -266,7 +266,7 @@ the same list grouped by concern.
 | `deep_scrape_keep_container` | `false` | Leave the container up after a run |
 | `deep_scrape_pull_policy` | `always` | Refresh Chrome every run |
 | `research_fallback_enabled` | `true` | Classify blocked sites from public research instead of failing them |
-| `research_model` | `perplexity/sonar-pro` | Needs built-in web search |
+| `research_model` | `perplexity/sonar` | Needs built-in web search |
 | `research_temperature` | `0.2` | — |
 | `research_max_tokens` | `1500` | — |
 | `research_max_concurrent` | `4` | — |
@@ -280,7 +280,7 @@ the same list grouped by concern.
 | `android_max_concurrent` | `1` | Sequential |
 | `android_max_retries` | `3` | — |
 | `android_retry_delay` | `5.0` | — |
-| `ctv_research_model` | `perplexity/sonar-pro` | CTV step 1 |
+| `ctv_research_model` | `perplexity/sonar` | CTV step 1 |
 | `ctv_research_temperature` | `0.3` | — |
 | `ctv_research_max_tokens` | `2000` | — |
 | `ctv_classification_model` | `~openai/gpt-luna-latest` | CTV step 2. Same moving alias as `llm_model`. |

@@ -993,7 +993,7 @@ class SiteAnalysisOrchestrator:
         logger.info(
             "Auto mode: classifying %d unscrapeable website(s) from external research (%s)",
             len(retry_items),
-            getattr(config, "RESEARCH_MODEL", "perplexity/sonar-pro"),
+            getattr(config, "RESEARCH_MODEL", "perplexity/sonar"),
         )
 
         self._defer_website_failures = False
@@ -1092,7 +1092,7 @@ class SiteAnalysisOrchestrator:
             logger.info("Starting CTV (Connected TV) Analysis")
             logger.info(
                 "Research model: %s, Classification model: %s",
-                getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"),
+                getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar"),
                 getattr(config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL),
             )
             logger.info("CTV concurrency: %s", getattr(config, "CTV_MAX_CONCURRENT", 5))
@@ -1238,7 +1238,7 @@ class SiteAnalysisOrchestrator:
             reporter=self.reporter,
             results_writer=self.results_writer,
             results_file=self.output_file,
-            research_model=getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"),
+            research_model=getattr(config, "CTV_RESEARCH_MODEL", "perplexity/sonar"),
             research_temperature=getattr(config, "CTV_RESEARCH_TEMPERATURE", 0.3),
             research_max_tokens=getattr(config, "CTV_RESEARCH_MAX_TOKENS", 2000),
             classification_model=getattr(config, "CTV_CLASSIFICATION_MODEL", DEFAULT_LLM_MODEL),
