@@ -945,13 +945,8 @@ class SiteAnalysisOrchestrator:
             defer_failures=False,
         )
 
-        concurrency = max(
-            1,
-            min(
-                config.CONCURRENT_SESSIONS,
-                getattr(config, "RESEARCH_MAX_CONCURRENT", 4),
-            ),
-        )
+        # API-bound: not limited by the crawl pool size (concurrent_sessions).
+        concurrency = max(1, int(getattr(config, "RESEARCH_MAX_CONCURRENT", 12)))
         semaphore = asyncio.Semaphore(concurrency)
 
         async def research_one(item: WorkItem) -> None:

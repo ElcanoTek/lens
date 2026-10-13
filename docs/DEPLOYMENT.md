@@ -252,7 +252,7 @@ the same list grouped by concern.
 | `research_model` | `perplexity/sonar` | Needs built-in web search. `perplexity/sonar-pro` is also supported. |
 | `research_temperature` | `0.2` | — |
 | `research_max_tokens` | `1500` | — |
-| `research_max_concurrent` | `4` | — |
+| `research_max_concurrent` | `12` | Concurrent research-fallback requests; API-bound, independent of `concurrent_sessions` |
 | `ios_request_timeout` | `30` | iTunes Search API |
 | `ios_request_delay` | `5.0` | Deliberately slow; the API rate-limits hard |
 | `ios_max_concurrent` | `1` | Sequential |
