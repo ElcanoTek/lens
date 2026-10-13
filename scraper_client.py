@@ -382,8 +382,28 @@ class ScraperClient:
             return
         original_host = self._get_host(original_url)
         final_host = self._get_host(final_url)
-        if original_host != final_host:
+        if original_host != final_host and not self._same_site(original_host, final_host):
             raise RuntimeError(f"URL redirected to different host: {final_host}")
+
+    # Second-level labels that make a two-label host a public suffix (co.uk,
+    # com.au, ...), so "a.co.uk" and "b.co.uk" are never treated as one site.
+    _PUBLIC_SECOND_LEVEL = frozenset(
+        {"co", "com", "net", "org", "gov", "edu", "ac", "or", "ne", "go"}
+    )
+
+    @classmethod
+    def _same_site(cls, a: str, b: str) -> bool:
+        """True when one host is a subdomain of the other, e.g. example.com ->
+        home.example.com or m.example.com -> example.com. A redirect between
+        two unrelated domains (a parked domain bouncing to a lander) still
+        fails."""
+        parent, child = (a, b) if len(a) <= len(b) else (b, a)
+        if not child.endswith("." + parent):
+            return False
+        labels = parent.split(".")
+        if len(labels) < 2:
+            return False
+        return not (len(labels) == 2 and labels[0] in cls._PUBLIC_SECOND_LEVEL)
 
     async def _fetch_html_with_retries(self, url: str, timeout: int) -> Tuple[str, int]:
         if not self._web_session:

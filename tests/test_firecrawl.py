@@ -499,3 +499,32 @@ async def test_deep_retry_skips_antibot_blocked_sites(monkeypatch, tmp_path):
 
     # The anti-bot-blocked site is skipped; the other still gets a deep attempt.
     assert [item.identifier for item in processed] == ["renderfail.com"]
+
+
+@pytest.mark.parametrize(
+    "start,final",
+    [
+        ("https://myfantasyleague.com", "https://home.myfantasyleague.com/"),
+        ("https://m.example.com", "https://example.com/"),
+        ("https://bbc.co.uk", "https://www.news.bbc.co.uk/"),
+    ],
+)
+def test_same_site_subdomain_redirect_is_allowed(start, final):
+    client = ScraperClient(mode="firecrawl", reject_redirects=True)
+    parsed = client._parse_firecrawl_document(start, _document(url=final))
+    assert parsed["content"]
+
+
+@pytest.mark.parametrize(
+    "start,final",
+    [
+        ("https://paper.io", "https://voodoo.io/"),
+        ("https://foo.co.uk", "https://bar.co.uk/"),
+        ("https://example.com", "https://notexample.com/"),
+        ("https://shop.example.com", "https://evil.com/"),
+    ],
+)
+def test_unrelated_domain_redirect_still_rejected(start, final):
+    client = ScraperClient(mode="firecrawl", reject_redirects=True)
+    with pytest.raises(RuntimeError, match="redirected to different host"):
+        client._parse_firecrawl_document(start, _document(url=final))

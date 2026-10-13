@@ -243,7 +243,7 @@ the same list grouped by concern.
 | `retry_delay` | `2` | Seconds between fetch retries |
 | `session_timeout` | `300` | HTTP session lifetime |
 | `min_content_length` | `500` | Shortest body accepted as real content |
-| `reject_redirects` | `true` | Direct pass fails off-host redirects |
+| `reject_redirects` | `true` | Direct pass fails off-host redirects (a domain ↔ its own subdomains is not off-host) |
 | `user_agent` | current-Chrome string | An ancient UA is itself a bot signal |
 | `firecrawl_enabled` | `true` | Master switch for the auto-mode Firecrawl pass |
 | `firecrawl_url` | `http://127.0.0.1:3002` | Local Firecrawl API |
