@@ -559,6 +559,13 @@ class ScraperClient:
                                 f"Firecrawl could not bypass anti-bot protection "
                                 f"(HTTP {response.status})"
                             )
+                        # Likewise when every engine (fetch, Playwright, ...)
+                        # has already failed on this URL: another request would
+                        # just repeat the same renders against the same site.
+                        if "SCRAPE_ALL_ENGINES_FAILED" in detail:
+                            raise RuntimeError(
+                                f"Firecrawl: all scraping engines failed (HTTP {response.status})"
+                            )
                         raise _RetryableStatusError(f"HTTP {response.status}: {detail}")
                     body = await response.json(content_type=None)
                     if not isinstance(body, dict):

@@ -211,6 +211,28 @@ async def test_scrape_with_firecrawl_antibot_is_not_retried():
     assert len(client._web_session.requests) == 1
 
 
+async def test_scrape_with_firecrawl_all_engines_failed_is_not_retried():
+    # Firecrawl has already run every engine against the URL; retrying would
+    # repeat those renders (three full browser loads per dead site).
+    client = _firecrawl_client()
+    client._web_session = _FakeSession(
+        [
+            _FakeResponse(
+                500,
+                {
+                    "success": False,
+                    "code": "SCRAPE_ALL_ENGINES_FAILED",
+                    "error": "All scraping engines failed! -- Double check the URL.",
+                },
+            )
+        ]
+        * 3
+    )
+    with pytest.raises(RuntimeError, match="all scraping engines failed"):
+        await client._scrape_with_firecrawl("https://example.com")
+    assert len(client._web_session.requests) == 1
+
+
 async def test_scrape_with_firecrawl_failure_is_not_retried():
     client = _firecrawl_client()
     client._web_session = _FakeSession(
