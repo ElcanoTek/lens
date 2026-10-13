@@ -7,6 +7,7 @@ import asyncio
 import json
 import logging
 import os
+import socket
 import subprocess
 import time
 import urllib.error
@@ -145,6 +146,8 @@ class ScraperClient:
                     "Install it with `pip install selenium`."
                 )
 
+            if not self.keep_container:
+                await asyncio.to_thread(self._claim_private_container)
             await asyncio.to_thread(self._ensure_chrome_container)
             self._web_session = None
         else:
@@ -503,6 +506,49 @@ class ScraperClient:
             text=True,
             env=self._podman_env(),
         )
+
+    @staticmethod
+    def _free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return sock.getsockname()[1]
+
+    def _claim_private_container(self) -> None:
+        """Give this run its own Chrome container and ports.
+
+        The Selenium image serves one browser session, and a run stops its
+        container when it finishes. With a shared fixed name and port, two
+        jobs running at once would reuse and then kill each other's browser.
+        Each run therefore gets ``<name>-<pid>`` on free ports. Containers
+        left behind by runs that died are removed first. A persistent
+        ``keep_container`` setup keeps the configured name and port.
+        """
+        base = self.chrome_container_name
+        self._remove_orphaned_containers(base)
+        self.chrome_container_name = f"{base}-{os.getpid()}"
+        self.chrome_port = self._free_port()
+        if self.chrome_vnc_port:
+            self.chrome_vnc_port = self._free_port()
+        self._chrome_endpoint = f"http://127.0.0.1:{self.chrome_port}"
+
+    def _remove_orphaned_containers(self, base: str) -> None:
+        try:
+            result = self._podman("ps", "-a", "--format", "{{.Names}}", check=False)
+        except FileNotFoundError:
+            return
+        for name in result.stdout.split():
+            suffix = name[len(base) + 1 :] if name.startswith(base + "-") else ""
+            if not suffix.isdigit() or int(suffix) == os.getpid():
+                continue
+            try:
+                os.kill(int(suffix), 0)
+                continue  # that run is still alive
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                continue
+            logger.info("Removing Chrome container %s left by a run that exited", name)
+            self._podman("rm", "-f", name, check=False)
 
     def _local_image_exists(self) -> bool:
         try:
