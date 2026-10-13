@@ -460,6 +460,7 @@ Bootstrap installs `/usr/local/bin/lens`. Every subcommand shells out to
 | `lens rebuild` | Rebuild and restart the *current* checkout without fetching. The correct command after a manual rollback. |
 | `lens env` | Print `/opt/lens/.env` with anything matching `TOKEN\|KEY\|SECRET\|PASSWORD\|PUBKEY` redacted |
 | `lens env edit` | Open `/opt/lens/.env` in `$EDITOR` (default `vi`); follow with `lens restart` |
+| `lens submit FILE [options]` | Queue a dashboard run from a file on the host (see below) |
 | `lens tls status` | Hostname, certificate subject/issuer/validity, Caddy state |
 | `lens tls reload` | Reload the Caddyfile |
 | `lens tls restart` | Restart Caddy |
@@ -469,6 +470,29 @@ Overrides: `LENS_SRC_DIR` (default `/opt/lens-src`) and `LENS_APP_DIR`
 
 `lens update` honours `LENS_UPDATE_YES=1` to skip the confirmation prompt —
 useful from a deploy pipeline.
+
+### Submitting runs from the host
+
+`lens submit` queues a run exactly as if the file had been uploaded in the
+dashboard, so it shows in the Runs table with live progress, cost and
+downloads, and the input lands in the file library:
+
+```bash
+lens submit /tmp/sites.csv --name "Q4 sites" --categories /tmp/categories.json
+lens submit /tmp/apps.csv --ctv --decision-model '~typesafe/jev-latest'
+```
+
+Options: `--name`, `--categories JSON` (same format as the CLI's
+`--custom-categories`), `--ctv`, `--llm-model`, `--research-model`,
+`--decision-model`, `--no-research-fallback`. It prints the job id once the
+service has queued it.
+
+The hand-off goes through `/opt/lens/managed-files/spool/` (mode 0700, owned by
+the service user): the CLI copies the file in as root, then validation and the
+request run as the service user. The service checks the spool every two
+seconds and applies the same file checks as an upload. If the service is down,
+the request waits in the spool and is queued when it starts. The queue still
+runs one job at a time.
 
 ## Updating and rolling back
 
