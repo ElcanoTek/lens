@@ -340,7 +340,8 @@ terminal:
 
 - Drag-and-drop CSV/XLSX upload, with a detected content-type breakdown shown
   per file before you run anything.
-- A queue that runs one job at a time and lets you cancel queued or running
+- A queue that runs one job at a time (or several, with
+  `LENS_MAX_PARALLEL_JOBS`) and lets you cancel queued or running
   jobs.
 - Live progress: a stacked bar of succeeded / queued-for-retry / failed, plus
   an ETA that models the retry passes separately from the fast pass.

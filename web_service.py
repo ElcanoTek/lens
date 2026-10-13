@@ -528,11 +528,23 @@ class Job:
     process: Optional[asyncio.subprocess.Process] = None
 
 
+def _max_parallel_jobs() -> int:
+    """How many queued jobs may run at once (LENS_MAX_PARALLEL_JOBS, 1-8)."""
+    try:
+        wanted = int(os.environ.get("LENS_MAX_PARALLEL_JOBS", "1"))
+    except ValueError:
+        wanted = 1
+    return max(1, min(wanted, 8))
+
+
 class JobManager:
     def __init__(self) -> None:
         self.jobs: Dict[str, Job] = {}
         self.queue: Deque[str] = deque()
+        # Most recently started job still running; the default live view.
         self.current_job_id: Optional[str] = None
+        self.running: set = set()
+        self._tasks: set = set()
         self.lock = asyncio.Lock()
         self.queue_event = asyncio.Event()
 
@@ -570,6 +582,7 @@ class JobManager:
         self.jobs = {}
         self.queue = deque()
         self.current_job_id = None
+        self.running = set()
         self.queue_event.clear()
 
         state_path = _jobs_state_path()
@@ -757,27 +770,38 @@ class JobManager:
             raise ValueError(f"Job {job_id} is not cancellable")
 
     async def worker_loop(self) -> None:
+        """Start queued jobs, up to LENS_MAX_PARALLEL_JOBS at a time."""
         while True:
             await self.queue_event.wait()
-
-            next_job_id: Optional[str] = None
+            started: List[str] = []
             async with self.lock:
-                if self.current_job_id is None and self.queue:
-                    next_job_id = self.queue.popleft()
-                    self.current_job_id = next_job_id
-                if not self.queue:
-                    self.queue_event.clear()
+                while self.queue and len(self.running) < _max_parallel_jobs():
+                    job_id = self.queue.popleft()
+                    self.running.add(job_id)
+                    self.current_job_id = job_id
+                    started.append(job_id)
+                # Woken again by create_job or when a running job frees a slot.
+                self.queue_event.clear()
+            for job_id in started:
+                task = asyncio.create_task(self._run_and_release(job_id))
+                self._tasks.add(task)
+                task.add_done_callback(self._tasks.discard)
 
-            if not next_job_id:
-                await asyncio.sleep(0.1)
-                continue
-
-            await self._run_job(next_job_id)
-
+    async def _run_and_release(self, job_id: str) -> None:
+        try:
+            await self._run_job(job_id)
+        finally:
             async with self.lock:
-                self.current_job_id = None
+                self.running.discard(job_id)
+                if self.current_job_id == job_id:
+                    self.current_job_id = next(iter(self.running), None)
                 if self.queue:
                     self.queue_event.set()
+
+    async def shutdown(self) -> None:
+        for task in list(self._tasks):
+            task.cancel()
+        await asyncio.gather(*self._tasks, return_exceptions=True)
 
     async def _run_job(self, job_id: str) -> None:
         async with self.lock:
@@ -1019,6 +1043,7 @@ async def _lifespan(app: FastAPI):
             worker_task.cancel()
             await asyncio.gather(worker_task, return_exceptions=True)
             worker_task = None
+        await manager.shutdown()
 
 
 app = FastAPI(title="Lens Internal Service", version="1.0.0", lifespan=_lifespan)
