@@ -871,8 +871,8 @@ sudo journalctl --vacuum-time=14d
 
 ### Auth signing-key rotation
 
-In central mode Lens verifies back-channel logout tokens with `AUTH_SIGNING_PUBKEY`
-plus the keys Auth publishes at `/jwks.json` (cached 10 minutes, refreshed once when
-a token names an unknown key). An Auth key rotation therefore needs no env edit
-here; keep one static key so verification works even if Auth is unreachable at
-startup. `AUTH_SIGNING_PREVIOUS_PUBKEYS` remains available as a manual override.
+In central mode Lens verifies the sign-in `id_token` and every back-channel token
+with `AUTH_SIGNING_PUBKEY` plus the keys Auth publishes at `/jwks.json` (cached 10
+minutes, refreshed once when a token names an unknown key). An Auth key rotation
+therefore needs no env edit here; keep one static key so verification works even if
+Auth is unreachable at startup. `AUTH_SIGNING_PREVIOUS_PUBKEYS` remains available as a manual override.

@@ -141,7 +141,9 @@ class CentralAuthProvider:
             or not isinstance(verifier, str)
         ):
             raise AuthTransactionError("Invalid login transaction")
-        principal = self.client.exchange(code=code, verifier=verifier, expected_nonce=nonce)
+        principal = self.client.exchange(
+            code=code, verifier=verifier, expected_nonce=nonce, key_resolver=self.key_resolver
+        )
         issued = self.store.create_session(principal.subject, principal.email)
         return issued.token, _safe_local_path(str(transaction.get("next") or "/"))
 

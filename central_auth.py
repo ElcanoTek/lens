@@ -134,32 +134,26 @@ def _decode_b64url(segment: str) -> bytes:
         raise CentralAuthError("The logout token was invalid") from exc
 
 
-def verify_logout_token(
-    raw: str,
-    *,
-    issuer: str,
-    audience: str,
-    public_keys: list[str],
-    now: int | None = None,
-) -> LogoutEvent:
+def _verify_signed_token(raw: str, *, typ: str, public_keys: list[str], error: str) -> dict:
+    """Claims of an Auth-signed compact JWS, once its structure, header and
+    Ed25519 signature check out. `typ` and `alg` must match exactly and `kid`
+    must name one of `public_keys`; callers validate the claims themselves."""
     if len(raw) > 16_384 or len(raw.split(".")) != 3:
-        raise CentralAuthError("The logout token was invalid")
+        raise CentralAuthError(error)
     header_part, claims_part, signature_part = raw.split(".")
     try:
         header = json.loads(_decode_b64url(header_part))
         claims = json.loads(_decode_b64url(claims_part))
         signature = _decode_b64url(signature_part)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CentralAuthError("The logout token was invalid") from exc
+    except (CentralAuthError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CentralAuthError(error) from exc
     if (
         not isinstance(header, dict)
         or not isinstance(claims, dict)
-        or header.get("typ") != "logout+jwt"
+        or header.get("typ") != typ
         or header.get("alg") != "EdDSA"
     ):
-        raise CentralAuthError("The logout token was invalid")
-
-    verified = False
+        raise CentralAuthError(error)
     for encoded in public_keys:
         try:
             public = base64.b64decode(encoded.strip(), validate=True)
@@ -171,13 +165,23 @@ def verify_logout_token(
             Ed25519PublicKey.from_public_bytes(public).verify(
                 signature, f"{header_part}.{claims_part}".encode("ascii")
             )
-            verified = True
-            break
+            return claims
         except (ValueError, InvalidSignature, UnicodeEncodeError):
             continue
-    if not verified:
-        raise CentralAuthError("The logout token was invalid")
+    raise CentralAuthError(error)
 
+
+def verify_logout_token(
+    raw: str,
+    *,
+    issuer: str,
+    audience: str,
+    public_keys: list[str],
+    now: int | None = None,
+) -> LogoutEvent:
+    claims = _verify_signed_token(
+        raw, typ="logout+jwt", public_keys=public_keys, error="The logout token was invalid"
+    )
     timestamp = int(time.time() if now is None else now)
     subject, event_id, issued_at = claims.get("sub"), claims.get("jti"), claims.get("iat")
     expires_at = claims.get("exp")
@@ -216,37 +220,9 @@ def verify_access_token(
     public_keys: list[str],
     now: int | None = None,
 ) -> AccessProvisionEvent:
-    if len(raw) > 16_384 or len(raw.split(".")) != 3:
-        raise CentralAuthError("The access token was invalid")
-    header_part, claims_part, signature_part = raw.split(".")
-    try:
-        header = json.loads(_decode_b64url(header_part))
-        claims = json.loads(_decode_b64url(claims_part))
-        signature = _decode_b64url(signature_part)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise CentralAuthError("The access token was invalid") from exc
-    if not isinstance(header, dict) or not isinstance(claims, dict):
-        raise CentralAuthError("The access token was invalid")
-    if header.get("typ") != "access+jwt" or header.get("alg") != "EdDSA":
-        raise CentralAuthError("The access token was invalid")
-    verified = False
-    for encoded in public_keys:
-        try:
-            public = base64.b64decode(encoded.strip(), validate=True)
-            kid = (
-                base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
-            )
-            if len(public) != 32 or not hmac.compare_digest(str(header.get("kid", "")), kid):
-                continue
-            Ed25519PublicKey.from_public_bytes(public).verify(
-                signature, f"{header_part}.{claims_part}".encode("ascii")
-            )
-            verified = True
-            break
-        except (ValueError, InvalidSignature, UnicodeEncodeError):
-            continue
-    if not verified:
-        raise CentralAuthError("The access token was invalid")
+    claims = _verify_signed_token(
+        raw, typ="access+jwt", public_keys=public_keys, error="The access token was invalid"
+    )
     timestamp = int(time.time() if now is None else now)
     events = claims.get("events")
     access = events.get(APPLICATION_ACCESS_EVENT) if isinstance(events, dict) else None
@@ -290,6 +266,51 @@ def verify_access_token(
         version,
         action == "grant",
     )
+
+
+def verify_id_token(
+    raw: str,
+    *,
+    issuer: str,
+    audience: str,
+    expected_nonce: str,
+    public_keys: list[str],
+    now: int | None = None,
+) -> AuthenticatedPrincipal:
+    """The identity Auth's /token vouches for, read only from its signed
+    id_token (Auth's docs/INTEGRATION.md, code exchange): EdDSA under a key
+    Auth publishes, exact iss and aud, live exp, and this login's nonce. The
+    unsigned copies of the same claims in the /token JSON are not trusted."""
+    error = "The authentication response was invalid"
+    claims = _verify_signed_token(raw, typ="JWT", public_keys=public_keys, error=error)
+    timestamp = int(time.time() if now is None else now)
+    subject, email, nonce = claims.get("sub"), claims.get("email"), claims.get("nonce")
+    issued_at, expires_at = claims.get("iat"), claims.get("exp")
+    token_issuer = claims.get("iss")
+    if (
+        not isinstance(subject, str)
+        or not subject
+        or len(subject) > 255
+        or not isinstance(email, str)
+        or not isinstance(nonce, str)
+        or not hmac.compare_digest(nonce.encode(), expected_nonce.encode())
+        or not isinstance(token_issuer, str)
+        or token_issuer.rstrip("/") != issuer.rstrip("/")
+        or claims.get("aud") != audience
+        or isinstance(expires_at, bool)
+        or not isinstance(expires_at, int)
+        or expires_at + CLOCK_SKEW_SECONDS <= timestamp
+        or isinstance(issued_at, bool)
+        or not isinstance(issued_at, int)
+        or issued_at <= 0
+        or issued_at > timestamp + CLOCK_SKEW_SECONDS
+    ):
+        raise CentralAuthError(error)
+    try:
+        normalized = normalize_email(email)
+    except ValueError as exc:
+        raise CentralAuthError(error) from exc
+    return AuthenticatedPrincipal(subject, normalized, nonce)
 
 
 def auth_signing_public_keys() -> list[str]:
@@ -519,7 +540,14 @@ class CentralAuthClient:
         )
         return f"{self.issuer_url}/authorize?{query}"
 
-    def exchange(self, *, code: str, verifier: str, expected_nonce: str) -> AuthenticatedPrincipal:
+    def exchange(
+        self,
+        *,
+        code: str,
+        verifier: str,
+        expected_nonce: str,
+        key_resolver: AuthKeyResolver,
+    ) -> AuthenticatedPrincipal:
         body = urllib.parse.urlencode(
             {
                 "grant_type": "authorization_code",
@@ -560,30 +588,21 @@ class CentralAuthClient:
             payload = json.loads(raw)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise CentralAuthError("The authentication response was invalid") from exc
-        if not isinstance(payload, dict):
+        id_token = payload.get("id_token") if isinstance(payload, dict) else None
+        if not isinstance(id_token, str):
             raise CentralAuthError("The authentication response was invalid")
-        now = int(time.time())
-        subject, email, nonce = payload.get("sub"), payload.get("email"), payload.get("nonce")
-        token_issuer = payload.get("iss")
-        if (
-            not isinstance(subject, str)
-            or not subject
-            or not isinstance(email, str)
-            or not isinstance(nonce, str)
-            or not hmac.compare_digest(nonce.encode(), expected_nonce.encode())
-            or not isinstance(token_issuer, str)
-            or token_issuer.rstrip("/") != self.issuer_url
-            or payload.get("aud") != self.client_id
-            or isinstance(payload.get("exp"), bool)
-            or not isinstance(payload.get("exp"), int)
-            or payload["exp"] + CLOCK_SKEW_SECONDS <= now
-        ):
-            raise CentralAuthError("The authentication response was invalid")
-        try:
-            normalized = normalize_email(email)
-        except ValueError as exc:
-            raise CentralAuthError("The authentication response was invalid") from exc
-        return AuthenticatedPrincipal(subject, normalized, nonce)
+        # TLS and client authentication already bind this response to Auth,
+        # which OIDC accepts on its own for a direct /token call. Verifying
+        # the signature as well means a wrong AUTH_ISSUER_URL, an intercepting
+        # proxy or a mis-issued certificate still cannot name the signed-in
+        # user: only Auth's signing key can.
+        return verify_id_token(
+            id_token,
+            issuer=self.issuer_url,
+            audience=self.client_id,
+            expected_nonce=expected_nonce,
+            public_keys=key_resolver.keys_for_token(id_token),
+        )
 
 
 class CentralAuthStore:
