@@ -134,6 +134,36 @@ async def test_orchestrator_research_pass_processes_failed_websites(monkeypatch,
     assert researched == ["blocked.com"]
 
 
+async def test_research_pass_concurrency_is_independent_of_crawl_pool(monkeypatch, tmp_path):
+    import asyncio
+
+    domains = [f"site{n}.com" for n in range(10)]
+    orchestrator = _make_orchestrator(
+        monkeypatch, tmp_path, "pageURL\n" + "\n".join(domains) + "\n"
+    )
+    items = orchestrator._load_input_data()
+    for domain in domains:
+        await orchestrator.progress_tracker.mark_domain_processed(
+            domain, status="error", error_message="Received HTTP status 403"
+        )
+    monkeypatch.setattr(config, "CONCURRENT_SESSIONS", 2)
+    monkeypatch.setattr(config, "RESEARCH_MAX_CONCURRENT", 6)
+
+    in_flight = 0
+    peak = 0
+
+    async def fake_research(self, item):
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        await asyncio.sleep(0.02)
+        in_flight -= 1
+
+    monkeypatch.setattr(DomainProcessor, "process_domain_research", fake_research)
+    await orchestrator._research_failed_websites(items)
+    assert peak == 6
+
+
 async def test_orchestrator_research_pass_respects_disable_flag(monkeypatch, tmp_path):
     orchestrator = _make_orchestrator(monkeypatch, tmp_path, "pageURL\nblocked.com\n")
     items = orchestrator._load_input_data()

@@ -129,7 +129,10 @@ class Config:
             "decision_model": DEFAULT_DECISION_MODEL,
             "research_temperature": 0.2,
             "research_max_tokens": 1500,
-            "research_max_concurrent": 4,
+            # Research is API-bound (no crawling from this host), so it runs
+            # independently of concurrent_sessions. Lower it if OpenRouter or
+            # the research provider returns 429s.
+            "research_max_concurrent": 12,
             "deep_scrape_podman_binary": "podman",
             "deep_scrape_image": "docker.io/selenium/standalone-chrome:latest",
             "deep_scrape_container_name": "elcano-lens-chromedriver",

@@ -46,7 +46,7 @@
   "decision_model": "~typesafe/jev-latest",
   "research_temperature": 0.2,
   "research_max_tokens": 1500,
-  "research_max_concurrent": 4,
+  "research_max_concurrent": 12,
 
   "_comment_ios": "iOS App Store (iTunes Search API). Deliberately conservative — the API rate-limits aggressively.",
   "ios_request_timeout": 30,
