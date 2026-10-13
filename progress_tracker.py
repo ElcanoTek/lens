@@ -155,7 +155,7 @@ class ProgressTracker:
         """Return (error_message, scrape_mode) of the last recorded failure.
 
         The mode identifies which crawler rung produced the error (direct,
-        firecrawl, deep, research); it is None for entries written before
+        deep, research); it is None for entries written before
         modes were tracked.
         """
         data = self.progress_data["processed_domains"].get(domain)

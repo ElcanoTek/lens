@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 # Crawler rungs that drive a real rendering browser. A block at one of these
 # means the site rejects even browser-like automation, not just plain HTTP
 # clients.
-_BROWSER_SCRAPE_MODES = ("firecrawl", "deep")
+_BROWSER_SCRAPE_MODES = ("deep",)
 
 
 def derive_bot_protection(
@@ -40,7 +40,7 @@ def derive_bot_protection(
     - ``Moderate`` — the plain-HTTP crawler was blocked (403/401/429 or a
       challenge page), but no rendering browser was proven blocked: the site
       filters basic bots.
-    - ``Aggressive`` — a rendering-browser rung (Firecrawl/headless Chrome)
+    - ``Aggressive`` — the rendering-browser rung (headless Chrome)
       was also blocked: the site rejects automated traffic from this host
       outright.
     - ``Unknown`` — the site could not be scraped but for reasons that are
@@ -359,8 +359,8 @@ class DomainProcessor:
         classifier_mode: str,
         processing_time: float,
     ) -> None:
-        # An earlier pass's block (e.g. direct got a 403 before Firecrawl got
-        # through) is the evidence for the bot-protection level; read it
+        # An earlier pass's block (e.g. direct got a 403 before the deep
+        # crawler got through) is the evidence for the bot-protection level; read it
         # before mark_domain_processed overwrites it below.
         prior_error, prior_error_mode = self.progress_tracker.get_domain_failure_details(
             item.domain

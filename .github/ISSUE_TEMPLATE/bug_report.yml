@@ -25,7 +25,7 @@ body:
     id: area
     attributes:
       label: Area
-      options: [CLI pipeline (main.py), Web dashboard, Crawl ladder / Firecrawl / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
+      options: [CLI pipeline (main.py), Web dashboard, Crawl ladder / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
   - type: textarea
     id: logs
     attributes:

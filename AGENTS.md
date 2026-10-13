@@ -32,10 +32,6 @@ python main.py --ctv
 # Run with deep scrape (Selenium via Podman container)
 python main.py --deep-scrape
 
-# Run through the local Firecrawl service (start it first: scripts/firecrawl.sh up)
-python main.py --scrape-mode firecrawl
-# Firecrawl tracks `latest` (refreshed on every `lens update`); its queue DB is
-# disposable — scripts/firecrawl.sh reset wipes and rebuilds it
 
 # Run with JSONL logging and custom I/O
 python main.py --jsonl run.jsonl --input-csv my_input.csv --output-csv my_output.csv
@@ -97,7 +93,7 @@ The web service (`web_service.py`) spawns `main.py` as a subprocess for each job
 | `config.py` | Central config class; loads from `config.json` + env vars via dotenv; **creates global singleton on import** (`config = Config()`) |
 | `shared_types.py` | `ContentType` enum, `WorkItem` (frozen dataclass), `CTVWorkItem` (mutable dataclass) |
 | `input_detector.py` | Content type detection: TLD classification, Android package validation, CTV input detection, column detection |
-| `scraper_client.py` | Async HTTP scraper (aiohttp direct mode + Selenium deep mode via Podman container + local Firecrawl service mode) |
+| `scraper_client.py` | Async HTTP scraper (aiohttp direct mode + Selenium deep mode via Podman container) |
 | `domain_processing.py` | Website pipeline: scrape → validate → classify → record |
 | `openrouter_client.py` | OpenRouter LLM client (OpenAI SDK); function calling schemas for structured output; taxonomy loading; retry with exponential backoff; CTV two-step methods |
 | `ios_api_client.py` | iTunes Search API client; async with rate limiting |
@@ -159,17 +155,15 @@ CTV items are detected by column headers or the `--ctv` flag, not by the identif
 
 ### Auto-mode ladder, anti-bot, and ban avoidance
 
-Auto mode runs `direct → Firecrawl → deep → research`. `direct` is a plain HTTP fetch (no JS); Firecrawl (headless Chromium via Playwright) rescues JS-rendered sites; the deep (Selenium Chrome) pass mops up sites Firecrawl mishandled; and the **research fallback** classifies whatever still failed from a web-search research summary (`research_website` in `openrouter_client.py`, default model `perplexity/sonar`) instead of failing it. Research rows carry `Scrape_Mode="research"`; domains the research model finds nothing about stay Failed rather than being guessed at.
+Auto mode runs `direct → deep → research`. `direct` is a plain HTTP fetch (no JS); the deep pass (Selenium headless Chrome in a rootless Podman container, single session) rescues JS-rendered sites and is skipped when Podman/Selenium are unavailable; and the **research fallback** classifies whatever still failed from a web-search research summary (`research_website` in `openrouter_client.py`, default model `perplexity/sonar`; Sonar Pro is still selectable) instead of failing it. Research rows carry `Scrape_Mode="research"`; domains the research model finds nothing about stay Failed rather than being guessed at. (Firecrawl used to sit between direct and deep; it was removed. A legacy `scrape_mode: "firecrawl"` in `config.json` maps to `auto` with a warning, dashboard jobs persisted with mode `firecrawl` run as `auto`, and other `firecrawl_*` keys are ignored.)
 
 What no scrape backend can do is beat commercial anti-bot (Cloudflare/DataDome/PerimeterX) from this host's datacenter IP. Those sites (reuters, bloomberg, wsj, economist, politico, barrons, marketwatch, mansionglobal, …) block the IP outright. The setup is deliberately tuned to fail those **fast and quietly** rather than fight them, because repeated hammering from one IP is what escalates a soft block into a permanent ban — the research fallback then classifies them without ever touching the site from this host:
 
-- `firecrawl_proxy` defaults to `"basic"` — one render attempt, no stealth-proxy escalation. (Firecrawl's `"auto"` escalation is futile self-hosted: there's no stealth proxy backend, so it just burns 30–90s/site re-fetching and then returns `document_antibot`.)
-- `SCRAPE_RETRY_LIMIT` / `document_antibot` responses are treated as **permanent** in `scraper_client._scrape_with_firecrawl` (not retried) — an anti-bot verdict won't change on retry.
-- `skip_deep_retry_on_block` (default on): the deep pass **skips** domains whose Firecrawl failure was an anti-bot/401/403 block. The deep crawler is also headless Chrome on the same IP, so it would fail identically while adding load. It still runs for non-block failures (timeouts, service hiccups). Blocked domains go straight to the research fallback.
-- `firecrawl_follow_redirects` (default on): the Firecrawl **and** deep retry passes follow cross-host redirects (the `direct` pass still rejects them, except same-site moves between a domain and its subdomains such as `example.com → home.example.com`). Publishers that redirect a brand domain to a parent (`foxnewsdigital.com → foxnews.com`, `abcnews.go.com → abcnews.com`) classify on the destination's content instead of failing.
+- `skip_deep_retry_on_block` (default on): the deep pass **skips** domains the direct pass proved are anti-bot blocked (401/403/429 or a block page). The deep crawler renders from the same IP, so it would fail identically while adding load. It still runs for non-block failures (timeouts, too-short/JS-only pages). Blocked domains go straight to the research fallback.
+- `retry_follow_redirects` (default on; the legacy `firecrawl_follow_redirects` key is honoured when it is unset): the deep retry pass follows cross-host redirects (the `direct` pass still rejects them, except same-site moves between a domain and its subdomains such as `example.com → home.example.com`). Publishers that redirect a brand domain to a parent (`foxnewsdigital.com → foxnews.com`, `abcnews.go.com → abcnews.com`) classify on the destination's content instead of failing.
 - `research_fallback_enabled` (default on): master switch for the research pass; also togglable per job from the web UI ("Research unscrapeable sites") and per run with `--research-fallback on|off`.
 
-To actually scrape the hardened sites, route Firecrawl's browser through a residential/ISP proxy: set `PROXY_SERVER` (+ `PROXY_USERNAME`/`PROXY_PASSWORD`) in `firecrawl/.env` (see `firecrawl/.env.example`). Do not raise retry counts or flip `firecrawl_proxy` to `auto` to "try harder" — that increases ban risk without helping.
+Scraping the hardened sites through a residential proxy is not currently supported. Do not raise retry counts to "try harder" — that increases ban risk without helping.
 
 ### Direct-pass body reads must drain the stream
 
@@ -291,7 +285,7 @@ Production target: **Fedora/RHEL 9+**
 | `--quiet` | Suppress per-item output |
 | `--verbose` | Show size, retries, cache status |
 | `--jsonl` | Write per-item JSONL log |
-| `--scrape-mode auto\|direct\|deep\|firecrawl` | Auto ladder (direct → Firecrawl → deep → research), HTTP-only, Selenium deep scrape, or local Firecrawl service |
+| `--scrape-mode auto\|direct\|deep` | Auto ladder (direct → deep → research), HTTP-only, or Selenium deep scrape |
 | `--llm-model MODEL` | Override the classification model (OpenRouter ID) for this run |
 | `--research-fallback on\|off` | Enable/disable the research fallback pass for this run |
 | `--research-model MODEL` | Override the research-fallback model (needs built-in web search) |

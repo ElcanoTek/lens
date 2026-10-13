@@ -43,47 +43,11 @@ MAX_CONTENT_CHARS = 4000
 # memory.
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
 
-# Firecrawl's /v2/scrape rejects timeouts above 300 seconds.
-FIRECRAWL_MAX_TIMEOUT_MS = 300_000
-
 
 def _truncate_content(text: str) -> str:
     if len(text) > MAX_CONTENT_CHARS:
         return text[:MAX_CONTENT_CHARS] + "..."
     return text
-
-
-class _RetryableStatusError(Exception):
-    """Transient Firecrawl response (5xx/408/429) — worth another attempt."""
-
-
-async def firecrawl_service_ready(
-    url: str,
-    session: Optional["aiohttp.ClientSession"] = None,
-    timeout: float = 5.0,
-) -> bool:
-    """True when a Firecrawl API answers at *url*.
-
-    Checks the response body for the service's identity banner, not just the
-    status code — an unrelated service squatting on the port must not count
-    as available (it would silently absorb a whole retry pass).
-    """
-    owned = session is None
-    if owned:
-        session = aiohttp.ClientSession()
-    try:
-        async with session.get(
-            f"{url.rstrip('/')}/", timeout=aiohttp.ClientTimeout(total=timeout)
-        ) as response:
-            if response.status >= 500:
-                return False
-            body = await response.text()
-            return "firecrawl" in body.lower()
-    except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
-        return False
-    finally:
-        if owned:
-            await session.close()
 
 
 def _browser_headers(user_agent: str) -> Dict[str, str]:
@@ -141,11 +105,6 @@ class ScraperClient:
         keep_container: bool = False,
         reject_redirects: bool = True,
         chrome_pull_policy: str = "always",
-        firecrawl_url: str = "http://127.0.0.1:3002",
-        firecrawl_timeout: int = 60,
-        firecrawl_wait_for: int = 0,
-        firecrawl_max_age_ms: Optional[int] = None,
-        firecrawl_proxy: str = "basic",
     ) -> None:
         self.request_timeout = request_timeout
         self.max_retries = max_retries
@@ -168,11 +127,6 @@ class ScraperClient:
         self.keep_container = keep_container
         self.reject_redirects = reject_redirects
         self.chrome_pull_policy = chrome_pull_policy
-        self.firecrawl_url = firecrawl_url.rstrip("/")
-        self.firecrawl_timeout = firecrawl_timeout
-        self.firecrawl_wait_for = firecrawl_wait_for
-        self.firecrawl_max_age_ms = firecrawl_max_age_ms
-        self.firecrawl_proxy = firecrawl_proxy
         self._container_started = False
         self._chrome_endpoint = f"http://127.0.0.1:{self.chrome_port}"
 
@@ -181,7 +135,7 @@ class ScraperClient:
         self.session_semaphore: Optional[asyncio.Semaphore] = None
 
     async def __aenter__(self) -> "ScraperClient":
-        if self.mode not in {"direct", "deep", "firecrawl"}:
+        if self.mode not in {"direct", "deep"}:
             raise ValueError(f"Unsupported scrape mode: {self.mode}")
 
         if self.mode == "deep":
@@ -193,12 +147,6 @@ class ScraperClient:
 
             await asyncio.to_thread(self._ensure_chrome_container)
             self._web_session = None
-        elif self.mode == "firecrawl":
-            # Requests are proxied through the local Firecrawl service, which
-            # applies its own per-page timeout — allow headroom on top of it.
-            timeout = aiohttp.ClientTimeout(total=self.firecrawl_timeout + 30)
-            self._web_session = aiohttp.ClientSession(timeout=timeout)
-            await self._check_firecrawl_service()
         else:
             timeout = aiohttp.ClientTimeout(total=self.request_timeout + 10)
             self._web_session = aiohttp.ClientSession(
@@ -289,8 +237,6 @@ class ScraperClient:
             scraped_at = datetime.now().isoformat()
             if self.mode == "deep":
                 scrape_result = await self._scrape_with_chrome(session, url, timeout)
-            elif self.mode == "firecrawl":
-                scrape_result = await self._scrape_with_firecrawl(url)
             else:
                 scrape_result = await self._scrape_direct(url, timeout)
 
@@ -498,129 +444,6 @@ class ScraperClient:
             "url": url,
         }
 
-    # ------------------------------------------------------------------
-    # Firecrawl helpers
-    # ------------------------------------------------------------------
-
-    async def _check_firecrawl_service(self) -> None:
-        """Verify the local Firecrawl API is reachable before accepting work."""
-        if not self._web_session:
-            raise RuntimeError("Web session is not initialised")
-        if not await firecrawl_service_ready(self.firecrawl_url, session=self._web_session):
-            # __aexit__ never runs when __aenter__ raises, so close the
-            # session here or it leaks its connector.
-            await self._web_session.close()
-            self._web_session = None
-            raise RuntimeError(
-                f"Firecrawl service is not reachable at {self.firecrawl_url}. "
-                "Start it with `scripts/firecrawl.sh up`."
-            )
-        logger.info("Firecrawl service is ready at %s", self.firecrawl_url)
-
-    async def _scrape_with_firecrawl(self, url: str) -> Dict[str, Any]:
-        """Scrape a URL through the local Firecrawl service (markdown output)."""
-        if not self._web_session:
-            raise RuntimeError("Web session is not initialised")
-
-        payload: Dict[str, Any] = {
-            "url": url,
-            "formats": ["markdown"],
-            "onlyMainContent": True,
-            "timeout": min(self.firecrawl_timeout * 1000, FIRECRAWL_MAX_TIMEOUT_MS),
-            # "basic" = one render attempt, no stealth-proxy escalation. See the
-            # firecrawl_proxy note in config.py for why escalation is futile
-            # (and counterproductive) on a self-hosted stack.
-            "proxy": self.firecrawl_proxy,
-        }
-        if self.firecrawl_wait_for > 0:
-            payload["waitFor"] = self.firecrawl_wait_for
-        if self.firecrawl_max_age_ms is not None:
-            payload["maxAge"] = self.firecrawl_max_age_ms
-
-        last_exception: Optional[Exception] = None
-        for attempt in range(1, self.max_retries + 1):
-            try:
-                async with self._web_session.post(
-                    f"{self.firecrawl_url}/v2/scrape", json=payload
-                ) as response:
-                    # Status check before JSON parsing: transient errors (a
-                    # restarting API serves HTML 502s, a saturated queue sheds
-                    # load with 429s) must surface as their status, not as a
-                    # JSON decode error.
-                    if response.status >= 500 or response.status in (408, 429):
-                        detail = (await response.text())[:200]
-                        # Anti-bot / retry-limit failures are deterministic:
-                        # the service already exhausted its own render attempts
-                        # against a site that is blocking us. Retrying from here
-                        # just re-hammers that site (wasted time + ban risk), so
-                        # surface it as a permanent failure instead of retrying.
-                        if "SCRAPE_RETRY_LIMIT" in detail or "document_antibot" in detail:
-                            raise RuntimeError(
-                                f"Firecrawl could not bypass anti-bot protection "
-                                f"(HTTP {response.status})"
-                            )
-                        # Likewise when every engine (fetch, Playwright, ...)
-                        # has already failed on this URL: another request would
-                        # just repeat the same renders against the same site.
-                        if "SCRAPE_ALL_ENGINES_FAILED" in detail:
-                            raise RuntimeError(
-                                f"Firecrawl: all scraping engines failed (HTTP {response.status})"
-                            )
-                        raise _RetryableStatusError(f"HTTP {response.status}: {detail}")
-                    body = await response.json(content_type=None)
-                    if not isinstance(body, dict):
-                        raise RuntimeError(
-                            f"Firecrawl returned an unexpected response: {str(body)[:100]}"
-                        )
-                    if not body.get("success", False):
-                        # The service already exhausted its own fetch attempts;
-                        # a retry from here would not change the outcome.
-                        raise RuntimeError(
-                            f"Firecrawl scrape failed: {body.get('error', 'unknown error')}"
-                        )
-                    return self._parse_firecrawl_document(url, body.get("data") or {})
-            except RuntimeError:
-                raise
-            except Exception as exc:
-                last_exception = exc
-                if attempt < self.max_retries:
-                    delay = self.retry_delay * (2 ** (attempt - 1))
-                    logger.warning(
-                        "Attempt %d/%d to scrape %s via Firecrawl failed: %s. Retrying in %.1fs...",
-                        attempt,
-                        self.max_retries,
-                        url,
-                        str(exc)[:100],
-                        delay,
-                    )
-                    await asyncio.sleep(delay)
-
-        raise RuntimeError(
-            f"Failed to scrape {url} via Firecrawl: {last_exception}"
-        ) from last_exception
-
-    def _parse_firecrawl_document(self, url: str, document: Dict[str, Any]) -> Dict[str, Any]:
-        metadata = document.get("metadata") or {}
-
-        final_url = metadata.get("url") or metadata.get("sourceURL") or url
-        self._ensure_same_host(url, final_url)
-
-        content = _truncate_content(document.get("markdown") or "")
-
-        status_code = metadata.get("statusCode")
-        try:
-            status_code = int(status_code)
-        except (TypeError, ValueError):
-            status_code = 200
-
-        return {
-            "title": metadata.get("title") or "",
-            "meta_description": metadata.get("description") or "",
-            "content": content,
-            "url": url,
-            "status_code": status_code,
-        }
-
     async def cleanup(self) -> None:
         """Reset session state."""
         logger.info("Cleaning up scraper sessions...")
@@ -649,7 +472,7 @@ class ScraperClient:
         }
 
     def get_mode(self) -> str:
-        if self.mode in {"deep", "firecrawl"}:
+        if self.mode == "deep":
             return self.mode
         return "direct"
 

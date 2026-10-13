@@ -49,7 +49,7 @@ We do not operate a paid bug-bounty programme.
 
 **Out of scope:**
 
-- Third-party services and software Lens talks to — OpenRouter, Firecrawl,
+- Third-party services and software Lens talks to — OpenRouter,
   Selenium/Chrome, Podman, Caddy, nginx. Report those upstream. Report to us
   only if *our* orchestration of them is what creates the vulnerability.
 - The auth service that mints the `elcano_auth` cookie. It is a separate
@@ -57,9 +57,8 @@ We do not operate a paid bug-bounty programme.
 - Findings that require an already-compromised host, root on the box, or
   physical access.
 - Anything that follows from a documented configuration choice made against our
-  advice — for example publishing the Firecrawl port (documented as
-  localhost-only with authentication disabled), or exposing
-  `127.0.0.1:8808` directly instead of behind a TLS proxy.
+  advice — for example exposing `127.0.0.1:8808` directly instead of behind a
+  TLS proxy.
 - Missing hardening directives in `deploy/lens.service`. `NoNewPrivileges`,
   `ProtectControlGroups`, `ProtectKernelTunables`, `PrivateTmp` and
   `ProtectHome` are absent deliberately — each one breaks rootless podman, and
@@ -86,9 +85,6 @@ Worth knowing whether or not you are reporting anything:
   safe to distribute and a leak cannot forge a session.
 - **Bind the app to localhost** and terminate TLS in a reverse proxy. That is
   what `lens.service` and the shipped Caddy config do.
-- **Keep the Firecrawl port on localhost.** The stack runs with
-  `USE_DB_AUTHENTICATION=false`, which is only safe because 127.0.0.1:3002
-  never leaves the host.
 - `/opt/lens/.env` holds the OpenRouter key and is written `0640 lens:lens`.
   `lens env` redacts secrets when printing.
 - `/health` is intentionally unauthenticated so load balancers can probe it. It

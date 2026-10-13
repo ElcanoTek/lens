@@ -63,14 +63,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--scrape-mode",
-        choices=["auto", "direct", "deep", "firecrawl"],
+        choices=["auto", "direct", "deep"],
         help=(
             "Select the scraping backend (overrides config.json). "
             "'auto' detects the input type (websites, apps, CTV), starts with the "
-            "fast crawler, then retries failed websites with the local Firecrawl "
-            "service (if running) and finally the deep crawler. 'firecrawl' "
-            "scrapes everything through the local Firecrawl service "
-            "(scripts/firecrawl.sh up)."
+            "fast crawler, retries failed websites with the deep crawler (if "
+            "Podman is available) and classifies what still fails from research."
         ),
     )
     parser.add_argument(

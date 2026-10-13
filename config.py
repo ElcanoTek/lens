@@ -96,45 +96,21 @@ class Config:
             "session_timeout": 300,
             "user_agent": DEFAULT_USER_AGENT,
             "min_content_length": 500,
-            # Full rescue ladder by default (direct → Firecrawl → deep →
-            # research). Each rung is probed at runtime and skipped when its
-            # backend isn't available, so this degrades gracefully to a plain
-            # direct crawl on a bare host. CI pins --scrape-mode direct.
+            # Full rescue ladder by default (direct → deep → research). The
+            # deep rung is probed at runtime and skipped when Podman/Selenium
+            # aren't available, so this degrades gracefully to direct +
+            # research on a bare host. CI pins --scrape-mode direct.
             "scrape_mode": "auto",
-            # Firecrawl (self-hosted) settings. In auto mode, websites that
-            # fail the direct crawl are retried through this service before
-            # falling back to the deep (headless Chrome) crawler.
-            "firecrawl_url": "http://127.0.0.1:3002",
-            "firecrawl_timeout": 60,  # Per-page timeout in seconds
-            "firecrawl_wait_for": 0,  # Extra ms to wait for JS after load
-            "firecrawl_max_age_ms": None,  # None = use service default caching
-            "firecrawl_enabled": True,  # Master switch for auto-mode retries
-            # Match the stack's rendering capacity (MAX_CONCURRENT_PAGES in
-            # firecrawl/docker-compose.yaml); more sessions would just queue.
-            "firecrawl_max_concurrent": 3,
-            # Proxy tier Firecrawl uses per scrape. "basic" makes ONE render
-            # attempt and returns whatever it gets. "auto" escalates to a
-            # "stealth" proxy whenever a site answers 401/403 — but a
-            # self-hosted stack has no stealth proxy backend, so that
-            # escalation just re-fetches a hardened site (Cloudflare/DataDome)
-            # several more times over 30-90s, always failing with
-            # `document_antibot`. "basic" fails those sites in ~1s instead and,
-            # critically, stops re-hammering them from this one datacenter IP —
-            # repeated hammering is what escalates a soft block into a ban.
-            # To actually reach hardened sites, plug a residential proxy into
-            # the Firecrawl stack (PROXY_SERVER in firecrawl/.env) rather than
-            # setting this to "auto". See firecrawl/.env.example.
-            "firecrawl_proxy": "basic",
-            # The auto-mode retry passes exist to rescue hard sites, so they
-            # follow cross-host redirects that the fast direct pass rejects.
+            # The auto-mode deep retry pass exists to rescue hard sites, so it
+            # follows cross-host redirects that the fast direct pass rejects.
             # Many publishers redirect a brand domain to its parent
-            # (foxnewsdigital.com -> foxnews.com, abcnews.go.com -> abcnews.com,
-            # msnbc.com -> its network home); classifying the destination's
-            # content is the correct, useful result. Set False to keep the
-            # strict same-host policy in every pass.
-            "firecrawl_follow_redirects": True,
-            # Once Firecrawl determines a site is blocking this IP (anti-bot
-            # challenge, 401/403), don't escalate it to the deep headless-Chrome
+            # (foxnewsdigital.com -> foxnews.com, abcnews.go.com -> abcnews.com);
+            # classifying the destination's content is the useful result. Set
+            # False to keep the strict same-host policy in every pass.
+            # (Formerly firecrawl_follow_redirects, which is still honoured.)
+            "retry_follow_redirects": True,
+            # Once the direct pass shows a site is blocking this IP (anti-bot
+            # challenge, 401/403/429), don't escalate it to the deep headless-Chrome
             # pass: that pass renders from the SAME datacenter IP, so it fails
             # identically while adding load and ban risk. It still runs for
             # sites that failed for other reasons (timeouts, service hiccups).
@@ -193,13 +169,26 @@ class Config:
         }
 
         # Load from config file if it exists
+        file_config_keys: set = set()
         if os.path.exists(self.config_file):
             try:
                 with open(self.config_file, "r") as f:
                     file_config = json.load(f)
                 default_config.update(file_config)
+                file_config_keys = set(file_config)
             except (json.JSONDecodeError, IOError) as e:
                 print(f"Warning: Could not load config file {self.config_file}: {e}")
+
+        # Firecrawl was removed: keep old config.json files working.
+        if "firecrawl_follow_redirects" in default_config:
+            legacy = default_config.pop("firecrawl_follow_redirects")
+            if "retry_follow_redirects" not in file_config_keys:
+                default_config["retry_follow_redirects"] = legacy
+        for key in [k for k in default_config if k.startswith("firecrawl_")]:
+            default_config.pop(key)
+        if default_config.get("scrape_mode") == "firecrawl":
+            print("Warning: scrape_mode 'firecrawl' was removed; using 'auto' instead")
+            default_config["scrape_mode"] = "auto"
 
         if default_config.get("user_agent") in _LEGACY_USER_AGENTS:
             default_config["user_agent"] = DEFAULT_USER_AGENT

@@ -30,10 +30,10 @@ def test_direct_success_means_none_detected():
 
 
 def test_browser_rescue_after_403_means_moderate():
-    # Auto ladder: direct pass got a 403, Firecrawl rendered the page fine.
+    # Auto ladder: direct pass got a 403, headless Chrome rendered the page fine.
     assert (
         derive_bot_protection(
-            "firecrawl",
+            "deep",
             prior_error="Scrape validation failed: Received HTTP status 403",
             prior_error_mode="direct",
         )
@@ -45,7 +45,7 @@ def test_browser_rescue_after_nonblock_failure_means_none():
     # JS-heavy site: direct pass content was too short, not blocked.
     assert (
         derive_bot_protection(
-            "firecrawl",
+            "deep",
             prior_error="Scraped content too short (101 chars < 500)",
             prior_error_mode="direct",
         )
@@ -58,14 +58,14 @@ def test_research_rescue_after_browser_block_means_aggressive():
         derive_bot_protection(
             "research",
             prior_error="Potential block page detected ('just a moment')",
-            prior_error_mode="firecrawl",
+            prior_error_mode="deep",
         )
         == "Aggressive"
     )
 
 
 def test_research_rescue_after_plain_http_block_means_moderate():
-    # Ladder without Firecrawl/Chrome available: only the plain client was
+    # Ladder without headless Chrome available: only the plain client was
     # proven blocked, so don't overstate.
     assert (
         derive_bot_protection(
@@ -122,7 +122,7 @@ def test_research_failure_echoing_prior_block_uses_prior_rung():
             "research",
             current_error=combined,
             prior_error="Received HTTP status 403",
-            prior_error_mode="firecrawl",
+            prior_error_mode="deep",
         )
         == "Aggressive"
     )
@@ -198,7 +198,7 @@ async def test_success_row_carries_bot_protection_from_prior_pass(tmp_path):
                 "description": "d",
             },
             {"content_length": 1000, "scraped_at": "2026-01-01T00:00:00"},
-            "firecrawl",
+            "deep",
             "openrouter",
             1.0,
         )

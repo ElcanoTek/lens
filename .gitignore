@@ -228,5 +228,3 @@ managed-files/inputs/.breakdowns/
 # macOS
 .DS_Store
 
-# Firecrawl local stack overrides
-firecrawl/.env

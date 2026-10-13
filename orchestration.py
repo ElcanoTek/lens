@@ -42,7 +42,7 @@ from ios_api_client import iOSAPIClient
 from openrouter_client import OpenRouterClient
 from progress_tracker import ProgressTracker
 from reporting import TerminalReporter
-from scraper_client import ScraperClient, firecrawl_service_ready
+from scraper_client import ScraperClient
 from shared_types import ContentType, CTVWorkItem, DomainWorkItem, WorkItem, is_antibot_error
 
 logger = logging.getLogger(__name__)
@@ -205,7 +205,7 @@ class SiteAnalysisOrchestrator:
         self.verbose = verbose
         self.jsonl_path = jsonl_path
         self.scrape_mode = (scrape_mode or config.SCRAPE_MODE).lower()
-        if self.scrape_mode not in {"auto", "direct", "deep", "firecrawl"}:
+        if self.scrape_mode not in {"auto", "direct", "deep"}:
             raise ValueError(f"Unsupported scrape mode: {self.scrape_mode}")
         # Auto mode: fast crawl first, deep crawl only for websites that fail.
         self.auto_mode = self.scrape_mode == "auto"
@@ -214,8 +214,6 @@ class SiteAnalysisOrchestrator:
         # Set per pass: fast-pass website failures defer to a later retry
         # pass (status retry_pending) only when that retry can actually run.
         self._defer_website_failures = False
-        # Cached result of the one-time Firecrawl service health probe.
-        self._firecrawl_service_available: Optional[bool] = None
         self.reject_redirects = reject_redirects
         self.ctv_mode = ctv_mode
         self.reporter: Optional[TerminalReporter] = None
@@ -327,15 +325,9 @@ class SiteAnalysisOrchestrator:
                     self._defer_website_failures = (
                         self.auto_mode
                         and self.has_websites
-                        and (
-                            await self._firecrawl_available()
-                            or self._deep_crawl_available()
-                            or self._research_fallback_available()
-                        )
+                        and (self._deep_crawl_available() or self._research_fallback_available())
                     )
                     await self._process_items_concurrently(items_to_process)
-                    if self.auto_mode and not self.shutdown_requested:
-                        await self._retry_failed_websites_firecrawl(exit_stack, items_to_process)
                     if self.auto_mode and not self.shutdown_requested:
                         await self._retry_failed_websites_deep(exit_stack, items_to_process)
                     if self.auto_mode and not self.shutdown_requested:
@@ -524,10 +516,7 @@ class SiteAnalysisOrchestrator:
             logger.info("Initializing website scraper...")
             scraper = self._build_scraper_client(self.scrape_mode)
             self.scraper_client = await exit_stack.enter_async_context(scraper)
-            pool_size = config.CONCURRENT_SESSIONS
-            if self.scrape_mode == "firecrawl":
-                pool_size = min(pool_size, config.FIRECRAWL_MAX_CONCURRENT)
-            await self.scraper_client.create_session_pool(pool_size)
+            await self.scraper_client.create_session_pool(config.CONCURRENT_SESSIONS)
 
         # Initialize iOS API client if we have iOS apps
         if self.has_ios_apps:
@@ -781,7 +770,7 @@ class SiteAnalysisOrchestrator:
         """Construct a ScraperClient for the given mode from config.
 
         *reject_redirects* overrides the run-level policy for a single pass
-        (the Firecrawl retry pass follows cross-host redirects so it can rescue
+        (the deep retry pass follows cross-host redirects so it can rescue
         publishers that redirect a brand domain to its parent).
         """
         if reject_redirects is None:
@@ -803,30 +792,7 @@ class SiteAnalysisOrchestrator:
             keep_container=config.DEEP_SCRAPE_KEEP_CONTAINER,
             reject_redirects=reject_redirects,
             chrome_pull_policy=getattr(config, "DEEP_SCRAPE_PULL_POLICY", "always"),
-            firecrawl_url=config.FIRECRAWL_URL,
-            firecrawl_timeout=config.FIRECRAWL_TIMEOUT,
-            firecrawl_wait_for=config.FIRECRAWL_WAIT_FOR,
-            firecrawl_max_age_ms=config.FIRECRAWL_MAX_AGE_MS,
-            firecrawl_proxy=config.FIRECRAWL_PROXY,
         )
-
-    async def _firecrawl_available(self) -> bool:
-        """Probe the local Firecrawl service once and cache the result."""
-        if self._firecrawl_service_available is not None:
-            return self._firecrawl_service_available
-
-        available = False
-        if config.FIRECRAWL_ENABLED:
-            available = await firecrawl_service_ready(config.FIRECRAWL_URL)
-            if not available:
-                logger.info(
-                    "Firecrawl service not reachable at %s; "
-                    "auto mode will skip the Firecrawl retry pass",
-                    config.FIRECRAWL_URL,
-                )
-
-        self._firecrawl_service_available = available
-        return available
 
     def _collect_retry_items(self, items: List[WorkItem]) -> List[WorkItem]:
         """Websites whose previous pass failed (deferred or terminal)."""
@@ -866,33 +832,6 @@ class SiteAnalysisOrchestrator:
         self._defer_website_failures = defer_failures
         await self._process_items_concurrently(retry_items)
 
-    async def _retry_failed_websites_firecrawl(
-        self, exit_stack: AsyncExitStack, items: List[WorkItem]
-    ) -> None:
-        """Auto mode second pass: re-crawl failed websites via local Firecrawl."""
-        retry_items = self._collect_retry_items(items)
-        if not retry_items:
-            return
-
-        if not await self._firecrawl_available():
-            return
-
-        await self._run_retry_pass(
-            exit_stack,
-            retry_items,
-            mode="firecrawl",
-            # Stay within the service's configured rendering capacity —
-            # oversubscribing just queues requests against the client timeout.
-            pool_size=min(config.CONCURRENT_SESSIONS, config.FIRECRAWL_MAX_CONCURRENT),
-            # Firecrawl failures stay retryable only while a later pass (deep
-            # crawl or the research fallback) can still run after this one.
-            defer_failures=(self._deep_crawl_available() or self._research_fallback_available()),
-            # Follow cross-host redirects here (unless disabled): many
-            # publishers redirect a brand domain to its parent, and the
-            # destination's content is the result we actually want.
-            reject_redirects=not config.FIRECRAWL_FOLLOW_REDIRECTS,
-        )
-
     def _deep_crawl_available(self) -> bool:
         """Check whether the deep (headless Chrome) crawler can run on this host."""
         podman = getattr(config, "DEEP_SCRAPE_PODMAN_BINARY", "podman")
@@ -926,7 +865,7 @@ class SiteAnalysisOrchestrator:
             )
             return
 
-        # Skip domains the Firecrawl pass already proved are blocking this IP.
+        # Skip domains the direct pass already proved are blocking this IP.
         # Rendering them again from the same IP fails identically and only adds
         # load and ban risk; leave their earlier failure in place.
         if getattr(config, "SKIP_DEEP_RETRY_ON_BLOCK", True):
@@ -945,9 +884,7 @@ class SiteAnalysisOrchestrator:
                 logger.info(
                     "All remaining failures are anti-bot blocks — nothing the "
                     "deep crawler can rescue. The research fallback will "
-                    "classify them from public sources; for direct scraping, "
-                    "consider a residential proxy (PROXY_SERVER in "
-                    "firecrawl/.env)."
+                    "classify them from public sources."
                 )
                 return
 
@@ -959,10 +896,10 @@ class SiteAnalysisOrchestrator:
             # Deep-pass failures stay retryable only while the research
             # fallback can still run after this pass.
             defer_failures=self._research_fallback_available(),
-            # Same policy as the Firecrawl pass: retry passes follow
-            # cross-host redirects so publishers that redirect a brand domain
-            # to a parent site classify on the destination's content.
-            reject_redirects=not config.FIRECRAWL_FOLLOW_REDIRECTS,
+            # Retry passes follow cross-host redirects so publishers that
+            # redirect a brand domain to a parent site classify on the
+            # destination's content.
+            reject_redirects=not config.RETRY_FOLLOW_REDIRECTS,
         )
 
     def _research_fallback_available(self) -> bool:

@@ -111,7 +111,6 @@ def test_deploy_and_rollback_preserve_instance_data(tmp_path):
         ".env",
         ".env.shared",
         "config.json",
-        "firecrawl/.env",
         "managed-files/results.csv",
         "data/access.db",
         ".local/podman",

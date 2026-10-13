@@ -1,8 +1,8 @@
 # Deploying Lens
 
 The authoritative guide to running the Lens dashboard as a service. Everything
-here is verified against `scripts/bootstrap.sh`, `scripts/update.sh`,
-`scripts/firecrawl.sh` and the units in `deploy/`.
+here is verified against `scripts/bootstrap.sh`, `scripts/update.sh`
+and the units in `deploy/`.
 
 You do **not** need any of this to use the CLI. `python main.py` on a laptop
 with an OpenRouter key is the whole story — see the
@@ -24,7 +24,6 @@ long-running web dashboard.
 - [Layout and identity](#layout-and-identity)
 - [Configuration reference](#configuration-reference)
 - [TLS and reverse proxy](#tls-and-reverse-proxy)
-- [The optional Firecrawl stack](#the-optional-firecrawl-stack)
 - [Deep scraping (headless Chrome)](#deep-scraping-headless-chrome)
 - [Service management and the operator CLI](#service-management-and-the-operator-cli)
 - [Updating and rolling back](#updating-and-rolling-back)
@@ -48,12 +47,9 @@ dashboard by hand (`uvicorn web_service:app`) or adapt the script.
 | curl | The public installer installs Git and clones main over HTTPS; no GitHub credentials needed |
 | An OpenRouter API key | Every classification is an OpenRouter call. Runs cost real money — budget before pointing it at a large list. |
 | Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API and the Google Play Store |
-| 2 vCPU / 8 GB RAM | The floor the Firecrawl memory limits are tuned for. Without Firecrawl, 1 vCPU / 2 GB is enough. |
-| ~10 GB disk | ~3 GB of Firecrawl images plus ~1 GB for the Selenium Chrome image, both optional |
+| 1 vCPU / 2 GB RAM | Enough for the direct crawl and research fallback. The deep crawler's Chrome container wants ~2 GB more RAM. |
+| ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), plus whatever run output you keep |
 | A public DNS record | Only if you want Caddy to obtain a Let's Encrypt certificate |
-
-On RHEL, `podman-compose` lives in EPEL. Without it, bootstrap warns and
-continues with Firecrawl disabled rather than failing.
 
 ## Install
 
@@ -106,8 +102,7 @@ then pass these same variables to `bash` with that file.
 | `LENS_BOOTSTRAP_NON_INTERACTIVE` | `0` | Never prompt; fail on a missing required value |
 | `TYPESAFE_API_KEY` | — | Optional direct fallback for Jev custom categories when OpenRouter fails; hidden prompt interactively, skipped if absent in unattended installs; existing `.env` value preserved |
 | `LENS_BOOTSTRAP_SKIP_CHROME` | `0` | Skip the `chromium` + `chromedriver` packages |
-| `LENS_BOOTSTRAP_SKIP_DEEP` | `0` | Skip podman and the Selenium Chrome image (also defaults `SKIP_FIRECRAWL` to 1) |
-| `LENS_BOOTSTRAP_SKIP_FIRECRAWL` | `$LENS_BOOTSTRAP_SKIP_DEEP` | Skip `podman-compose`, the Firecrawl images and `firecrawl.service` |
+| `LENS_BOOTSTRAP_SKIP_DEEP` | `0` | Skip podman and the Selenium Chrome image |
 | `LENS_BOOTSTRAP_HOSTNAME` | — | Public hostname for TLS; blank skips Caddy |
 | `LENS_BOOTSTRAP_SETUP_CADDY` | `Y` | Install and configure Caddy (only asked when a hostname is given) |
 | `LENS_BOOTSTRAP_USE_LETSENCRYPT` | `Y` | `n` uses Caddy's `tls internal` self-signed certificate instead |
@@ -122,16 +117,16 @@ then pass these same variables to `bash` with that file.
 Seven steps, in order:
 
 1. **`dnf install`** — `git curl jq python3 python3-devel gcc uv rsync openssl`,
-   plus `chromium chromedriver` (unless `SKIP_CHROME`), `podman` (unless both
-   deep and Firecrawl are skipped) and `podman-compose` (best-effort).
+   plus `chromium chromedriver` (unless `SKIP_CHROME`), and `podman` (unless
+   `SKIP_DEEP`).
 2. **User and directory** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
    prerequisites: subuid/subgid ranges `200000-265535` (system users get none
    by default, and without them image unpacking fails), `loginctl
    enable-linger lens` so `/run/user/<uid>` survives without a login session,
    `podman system migrate` to clear any stale pause process, and a pre-pull of
-   the Chrome and Firecrawl images so the first job doesn't stall on a
-   multi-gigabyte download.
+   the Chrome image so the first deep crawl doesn't stall on a large
+   download.
 3. **Source sync** — seeds `/opt/lens-src` (keeping `.git`), then rsyncs it to
    `/opt/lens` with `--delete`, preserving `.git`, `.venv`, `.env`,
    `managed-files`, the legacy `data` directory during migration, and podman's
@@ -148,9 +143,8 @@ Seven steps, in order:
    then creates `/var/lib/lens` and atomically migrates the legacy
    `/opt/lens/data/access.db` when present. A custom `LENS_ACCESS_DB` is never
    moved or rewritten.
-6. **Units and CLI** — installs `lens.service`, `/usr/local/bin/lens`, and
-   `firecrawl.service` when podman-compose is present.
-7. **Start** — enables and starts the services, polls
+6. **Units and CLI** — installs `lens.service` and `/usr/local/bin/lens`.
+7. **Start** — enables and starts the service, polls
    `http://127.0.0.1:8808/health` for up to 15 s and fails the installation if
    Lens never becomes ready. It then optionally installs Caddy, opens
    http/https in firewalld and waits up to 45 s for TLS.
@@ -175,7 +169,6 @@ again to fill missing configuration; use `lens env edit` to change existing valu
 /var/lib/lens/          persistent application state (owned by lens:lens, 0750)
   └── access.db         central allowlist, hashed sessions and revocation state, 0600
 /etc/systemd/system/lens.service
-/etc/systemd/system/firecrawl.service   (optional)
 /usr/local/bin/lens                     operator CLI
 /etc/caddy/Caddyfile.d/lens.caddyfile   (optional; or conf.d/lens.caddy)
 /etc/motd
@@ -212,12 +205,9 @@ working directory via python-dotenv for CLI runs).
 | `AUTH_CLIENT_ID`, `AUTH_CLIENT_SECRET` | Central mode | — | Per-deployment Auth client credentials. |
 | `LENS_SESSION_SECRET` | Central mode | — | At least 32 random bytes for signed login state. |
 | `LENS_ACCESS_DB` | No | `/var/lib/lens/access.db` | Persistent local access/session/revocation SQLite database. |
-| `LENS_MAX_PARALLEL_JOBS` | No | `1` | Dashboard jobs run at once (1–8). Website jobs each run their own crawler pool and share Firecrawl, so 2–3 suits a small host. |
+| `LENS_MAX_PARALLEL_JOBS` | No | `1` | Dashboard jobs run at once (1–8). Website jobs each run their own crawler pool, so 2–3 suits a small host. |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` enables extra CLI diagnostics. Same as `--verbose`. |
 | `PYTHONUNBUFFERED` | No | set to `1` by the unit | Keeps log lines flowing into journald. |
-
-The Firecrawl stack reads its own variables from the optional
-`firecrawl/.env`; see [that section](#the-optional-firecrawl-stack).
 
 ### config.json
 
@@ -237,7 +227,7 @@ the same list grouped by concern.
 | `llm_max_tokens` | `1500` | Truncated classifications are retried, not faked |
 | `llm_request_max_retries` | `3` | Per-request retries |
 | `llm_request_timeout` | `60` | Seconds per LLM call |
-| `scrape_mode` | `auto` | `auto` \| `direct` \| `deep` \| `firecrawl` |
+| `scrape_mode` | `auto` | `auto` (direct → deep → research) \| `direct` \| `deep`. A legacy `firecrawl` value runs as `auto`, with a warning. |
 | `concurrent_sessions` | `5` | Website fetch concurrency |
 | `request_timeout` | `30` | Seconds per page fetch |
 | `max_retries` | `3` | Fetch retries |
@@ -246,15 +236,8 @@ the same list grouped by concern.
 | `min_content_length` | `500` | Shortest body accepted as real content |
 | `reject_redirects` | `true` | Direct pass fails off-host redirects (a domain ↔ its own subdomains is not off-host) |
 | `user_agent` | current-Chrome string | An ancient UA is itself a bot signal |
-| `firecrawl_enabled` | `true` | Master switch for the auto-mode Firecrawl pass |
-| `firecrawl_url` | `http://127.0.0.1:3002` | Local Firecrawl API |
-| `firecrawl_timeout` | `60` | Seconds per page |
-| `firecrawl_wait_for` | `0` | Extra ms to wait for JS after load |
-| `firecrawl_max_age_ms` | `null` | `null` uses the service's own caching |
-| `firecrawl_max_concurrent` | `3` | Match `MAX_CONCURRENT_PAGES` in the compose file |
-| `firecrawl_proxy` | `basic` | Keep it. `auto` escalates to a stealth proxy a self-hosted stack does not have, and just re-hammers hardened sites. |
-| `firecrawl_follow_redirects` | `true` | Retry passes follow brand→parent redirects |
-| `skip_deep_retry_on_block` | `true` | Don't re-try an anti-bot block from the same IP |
+| `skip_deep_retry_on_block` | `true` | Deep pass skips sites the direct pass proved are blocked (401/403/429 or a block page) rather than retrying from the same IP |
+| `retry_follow_redirects` | `true` | Deep retry pass follows cross-host brand→parent redirects (e.g. `foxnewsdigital.com` → `foxnews.com`) that the direct pass rejects. A legacy `firecrawl_follow_redirects` is honoured when this is unset. |
 | `deep_scrape_podman_binary` | `podman` | Container runtime |
 | `deep_scrape_image` | `docker.io/selenium/standalone-chrome:latest` | Fully qualified on purpose — Podman refuses short names without a TTY |
 | `deep_scrape_container_name` | `elcano-lens-chromedriver` | Container name |
@@ -266,7 +249,7 @@ the same list grouped by concern.
 | `deep_scrape_keep_container` | `false` | Leave the container up after a run |
 | `deep_scrape_pull_policy` | `always` | Refresh Chrome every run |
 | `research_fallback_enabled` | `true` | Classify blocked sites from public research instead of failing them |
-| `research_model` | `perplexity/sonar` | Needs built-in web search |
+| `research_model` | `perplexity/sonar` | Needs built-in web search. `perplexity/sonar-pro` is also supported. |
 | `research_temperature` | `0.2` | — |
 | `research_max_tokens` | `1500` | — |
 | `research_max_concurrent` | `4` | — |
@@ -294,7 +277,8 @@ the same list grouped by concern.
 
 Keys are uppercased onto a global `config` singleton, so `llm_model` is
 `config.LLM_MODEL`. Note that `config.json` is **git-ignored** — it is local
-state, not part of a release.
+state, not part of a release. Old `firecrawl_*` keys left in a `config.json`
+are ignored.
 
 ## TLS and reverse proxy
 
@@ -351,76 +335,9 @@ If SELinux is enforcing, allow nginx to make outbound connections:
 sudo setsebool -P httpd_can_network_connect 1
 ```
 
-## The optional Firecrawl stack
-
-Firecrawl is third-party software (AGPL-3.0) that Lens *orchestrates* — it
-renders JavaScript through a bundled Playwright service and returns clean
-markdown. It runs entirely on this host; nothing is sent to a managed service.
-See [`NOTICE`](../NOTICE).
-
-Requirements: `podman` and `podman-compose`, plus the rootless plumbing
-bootstrap sets up (subuid/subgid ranges and lingering for the `lens` user).
-
-```bash
-scripts/firecrawl.sh up        # start; waits up to 180s for the API
-scripts/firecrawl.sh status    # API health + container table
-scripts/firecrawl.sh logs api  # tail one service (or all)
-scripts/firecrawl.sh pull      # refresh images
-scripts/firecrawl.sh reset     # wipe queue state and restart
-scripts/firecrawl.sh down      # stop
-```
-
-On a bootstrapped host, prefer the unit. `firecrawl.sh` derives
-`XDG_RUNTIME_DIR` from `id -u`, so running it as root points podman at
-`/run/user/0` and finds none of the images pulled for the `lens` user; the unit
-runs it as `lens` with the right `HOME` and lingering already enabled:
-
-```bash
-sudo systemctl status firecrawl.service
-sudo systemctl restart firecrawl.service
-sudo journalctl -u firecrawl -n 200
-```
-
-Services in `firecrawl/docker-compose.yaml`: the Firecrawl API and workers, a
-Playwright rendering service, Redis, RabbitMQ and a queue Postgres. Only the
-API is published, on **127.0.0.1:3002**. Database authentication is off
-(`USE_DB_AUTHENTICATION=false`), which is safe precisely because the port never
-leaves the host — if you change that binding you have published an
-unauthenticated scraper API.
-
-The stack tracks `latest` on purpose: queue state is disposable (all real
-output lives in Lens's CSVs), so `firecrawl.sh up` self-heals a schema-breaking
-upgrade by wiping that state and retrying. Two consequences worth knowing:
-
-- Don't run `lens update` while a job is mid-flight — the stack restarts.
-- If upstream ships a broken `latest`, Lens simply runs without the Firecrawl
-  rung until the next good image. Jobs still complete.
-
-Pin versions in `firecrawl/.env` (git-ignored; copy from
-`firecrawl/.env.example`) when you need reproducibility: `FIRECRAWL_TAG`,
-`PLAYWRIGHT_SERVICE_TAG`, `NUQ_POSTGRES_TAG`. That file also carries
-`FIRECRAWL_PORT`, worker fan-out (`NUM_WORKERS_PER_QUEUE`,
-`MAX_CONCURRENT_JOBS`, `CRAWL_CONCURRENT_REQUESTS`, `BROWSER_POOL_SIZE`,
-`MAX_CONCURRENT_PAGES`), the queue Postgres credentials (`POSTGRES_USER` /
-`POSTGRES_PASSWORD` / `POSTGRES_DB`, all defaulting to `postgres` — an
-on-host-only database with no exposed port) and an optional upstream proxy
-(`PROXY_SERVER`, `PROXY_USERNAME`, `PROXY_PASSWORD`).
-
-### About hardened sites
-
-Self-hosted Firecrawl renders from *this host's IP*. Publishers behind
-Cloudflare, DataDome or PerimeterX reject datacenter IPs outright, so those
-scrapes fail fast by design no matter how the stack is tuned. The only
-reliable fix is a residential or ISP proxy via `PROXY_SERVER`.
-
-Do **not** respond by raising retry counts or setting `firecrawl_proxy` to
-`auto`. Repeated hits from one IP are what turn a soft block into a permanent
-ban, and Lens's research fallback already classifies those domains from public
-sources without touching the site.
-
 ## Deep scraping (headless Chrome)
 
-The third rung of the ladder runs `docker.io/selenium/standalone-chrome` under
+The second rung of the ladder (direct → deep → research) runs `docker.io/selenium/standalone-chrome` under
 rootless podman on `127.0.0.1:4444`, with noVNC on `7900` if you want to watch.
 Concurrency is forced to 1 — one Chrome session is all that is practical.
 
@@ -435,9 +352,16 @@ keep it alive between runs. `deep_scrape_pull_policy` defaults to `always` so
 each run gets current Chrome.
 
 To run a host with no containers at all, install with
-`LENS_BOOTSTRAP_SKIP_DEEP=1` (which also skips Firecrawl). Auto mode probes
-each rung at runtime and skips what isn't there, degrading cleanly to a plain
+`LENS_BOOTSTRAP_SKIP_DEEP=1`. Auto mode probes the deep rung at runtime and
+skips it when Podman or Selenium isn't there, degrading cleanly to a plain
 direct crawl plus the research fallback.
+
+Sites the direct pass proved are blocked by anti-bot (401/403/429 or a block
+page) skip this rung (`skip_deep_retry_on_block`): Chrome renders from the
+same datacenter IP and would fail identically, and repeated hits from one IP
+are what turn a soft block into a permanent ban. They go straight to the
+research fallback, which classifies them from public sources without
+contacting the site from this host.
 
 ## Service management and the operator CLI
 
@@ -522,11 +446,11 @@ build cannot take down a working install:
 4. **Swap.** Stop the service, migrate a legacy access database to
    `/var/lib/lens`, then rsync the staged tree over `$APP_DIR` (preserving
    `.git`, `.venv`, `.env`, `managed-files`, legacy `data`, and podman's
-   caches, `config.json`, `.env*`, `firecrawl/.env` and CLI state). Snapshot the
+   caches, `config.json`, `.env*` and CLI state). Snapshot the
    actual deployed source and venv under `/opt/lens.rollback.XXXXXX` before
    stopping, then move the old venv aside and the new one in,
-   `restorecon` it, reinstall the unit and CLI, refresh Firecrawl and
-   `/etc/motd`, then restart.
+   `restorecon` it, reinstall the unit and CLI, retire the old
+   Firecrawl stack if present (see below), refresh `/etc/motd`, then restart.
 5. **Verify.** Poll `/health` with bounded requests. On success write
    `.deployed-revision` and remove `.venv.old`. On any failure after stopping,
    automatically restore the previous source, venv, unit and CLI and probe
@@ -536,7 +460,17 @@ build cannot take down a working install:
    and do not replace backups. Power loss/SIGKILL requires manual recovery.
 
 Update environment variables: `LENS_UPDATE_YES`, `LENS_UPDATE_NO_PULL`,
-`LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`, `LENS_UPDATE_SKIP_FIRECRAWL`.
+`LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`.
+
+### Retiring the old Firecrawl stack
+
+Earlier releases ran a self-hosted Firecrawl stack as an extra crawl rung. It
+has been removed, and `lens update` cleans it off existing hosts automatically:
+it disables and deletes `firecrawl.service`, removes the `elcano-firecrawl`
+containers and volumes, removes the Firecrawl images (plus `redis:alpine`,
+`rabbitmq:3-alpine` and dangling layers — typically many GB) and deletes
+`/opt/lens/firecrawl`. The deep crawler's Chrome image is kept. The step is
+idempotent, and `lens doctor` warns while `firecrawl.service` is still loaded.
 
 ### Rolling back
 
@@ -553,7 +487,7 @@ lens doctor
 ```
 
 Application rollback does not undo DNF packages, uv-managed Python patch
-updates, migrated auth state or Firecrawl image/queue changes.
+updates, migrated auth state or the removal of the old Firecrawl stack.
 
 **Bad code** — check out the previous commit and rebuild, without fetching:
 
@@ -583,8 +517,8 @@ lens host upgrade --dry-run                     # current → latest stable Fedo
 Doctor is read-only: configuration presence/key shape (no secret values), Python
 minor, dependency consistency, running interpreter, service/readiness, deployed
 revision, source drift, disk space, OS support deadline, rootless Podman and
-installed Firecrawl. `env-permissions` only checks that `.env` is mode 0600 or
-0640. `env-readable` checks that the service user can open it. A root-owned
+a leftover `firecrawl.service` (run `lens update` to retire it).
+`env-permissions` only checks that `.env` is mode 0600 or 0640. `env-readable` checks that the service user can open it. A root-owned
 0600 file passes the mode check, the dashboard still starts (systemd reads
 EnvironmentFile as root), and every job crashes because the analyzer loads
 `.env` as `lens`. `lens env edit` puts ownership back afterwards. `--public-url` also checks HTTPS and certificate validation.
@@ -735,7 +669,6 @@ Beyond that:
 lens status                                  # unit state
 lens logs -n 200                             # recent output
 sudo journalctl -u lens.service --since -1h -p warning
-scripts/firecrawl.sh status                  # Firecrawl API + containers
 ```
 
 There is no metrics endpoint. Per-job progress and counters are visible in the
@@ -788,8 +721,9 @@ through), `Aggressive` (everything blocked) or `Unknown` (timeouts, dead
 domains — not a block at all). Rows rescued by the research pass carry
 `Scrape_Mode=research`.
 
-The fix is a residential/ISP proxy in `firecrawl/.env`, not more retries.
-Stronger bot protection is also a *positive* buying signal, so `Aggressive`
+Do not raise retry counts: the research fallback already classifies these
+domains without contacting them from this host, and routing the crawl through
+a residential proxy is not currently supported. Stronger bot protection is also a *positive* buying signal, so `Aggressive`
 rows are not necessarily bad inventory.
 
 ### Classifications truncated, or OpenRouter rate limits
@@ -807,20 +741,6 @@ truncated tool calls and 429s.
   permanently gone; check the logs for that warning.
 - Watch the spend. A large list against a frontier model is expensive; the
   dashboard's model picker is price-capped for exactly this reason.
-
-### Firecrawl won't come up
-
-```bash
-scripts/firecrawl.sh status
-scripts/firecrawl.sh logs api
-sudo journalctl -u firecrawl -n 200
-```
-
-- `podman-compose is required` — install it (EPEL on RHEL).
-- API never becomes ready: `up` already wipes and rebuilds queue state once
-  automatically. If that didn't help, `scripts/firecrawl.sh reset`.
-- Still broken: leave it down. Auto mode skips the rung and jobs still
-  complete.
 
 ### Podman permission errors
 
@@ -843,7 +763,7 @@ If containers die on restart with mount-namespace errors, a stale pause
 process is pinning an old namespace; `podman system migrate` clears it.
 That command stops the user's running containers. Normal updates only run it
 when they add subuid/subgid mappings, so an unsuccessful staging build does not
-stop an otherwise healthy Firecrawl stack.
+stop an otherwise healthy deep-crawl container.
 
 ### Staging fails to hardlink a root-owned uv cache file
 

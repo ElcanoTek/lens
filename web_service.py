@@ -11,7 +11,6 @@ import re
 import secrets
 import shutil
 import signal
-import socket
 import sys
 import time
 from collections import deque
@@ -65,14 +64,8 @@ LEGACY_MODES = {"direct", "deep", "firecrawl", "app", "ctv"}
 ALLOWED_MODES = {DEFAULT_MODE} | LEGACY_MODES
 JOBS_STATE_FILENAME = "_jobs.json"
 # Per-item cost projected for the retry queue in the ETA. Single-session
-# headless Chrome averages ~15s per site (container startup amortized); when
-# the local Firecrawl service is up, most retries clear through its
-# concurrent pass at a few seconds per item instead.
+# headless Chrome averages ~15s per site (container startup amortized).
 DEEP_RETRY_SECONDS_PER_ITEM = 15.0
-FIRECRAWL_RETRY_SECONDS_PER_ITEM = 3.0
-FIRECRAWL_PROBE_PORT = 3002
-_FIRECRAWL_PROBE_TTL_SECONDS = 60.0
-_firecrawl_probe_cache: tuple[float, bool] = (0.0, False)
 
 # --- Classification model picker -------------------------------------------
 # The dropdown is populated live from OpenRouter's /models endpoint.
@@ -293,22 +286,6 @@ def _allowed_model_ids(kind: str = "classify") -> set:
     return {option["id"] for option in cached.get(kind, [])} | {recommended}
 
 
-def _firecrawl_probably_up() -> bool:
-    """Cheap cached TCP probe of the local Firecrawl port (ETA hint only)."""
-    global _firecrawl_probe_cache
-    now = time.monotonic()
-    stamp, value = _firecrawl_probe_cache
-    if now - stamp < _FIRECRAWL_PROBE_TTL_SECONDS:
-        return value
-    try:
-        with socket.create_connection(("127.0.0.1", FIRECRAWL_PROBE_PORT), 0.25):
-            value = True
-    except OSError:
-        value = False
-    _firecrawl_probe_cache = (now, value)
-    return value
-
-
 ALLOWED_INPUT_EXTENSIONS = {".csv", ".xlsx"}
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 XLSX_MAGIC = b"PK\x03\x04"
@@ -403,11 +380,7 @@ def _tail_text(path: Path, max_lines: int = 40) -> List[str]:
 
 def _stamp_retry_rate(progress: Dict[str, object]) -> Dict[str, object]:
     """Tell the client what a queued retry item is likely to cost."""
-    progress["retry_seconds_per_item"] = (
-        FIRECRAWL_RETRY_SECONDS_PER_ITEM
-        if _firecrawl_probably_up()
-        else DEEP_RETRY_SECONDS_PER_ITEM
-    )
+    progress["retry_seconds_per_item"] = DEEP_RETRY_SECONDS_PER_ITEM
     return progress
 
 
@@ -838,7 +811,9 @@ class JobManager:
         else:
             # "app" was a legacy alias for the direct scraper; every other
             # allowed mode maps straight onto a main.py --scrape-mode value.
-            scrape_mode = "direct" if job.mode == "app" else job.mode
+            # "app" was the direct scraper; "firecrawl" was removed and
+            # now runs the default ladder.
+            scrape_mode = {"app": "direct", "firecrawl": "auto"}.get(job.mode, job.mode)
             cmd.extend(["--scrape-mode", scrape_mode])
 
         if job.llm_model:
@@ -1591,13 +1566,8 @@ async def index(request: Request):
 
         # Two-rate model: items not yet attempted run at the measured fast
         # rate; items queued for a retry pass each cost a roughly constant
-        # amount — cheap when the concurrent Firecrawl pass will take them,
-        # expensive when only single-session headless Chrome remains.
-        retry_seconds_per_item = (
-            FIRECRAWL_RETRY_SECONDS_PER_ITEM
-            if _firecrawl_probably_up()
-            else DEEP_RETRY_SECONDS_PER_ITEM
-        )
+        # amount (single-session headless Chrome).
+        retry_seconds_per_item = DEEP_RETRY_SECONDS_PER_ITEM
         fast_rate = elapsed_seconds / attempts
         remaining_fresh = max(0, total - attempts)
         remaining_seconds = remaining_fresh * fast_rate + retrying * retry_seconds_per_item

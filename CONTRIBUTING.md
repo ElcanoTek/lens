@@ -175,7 +175,7 @@ exactly what a reviewer needs. The convention in this repo's history is a
 | `docs/` | Documentation only |
 
 Commit subjects are imperative and describe the *effect*, not the mechanism —
-"Make Firecrawl fail fast on anti-bot and stop re-hammering blocked sites"
+"Skip the deep crawler for sites the direct pass proved are blocked"
 rather than "update scraper_client.py". Conventional-commit prefixes
 (`chore(ci):`, `fix:`) appear in the history too and are fine.
 
