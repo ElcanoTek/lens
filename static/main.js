@@ -410,10 +410,9 @@ applySegmentWidths(document);
     return `${Math.floor(safe / 3600)}h ${Math.floor((safe % 3600) / 60)}m`;
   }
 
-  // Fallback per-item retry cost (single-session headless Chrome). The
-  // server sends the live figure as progress.retry_seconds_per_item — a few
-  // seconds when the local Firecrawl retry pass is available, ~15s when only
-  // headless Chrome remains; keep in sync with web_service.py.
+  // Fallback per-item retry cost (single-session headless Chrome, ~15s per
+  // site). The server sends it as progress.retry_seconds_per_item; keep in
+  // sync with web_service.py.
   const DEEP_RETRY_SECONDS_PER_ITEM = 15;
 
   function estimateEta(progress, startedAt, status) {

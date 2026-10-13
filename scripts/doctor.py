@@ -258,10 +258,13 @@ def diagnose(app, src, user, public_url=None):
         )
     code, load = run("systemctl", "show", "--property=LoadState", "--value", "firecrawl.service")
     if code == 0 and load == "loaded":
-        code, _ = run(
-            "curl", "-fsS", "--connect-timeout", "2", "--max-time", "5", "http://127.0.0.1:3002/"
+        add(
+            "firecrawl",
+            False,
+            "",
+            "Firecrawl was removed from Lens; run `lens update` to retire the old stack",
+            warning=True,
         )
-        add("firecrawl", code == 0, "API responds", "Inspect journalctl -u firecrawl", warning=True)
     if public_url:
         code, status = run(
             "curl",

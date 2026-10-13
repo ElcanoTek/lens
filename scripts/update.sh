@@ -152,7 +152,7 @@ ensure_auth_pubkey
 # subuid/subgid ranges (image unpack fails with "insufficient UIDs or
 # GIDs"), services get no /run/user/<uid> without lingering, and the Chrome
 # image was never pre-seeded. Migrate only after changing mappings: Podman
-# migration stops every service-user container, including live Firecrawl.
+# migration stops every service-user container.
 # Skippable with LENS_UPDATE_SKIP_DEEP=1.
 ensure_rootless_podman() {
   [[ "${LENS_UPDATE_SKIP_DEEP:-0}" == "1" ]] && return 0
@@ -254,42 +254,45 @@ fi
 install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
 install -m 0755 "$APP_DIR/deploy/lens-cli" "$CLI_TARGET"
 
-# ── Firecrawl local scraping stack ───────────────────────────────────────
-# Installs or refreshes the Firecrawl stack (auto mode's JS-capable retry
-# pass) and heals boxes bootstrapped before Firecrawl support existed.
-# Runs after the swap so it uses the fresh deploy/ + firecrawl/ files.
-# Skippable with LENS_UPDATE_SKIP_FIRECRAWL=1 (defaults to
-# LENS_UPDATE_SKIP_DEEP so podman-free hosts stay podman-free).
-ensure_firecrawl() {
-  [[ "${LENS_UPDATE_SKIP_FIRECRAWL:-${LENS_UPDATE_SKIP_DEEP:-0}}" == "1" ]] && return 0
-  if ! command -v podman >/dev/null 2>&1; then
-    warn "podman unavailable — Firecrawl stays disabled"; return 0
+# ── Remove the retired Firecrawl stack ───────────────────────────────────
+# Firecrawl was removed from Lens (2026-10): it rescued few sites and slowed
+# every run. Hosts installed before then still run firecrawl.service and hold
+# its images (many GB, plus an orphaned copy from every past update). Clear
+# the unit, containers, volumes and images; the deep crawler's Chrome image
+# stays. Idempotent: does nothing once the stack is gone.
+remove_firecrawl() {
+  local unit=/etc/systemd/system/firecrawl.service removed=0
+  if [[ -f "$unit" ]]; then
+    systemctl disable --now firecrawl.service >/dev/null 2>&1 || true
+    rm -f "$unit"
+    systemctl daemon-reload
+    removed=1
   fi
-  if ! command -v podman-compose >/dev/null 2>&1; then
-    dnf install -y podman-compose >/dev/null 2>&1 \
-      || { warn "podman-compose unavailable (EPEL needed on RHEL) — Firecrawl stays disabled"; return 0; }
+  if command -v podman >/dev/null 2>&1 && id -u "$APP_USER" >/dev/null 2>&1; then
+    local app_uid; app_uid="$(id -u "$APP_USER")"
+    local pod=(runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" podman)
+    local ids images
+    ids="$(cd / && "${pod[@]}" ps -aq --filter name=elcano-firecrawl 2>/dev/null || true)"
+    images="$(cd / && "${pod[@]}" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
+      | grep -E '^ghcr\.io/firecrawl/|^docker\.io/library/(redis:alpine|rabbitmq:3-alpine)$' || true)"
+    if [[ -n "$ids" || -n "$images" ]]; then
+      (
+        cd /
+        # shellcheck disable=SC2086
+        [[ -n "$ids" ]] && "${pod[@]}" rm -f $ids
+        # shellcheck disable=SC2086
+        [[ -n "$images" ]] && "${pod[@]}" rmi -f $images
+        "${pod[@]}" volume prune -f
+        "${pod[@]}" image prune -f
+      ) >/dev/null 2>&1 || warn "could not remove every Firecrawl container/image"
+      removed=1
+    fi
   fi
-  local app_uid; app_uid="$(id -u "$APP_USER")" || return 0
-
-  # The stack tracks `latest`: every update pulls fresh images and restarts.
-  # This briefly tears the stack down, so don't run `lens update` while a
-  # scrape job is mid-flight. A broken upgrade self-heals — firecrawl.sh up
-  # rebuilds the disposable queue state — and if the stack still won't come
-  # up, Lens just runs without the Firecrawl pass until it's fixed.
-  say "  refreshing Firecrawl images (tracks latest)…"
-  runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" \
-    bash "$APP_DIR/scripts/firecrawl.sh" pull >/dev/null 2>&1 \
-    || warn "could not pull Firecrawl images — restarting on the current ones"
-  install -m 0644 "$APP_DIR/deploy/firecrawl.service" /etc/systemd/system/
-  systemctl daemon-reload
-  systemctl enable firecrawl.service >/dev/null 2>&1 || true
-  if systemctl restart firecrawl.service; then
-    ok "firecrawl stack running (127.0.0.1:3002)"
-  else
-    warn "firecrawl stack failed to start — auto mode continues without it (journalctl -u firecrawl)"
-  fi
+  rm -rf "$APP_DIR/firecrawl"
+  [[ "$removed" == "1" ]] && ok "removed the retired Firecrawl stack (service, containers, images)"
+  return 0
 }
-ensure_firecrawl
+remove_firecrawl
 # Keep /etc/motd in sync with deploy/motd — boxes bootstrapped before the
 # banner existed never got one, and this heals drift on every update.
 if [[ -f "$APP_DIR/deploy/motd" ]] && ! cmp -s "$APP_DIR/deploy/motd" /etc/motd; then

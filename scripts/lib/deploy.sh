@@ -6,7 +6,7 @@
 # never release files. The venv is copied separately for snapshots.
 LENS_STATE_EXCLUDES=(
   --exclude='/.git' --exclude='/.venv' --exclude='/.venv.old'
-  --exclude='/.env*' --exclude='/config.json' --exclude='/firecrawl/.env'
+  --exclude='/.env*' --exclude='/config.json'
   --exclude='/managed-files' --exclude='/data'
   --exclude='/.local' --exclude='/.config' --exclude='/.cache'
   --exclude='/input.csv' --exclude='/output.csv' --exclude='/progress.json'

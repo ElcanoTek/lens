@@ -63,20 +63,16 @@ returns usable content:
   │ 1. direct     plain async HTTP fetch, no JavaScript             │
   │               fast, cheap, handles most of the list             │
   └───────────────────────────┬─────────────────────────────────────┘
-                              │ too short, error, or challenge page
+                              │ too short or error — and NOT an anti-bot
+                              │ block (401/403/429 or a block page)
   ┌───────────────────────────▼─────────────────────────────────────┐
-  │ 2. firecrawl  self-hosted Firecrawl → headless Chromium via     │
-  │               Playwright, returns clean markdown; concurrent    │
-  │               (skipped when the stack isn't running)            │
-  └───────────────────────────┬─────────────────────────────────────┘
-                              │ still failing — and NOT an anti-bot block
-  ┌───────────────────────────▼─────────────────────────────────────┐
-  │ 3. deep       Selenium headless Chrome in a Podman container    │
-  │               single-session, slow, last resort for rendering   │
+  │ 2. deep       Selenium headless Chrome in a Podman container    │
+  │               single-session, renders JavaScript; skipped when  │
+  │               Podman/Selenium aren't available                  │
   └───────────────────────────┬─────────────────────────────────────┘
                               │ nothing could fetch the page
   ┌───────────────────────────▼─────────────────────────────────────┐
-  │ 4. research   a web-search model researches the domain and      │
+  │ 3. research   a web-search model researches the domain and      │
   │               classification runs on that summary.              │
   │               The site is never contacted from your IP.         │
   └─────────────────────────────────────────────────────────────────┘
@@ -93,8 +89,8 @@ Cloudflare, DataDome or PerimeterX reject datacenter IPs outright. Retrying
 harder does not get in — it converts a soft block into a permanent ban. So an
 anti-bot verdict is treated as final: it is not retried, and it skips the deep
 rung entirely (which renders from the same IP and would fail identically).
-Those domains go straight to research. To actually crawl them, route
-Firecrawl's browser through a residential proxy.
+Those domains go straight to research. Crawling them through a residential
+proxy is not currently supported.
 
 **Every rung is optional.** Auto mode probes each one at runtime and skips what
 isn't installed. On a bare machine with no Podman, Lens is a direct crawler
@@ -182,7 +178,7 @@ python main.py --input-csv test-input/CTV_Master.csv --ctv
 
 | Flag | Effect |
 |---|---|
-| `--scrape-mode auto\|direct\|deep\|firecrawl` | Pick a rung, or `auto` for the whole ladder (default) |
+| `--scrape-mode auto\|direct\|deep` | Pick a rung, or `auto` for the whole ladder (default) |
 | `--deep-scrape` | Shorthand for `--scrape-mode deep` |
 | `--ctv` | Force the CTV pipeline |
 | `--llm-model MODEL` | Override the classification model for this run |
@@ -313,7 +309,7 @@ central account disablement, and sign-out-everywhere revoke Lens sessions; the
 legacy `elcano` magic-link mode remains the default and is unchanged.
 
 Tuning goes in `config.json` (git-ignored; copy from
-[`config.json.example`](config.json.example), which annotates all 64 keys).
+[`config.json.example`](config.json.example), which annotates all 58 keys).
 The ones you are most likely to touch:
 
 | Key | Default | Purpose |
@@ -325,8 +321,6 @@ The ones you are most likely to touch:
 | `llm_max_tokens` | `1500` | Raise if classifications truncate |
 | `min_content_length` | `500` | Shortest page body accepted as real content |
 | `request_timeout` | `30` | Seconds per page fetch |
-| `firecrawl_enabled` | `true` | Use the Firecrawl rung when it is running |
-| `firecrawl_proxy` | `basic` | Leave it. `auto` re-hammers hardened sites for nothing. |
 | `research_fallback_enabled` | `true` | Classify blocked sites from public research |
 | `research_model` | `perplexity/sonar` | Needs built-in web search |
 | `ios_request_delay` / `android_request_delay` | `5.0` / `10.0` | Store politeness. Lowering these gets you blocked. |
@@ -389,7 +383,7 @@ handles package maintenance and Fedora upgrade preparation.
 
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the full guide** — prerequisites,
 the `/opt/lens` layout, the complete environment and `config.json` reference,
-the optional Firecrawl stack, TLS via Caddy or nginx, the operator CLI, the
+TLS via Caddy or nginx, the operator CLI, the
 update and rollback procedure, backups, health checks, and troubleshooting for
 the failure modes you will actually hit.
 
@@ -403,7 +397,7 @@ the failure modes you will actually hit.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, tests, branch and PR conventions |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability; scope; secure operation |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
-| [`NOTICE`](NOTICE) | Third-party attribution (Firecrawl, IAB taxonomy, IANA, fonts) |
+| [`NOTICE`](NOTICE) | Third-party attribution (IAB taxonomy, IANA, fonts) |
 | [`config.json.example`](config.json.example) / [`.env.example`](.env.example) | Every setting the code reads, annotated |
 | [`test-input/README.md`](test-input/README.md) | What the sample fixtures are and why they are synthetic |
 
@@ -450,5 +444,3 @@ including where the non-production line sits in practice.
 **licensing@elcanotek.com**.
 
 Third-party components keep their own licences; see [`NOTICE`](NOTICE).
-Notably, Firecrawl is AGPL-3.0 software that Lens orchestrates as a separate
-service and does not vendor.

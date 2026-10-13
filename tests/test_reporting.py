@@ -53,7 +53,7 @@ async def test_retry_rescue_flips_failure_to_success():
     await _attempt(reporter, "a.com", ok=False)
     assert (reporter.successes, reporter.failures) == (0, 1)
 
-    # The Firecrawl/deep retry pass rescues the domain.
+    # The deep retry pass rescues the domain.
     await _attempt(reporter, "a.com", ok=True)
     assert reporter.completed == 1
     assert (reporter.successes, reporter.failures) == (1, 0)

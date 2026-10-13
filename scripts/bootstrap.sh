@@ -55,10 +55,6 @@ die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_reset" >&2; exit 1; }
 ask()  { printf '%s?%s %s ' "$c_cyan" "$c_reset" "$*" >&2; }
 
 NON_INTERACTIVE="${LENS_BOOTSTRAP_NON_INTERACTIVE:-0}"
-# Firecrawl rides on the same rootless-podman plumbing as the deep scraper,
-# so skipping deep implies skipping Firecrawl unless explicitly overridden —
-# hardened hosts that pinned SKIP_DEEP=1 keep their no-podman guarantee.
-LENS_BOOTSTRAP_SKIP_FIRECRAWL="${LENS_BOOTSTRAP_SKIP_FIRECRAWL:-${LENS_BOOTSTRAP_SKIP_DEEP:-0}}"
 prompt() {
   local varname="$1" label="$2" default="${3:-}" answer=""
   if [[ -n "${!varname:-}" ]]; then printf '%s' "${!varname}"; return; fi
@@ -107,19 +103,11 @@ step "1/7  Installing system dependencies via dnf"
 PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certificates)
 [[ "${LENS_BOOTSTRAP_SKIP_CHROME:-0}" == "1" ]] || PKGS+=(chromium chromedriver)
 # podman drives the deep-scrape headless-Chrome container (auto mode's
-# fallback for sites that block the fast crawler) and the Firecrawl stack.
-[[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" && "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" == "1" ]] || PKGS+=(podman)
+# fallback for sites that block the fast crawler).
+[[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" ]] || PKGS+=(podman)
 dnf install -y "${PKGS[@]}" >/dev/null
 command -v uv >/dev/null 2>&1 || die "uv missing after dnf install"
 ok "installed: ${PKGS[*]}"
-# podman-compose runs the local Firecrawl stack (auto mode's JS-capable
-# retry pass; see firecrawl/docker-compose.yaml). Installed separately so a
-# repo without it (RHEL sans EPEL) degrades to no-Firecrawl instead of
-# aborting the whole bootstrap.
-if [[ "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" != "1" ]] && ! command -v podman-compose >/dev/null 2>&1; then
-  dnf install -y podman-compose >/dev/null 2>&1 \
-    || warn "podman-compose unavailable (EPEL needed on RHEL) — Firecrawl disabled"
-fi
 
 step "2/7  Preparing $APP_DIR + '$APP_USER' user"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
@@ -128,14 +116,14 @@ fi
 mkdir -p "$APP_DIR"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-# ── rootless podman for the deep-scrape + Firecrawl containers ──────────
+# ── rootless podman for the deep-scrape container ───────────────────────
 # System users get no subuid/subgid ranges, so rootless podman can't unpack
 # multi-uid images ("potentially insufficient UIDs or GIDs available").
 # Lingering keeps /run/user/<uid> (podman's runtime root) alive for the
 # systemd services, and pre-pulling images means first use doesn't download
 # gigabytes mid-job.
 NEED_PODMAN=0
-[[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" && "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" == "1" ]] || NEED_PODMAN=1
+[[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" ]] || NEED_PODMAN=1
 if [[ "$NEED_PODMAN" == "1" ]] && command -v podman >/dev/null 2>&1; then
   app_uid="$(id -u "$APP_USER")"
   if ! grep -q "^${APP_USER}:" /etc/subuid 2>/dev/null; then
@@ -161,18 +149,6 @@ if [[ "$NEED_PODMAN" == "1" ]] && command -v podman >/dev/null 2>&1; then
       ok "deep-scrape image pre-seeded"
     else
       warn "could not pre-pull $CHROME_IMAGE — deep scrapes will pull on first use"
-    fi
-  fi
-
-  if [[ "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" != "1" ]] && command -v podman-compose >/dev/null 2>&1; then
-    # `firecrawl.sh pull` reads the image list straight from the compose
-    # file, so there is exactly one place that defines tags.
-    info "pre-pulling Firecrawl images (~3 GB; skippable: LENS_BOOTSTRAP_SKIP_FIRECRAWL=1)"
-    if runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" \
-      bash "$SRC_DIR/scripts/firecrawl.sh" pull >/dev/null 2>&1; then
-      ok "Firecrawl images pre-seeded"
-    else
-      warn "could not pre-pull Firecrawl images — first start will download them"
     fi
   fi
 fi
@@ -286,21 +262,10 @@ systemctl stop lens.service 2>/dev/null || true
 step "5/7  Installing systemd units + CLI"
 install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
 install -m 0755 "$APP_DIR/deploy/lens-cli" "$CLI_TARGET"
-if [[ "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" != "1" ]] && command -v podman-compose >/dev/null 2>&1; then
-  install -m 0644 "$APP_DIR/deploy/firecrawl.service" /etc/systemd/system/
-fi
 systemctl daemon-reload
 ok "units + CLI installed"
 
 step "6/7  Starting lens"
-if [[ "$LENS_BOOTSTRAP_SKIP_FIRECRAWL" != "1" ]] && command -v podman-compose >/dev/null 2>&1; then
-  systemctl enable firecrawl.service >/dev/null 2>&1 || true
-  if systemctl restart firecrawl.service; then
-    ok "firecrawl stack running (127.0.0.1:3002)"
-  else
-    warn "firecrawl stack failed to start — auto mode continues without it (journalctl -u firecrawl)"
-  fi
-fi
 systemctl enable lens.service
 systemctl restart lens.service
 healthy=0
