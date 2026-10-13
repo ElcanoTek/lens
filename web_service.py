@@ -5,9 +5,11 @@
 
 import asyncio
 import json
+import logging
 import os
 import re
 import secrets
+import shutil
 import signal
 import socket
 import sys
@@ -42,9 +44,17 @@ from central_auth import (
 from config import DEFAULT_DECISION_MODEL
 from custom_categories import parse_categories, validate_categories
 
+logger = logging.getLogger("lens.web")
+
 BASE_DIR = Path(__file__).resolve().parent
 INPUT_DIR = BASE_DIR / "managed-files" / "inputs"
 OUTPUT_DIR = BASE_DIR / "managed-files" / "outputs"
+# `lens submit` hands jobs to the running service through this directory: one
+# subdirectory per request holding the input file and request.json. Only root
+# and the service user can write here, so no web credential is involved.
+SPOOL_DIR = BASE_DIR / "managed-files" / "spool"
+SPOOL_POLL_SECONDS = 2.0
+SPOOL_RESULT_TTL_SECONDS = 3600
 # Lens detects the input type on its own: CTV lists route to the CTV
 # pipeline, app IDs/packages to the store APIs, and websites to the fast
 # crawler with an automatic deep-crawl retry for rows that fail. Users no
@@ -306,6 +316,7 @@ XLSX_MAGIC = b"PK\x03\x04"
 def _ensure_directories() -> None:
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    SPOOL_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
 def _jobs_state_path() -> Path:
@@ -888,11 +899,106 @@ class JobManager:
 
 manager = JobManager()
 worker_task: Optional[asyncio.Task] = None
+spool_task: Optional[asyncio.Task] = None
+
+
+def _clean_model_id(value: object) -> Optional[str]:
+    model = str(value).strip() if value else None
+    if model and not re.fullmatch(r"[~A-Za-z0-9/._:-]+", model):
+        raise ValueError(f"Invalid model id: {model}")
+    return model
+
+
+def _unused_input_name(filename: str, payload: bytes) -> str:
+    """Keep a submitted file's name unless a different file already has it."""
+    path = INPUT_DIR / filename
+    if not path.exists() or path.read_bytes() == payload:
+        return filename
+    stem, suffix = Path(filename).stem, Path(filename).suffix
+    n = 2
+    while (INPUT_DIR / f"{stem} ({n}){suffix}").exists():
+        n += 1
+    return f"{stem} ({n}){suffix}"
+
+
+def _write_spool_result(entry: Path, result: dict) -> None:
+    tmp = entry / "result.json.tmp"
+    tmp.write_text(json.dumps(result), encoding="utf-8")
+    tmp.replace(entry / "result.json")
+
+
+async def _ingest_spool_entry(entry: Path) -> None:
+    """Turn one `lens submit` request into a normal dashboard job."""
+    try:
+        request = json.loads((entry / "request.json").read_text(encoding="utf-8"))
+        if not isinstance(request, dict):
+            raise ValueError("request.json must be an object")
+        filename = _validate_input_filename(str(request.get("input_file") or ""))
+        source = entry / filename
+        if not source.is_file():
+            raise ValueError(f"{filename} is missing from the request")
+        payload = await asyncio.to_thread(source.read_bytes)
+        if not payload:
+            raise ValueError("Input file is empty")
+        if len(payload) > MAX_UPLOAD_BYTES:
+            raise ValueError(f"File exceeds {MAX_UPLOAD_BYTES // (1024 * 1024)} MB limit")
+        _verify_input_payload(filename, payload)
+        mode = str(request.get("mode") or DEFAULT_MODE)
+        if mode not in ALLOWED_MODES:
+            raise ValueError(f"Invalid mode: {mode}")
+        categories = request.get("custom_categories")
+        if categories is not None:
+            categories = validate_categories(categories)
+        options = {
+            "name": str(request.get("name") or "").strip() or None,
+            "llm_model": _clean_model_id(request.get("llm_model")),
+            "research_model": _clean_model_id(request.get("research_model")),
+            "decision_model": _clean_model_id(request.get("decision_model")),
+            "research_fallback": bool(request.get("research_fallback", True)),
+        }
+        stored = _unused_input_name(filename, payload)
+        await asyncio.to_thread((INPUT_DIR / stored).write_bytes, payload)
+        await asyncio.to_thread(_get_breakdown, INPUT_DIR / stored)
+        job = await manager.create_job(
+            input_file=stored, mode=mode, custom_categories=categories, **options
+        )
+        source.unlink(missing_ok=True)
+        _write_spool_result(entry, {"job_id": job.id, "input_file": stored})
+        logger.info("Queued job %s from lens submit (%s)", job.id, stored)
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        _write_spool_result(entry, {"error": str(exc)})
+        logger.warning("Rejected lens submit request %s: %s", entry.name, exc)
+
+
+async def _process_spool_once() -> None:
+    if not SPOOL_DIR.is_dir():
+        return
+    now = time.time()
+    for entry in sorted(SPOOL_DIR.iterdir()):
+        if not entry.is_dir() or entry.is_symlink():
+            continue
+        result = entry / "result.json"
+        if result.exists():
+            # The CLI removes entries it has read; sweep the ones it did not.
+            if now - result.stat().st_mtime > SPOOL_RESULT_TTL_SECONDS:
+                shutil.rmtree(entry, ignore_errors=True)
+            continue
+        if (entry / "request.json").is_file():
+            await _ingest_spool_entry(entry)
+
+
+async def _spool_loop() -> None:
+    while True:
+        try:
+            await _process_spool_once()
+        except Exception:  # noqa: BLE001 - never let the watcher die
+            logger.exception("lens submit spool watcher failed")
+        await asyncio.sleep(SPOOL_POLL_SECONDS)
 
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    global worker_task
+    global worker_task, spool_task
     # Build the selected provider before advertising readiness. In central
     # mode this validates every required credential and opens/migrates the
     # local access database, so a broken deployment fails during startup
@@ -901,9 +1007,14 @@ async def _lifespan(app: FastAPI):
     _ensure_directories()
     await manager.hydrate_from_disk()
     worker_task = asyncio.create_task(manager.worker_loop())
+    spool_task = asyncio.create_task(_spool_loop())
     try:
         yield
     finally:
+        if spool_task:
+            spool_task.cancel()
+            await asyncio.gather(spool_task, return_exceptions=True)
+            spool_task = None
         if worker_task:
             worker_task.cancel()
             await asyncio.gather(worker_task, return_exceptions=True)

@@ -75,6 +75,7 @@ os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 _MODULE_PATH_GLOBALS: Tuple[Tuple[str, str, str], ...] = (
     ("web_service", "INPUT_DIR", "managed-files/inputs"),
     ("web_service", "OUTPUT_DIR", "managed-files/outputs"),
+    ("web_service", "SPOOL_DIR", "managed-files/spool"),
 )
 
 # Attributes on the `config` singleton holding a real on-disk location. Their

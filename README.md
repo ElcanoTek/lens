@@ -122,6 +122,7 @@ Then manage everything with:
 ```bash
 lens doctor                     # diagnose configuration, service and runtime
 lens update --yes               # deploy main; restore previous release on failure
+lens submit sites.csv --categories cats.json   # queue a dashboard run from the host
 lens host check                 # available OS/package updates
 lens host update --yes          # update all packages in enabled DNF repositories
 lens host upgrade --dry-run     # plan the latest stable Fedora upgrade

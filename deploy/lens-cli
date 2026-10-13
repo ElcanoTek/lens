@@ -78,6 +78,42 @@ case "$cmd" in
     exec sudo -u lens --preserve-env=LENS_ACCESS_DB "$APP_DIR/.venv/bin/python" \
       "$APP_DIR/central_auth_admin.py" "$@"
     ;;
+  submit)
+    # Queue a dashboard job from a file on this host. The running service
+    # picks it up from the spool, so it appears in the Runs table with live
+    # progress, cost and downloads, exactly like a browser upload.
+    if [[ $# -lt 1 || "$1" == -* ]]; then
+      echo "usage: lens submit FILE [--name NAME] [--categories JSON] [--ctv] [--decision-model M]" >&2
+      echo "                        [--llm-model M] [--research-model M] [--no-research-fallback]" >&2
+      exit 2
+    fi
+    file="$1"; shift
+    [[ -f "$file" ]] || { echo "lens submit: no such file: $file" >&2; exit 1; }
+    spool="$APP_DIR/managed-files/spool"
+    "${ROOT[@]}" test -d "$spool" || {
+      echo "lens submit: $spool missing; run lens update so the service creates it" >&2; exit 1; }
+    entry=$("${ROOT[@]}" mktemp -d "$spool/submit-XXXXXX")
+    args=()
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --categories)
+          [[ -f "${2:-}" ]] || { echo "lens submit: no such categories file: ${2:-}" >&2
+                                 "${ROOT[@]}" rm -rf "$entry"; exit 1; }
+          "${ROOT[@]}" install -m 0640 "$2" "$entry/categories.json"
+          args+=(--categories "$entry/categories.json"); shift 2 ;;
+        *) args+=("$1"); shift ;;
+      esac
+    done
+    name="$(basename "$file")"
+    "${ROOT[@]}" install -m 0640 "$file" "$entry/$name"
+    "${ROOT[@]}" chown -R "$APP_USER:$APP_USER" "$entry"
+    public_url=$("${ROOT[@]}" awk -F= '$1 == "LENS_PUBLIC_URL" { sub(/^[^=]*=/, ""); gsub(/["'"'"']/, ""); print }' \
+      "$ENV_FILE" 2>/dev/null || true)
+    # Validation and the hand-off run as the service user, never as root.
+    exec sudo -u "$APP_USER" env LENS_PUBLIC_URL="$public_url" \
+      "$APP_DIR/.venv/bin/python" "$APP_DIR/submit_job.py" \
+      --entry "$entry" --input "$name" "${args[@]}"
+    ;;
   tls)
     sub="${1:-status}"; shift || true
     snippet="/etc/caddy/conf.d/lens.caddy"
@@ -127,6 +163,8 @@ lens — scraper web UI operator CLI
   lens access grant <email>     allow a central-auth account on this Lens instance
   lens access revoke <email>    revoke access and every local Lens session
   lens access list              list enabled central-auth accounts
+  lens submit FILE [options]    queue a dashboard run from a file on this host
+                                (--name, --categories JSON, --ctv, model overrides)
   lens tls status|reload|restart   Caddy controls (if installed)
 EOF
     ;;
