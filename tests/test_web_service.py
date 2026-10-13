@@ -871,7 +871,10 @@ def test_enqueue_job_with_research_model(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [], "research": [{"id": "perplexity/sonar-pro", "label": "Sonar Pro"}]}),
+        (
+            1e18,
+            {"classify": [], "research": [{"id": "perplexity/sonar-pro", "label": "Sonar Pro"}]},
+        ),
     )
 
     with TestClient(web_service.app) as client:
