@@ -36,6 +36,29 @@ Recommendation: try Sonar per run for routine research; retain Sonar Pro as the
 default until a larger labeled sample covers obscure apps and custom rubrics.
 The production default has not been changed.
 
+## CTV batch comparison, 2026-10-13
+
+80 CTV apps from a production FreeWheel/TTD batch (60 that Sonar Pro had
+classified and 20 it had failed), rerun with `--research-model perplexity/sonar`,
+same classifier, decision model and 12 custom categories.
+
+| | Sonar Pro | Sonar |
+|---|---:|---:|
+| Billed cost, 80 apps (research + classification + decisions) | $1.84 | $0.58 |
+| Per app | $0.023 | $0.007 |
+| Failed (no usable research) | 20 | 22 |
+
+Where both succeeded (54 apps), the quality tier agreed on 96%, IAB Tier 1 on
+83%, and the four-way custom sports label on 80%; the sports disagreements were
+local TV news apps split between neighbouring answers. Mean absolute
+difference in custom-category probabilities was 0.01 (news), 0.05
+(entertainment) and 0.14 (brand safe). Six apps failed only with Sonar and four
+only with Sonar Pro, all obscure games or small channels.
+
+Recommendation: use Sonar for bulk CTV and research-fallback runs; it is about
+three times cheaper with near-identical quality tiers. Keep Sonar Pro where the
+custom brand-safety probability itself drives decisions.
+
 ## Classification reliability
 
 Gemini classification calls now request low reasoning effort for websites,
