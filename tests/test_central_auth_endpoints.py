@@ -36,7 +36,8 @@ class FakeCentralClient:
             {"state": state, "code_challenge": code_challenge, "nonce": nonce}
         )
 
-    def exchange(self, *, code: str, verifier: str, expected_nonce: str):
+    def exchange(self, *, code: str, verifier: str, expected_nonce: str, key_resolver):
+        assert key_resolver is not None
         if type(self).exchange_error is not None:
             raise type(self).exchange_error
         assert code == "one-time-code"
@@ -44,9 +45,10 @@ class FakeCentralClient:
         return AuthenticatedPrincipal("account-123", "alice@example.com", expected_nonce)
 
 
-def _logout_token(private_key: Ed25519PrivateKey) -> str:
+def _logout_token(private_key: Ed25519PrivateKey, *, kid: str | None = None) -> str:
     public = private_key.public_key().public_bytes_raw()
-    kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    if kid is None:
+        kid = base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
 
     def encode(value):
         return (
@@ -141,6 +143,139 @@ async def test_central_login_creates_lens_only_session_and_backchannel_revokes(
         assert "Try again" in rejected.text
 
 
+def _id_token(private_key: Ed25519PrivateKey, nonce: str, *, kid: str | None = None) -> str:
+    public = private_key.public_key().public_bytes_raw()
+    default_kid = (
+        base64.urlsafe_b64encode(hashlib.sha256(public).digest()[:16]).rstrip(b"=").decode()
+    )
+
+    def encode(value):
+        return (
+            base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode())
+            .rstrip(b"=")
+            .decode()
+        )
+
+    now = int(time.time())
+    claims = {
+        "iss": "http://auth.example.com",
+        "sub": "account-123",
+        "aud": "lens",
+        "email": "alice@example.com",
+        "iat": now,
+        "exp": now + 300,
+        "nonce": nonce,
+        "auth_time": now,
+        "amr": ["pwd"],
+        "acr": "urn:elcanotek:loa:1",
+    }
+    header = {"typ": "JWT", "alg": "EdDSA", "kid": kid if kid is not None else default_kid}
+    body = f"{encode(header)}.{encode(claims)}"
+    signature = base64.urlsafe_b64encode(private_key.sign(body.encode())).rstrip(b"=").decode()
+    return f"{body}.{signature}"
+
+
+@pytest.mark.asyncio
+async def test_callback_signs_in_only_with_an_id_token_signed_by_auth(
+    monkeypatch, tmp_path
+) -> None:
+    """The real client end to end: the callback verifies the id_token with
+    the provider's key resolver, and a token signed by any other key is a
+    failed sign-in with no session."""
+    auth_key = Ed25519PrivateKey.generate()
+    monkeypatch.setenv("LENS_AUTH_MODE", "central")
+    monkeypatch.setenv("LENS_SESSION_SECRET", "test-session-secret-with-at-least-32-bytes")
+    monkeypatch.setenv("LENS_ACCESS_DB", str(tmp_path / "access.db"))
+    monkeypatch.setenv("LENS_AUTH_COOKIE_SECURE", "0")
+    monkeypatch.setenv("AUTH_ALLOW_INSECURE_HTTP", "1")
+    monkeypatch.setenv("AUTH_ISSUER_URL", "http://auth.example.com")
+    monkeypatch.setenv("LENS_PUBLIC_URL", "http://lens.example.com")
+    monkeypatch.setenv("AUTH_CLIENT_ID", "lens")
+    monkeypatch.setenv("AUTH_CLIENT_SECRET", "a-test-secret-that-is-at-least-32-bytes")
+    monkeypatch.setenv(
+        "AUTH_SIGNING_PUBKEY",
+        base64.b64encode(auth_key.public_key().public_bytes_raw()).decode(),
+    )
+    signer = {"key": auth_key}
+    nonces: dict[str, str] = {}
+    # Per code: replace this login's nonce, or the token's kid.
+    forced_nonce: dict[str, str] = {}
+    forced_kid: dict[str, str] = {}
+
+    class Response:
+        def __init__(self, body: bytes) -> None:
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return None
+
+        def read(self, _limit):
+            return self.body
+
+    class Opener:
+        def open(self, request, timeout):
+            if request.full_url.endswith("/jwks.json"):
+                raise OSError("Auth's JWKS is not reachable in this test")
+            assert request.full_url == "http://auth.example.com/token"
+            code = parse_qs(request.data.decode())["code"][0]
+            token = _id_token(
+                signer["key"], forced_nonce.get(code, nonces[code]), kid=forced_kid.get(code)
+            )
+            return Response(json.dumps({"id_token": token}).encode())
+
+    monkeypatch.setattr("central_auth.urllib.request.build_opener", lambda *_args: Opener())
+    auth_provider.clear_provider_cache()
+    provider = auth_provider.get_auth_provider()
+    provider.store.grant_access("alice@example.com", now=1_000)
+
+    transport = httpx.ASGITransport(app=web_service.app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="https://lens.example.com"
+    ) as client:
+
+        async def sign_in(code: str):
+            start = await client.get("/auth/login", follow_redirects=False)
+            query = parse_qs(urlsplit(start.headers["location"]).query)
+            nonces[code] = query["nonce"][0]
+            return await client.get(
+                "/auth/callback",
+                params={"code": code, "state": query["state"][0]},
+                follow_redirects=False,
+            )
+
+        signed_in = await sign_in("code-1")
+        assert signed_in.status_code == 303
+        session = client.cookies.get("lens_session")
+        assert session
+        assert provider.store.get_identity(session).email == "alice@example.com"
+
+        client.cookies.clear()
+        signer["key"] = Ed25519PrivateKey.generate()
+        forged = await sign_in("code-2")
+        assert forged.status_code == 502
+        assert client.cookies.get("lens_session") is None
+
+        # Malformed values Auth would never sign are a failed sign-in (502),
+        # never a server error, and leave no session.
+        signer["key"] = auth_key
+        forced_nonce["code-3"] = "\ud800"
+        forced_kid["code-4"] = "é"
+        for code in ("code-3", "code-4"):
+            refused = await sign_in(code)
+            assert refused.status_code == 502, code
+            assert client.cookies.get("lens_session") is None
+
+        # The back-channel answers a non-ASCII kid with 400, not 500.
+        bad_kid = await client.post(
+            "/auth/backchannel-logout",
+            data={"logout_token": _logout_token(auth_key, kid="é")},
+        )
+        assert bad_kid.status_code == 400
+
+
 @pytest.mark.asyncio
 async def test_slow_code_exchange_does_not_stall_the_event_loop(monkeypatch, tmp_path) -> None:
     """A blocked token exchange must not block /health (or anyone else).
@@ -153,9 +288,14 @@ async def test_slow_code_exchange_does_not_stall_the_event_loop(monkeypatch, tmp
     released = threading.Event()
 
     class BlockingCentralClient(FakeCentralClient):
-        def exchange(self, *, code: str, verifier: str, expected_nonce: str):
+        def exchange(self, *, code: str, verifier: str, expected_nonce: str, key_resolver):
             released.wait(5)
-            return super().exchange(code=code, verifier=verifier, expected_nonce=expected_nonce)
+            return super().exchange(
+                code=code,
+                verifier=verifier,
+                expected_nonce=expected_nonce,
+                key_resolver=key_resolver,
+            )
 
     private_key = Ed25519PrivateKey.generate()
     monkeypatch.setenv("LENS_AUTH_MODE", "central")
