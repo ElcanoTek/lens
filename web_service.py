@@ -487,6 +487,7 @@ class Job:
     name: Optional[str] = None
     llm_model: Optional[str] = None  # None = server default
     research_fallback: bool = True
+    deep_retry: bool = True
     research_model: Optional[str] = None  # None = server default
     custom_categories: Optional[dict] = None
     decision_model: Optional[str] = None  # None = server default
@@ -534,6 +535,7 @@ class JobManager:
                     "name": job.name,
                     "llm_model": job.llm_model,
                     "research_fallback": job.research_fallback,
+                    "deep_retry": job.deep_retry,
                     "research_model": job.research_model,
                     "custom_categories": job.custom_categories,
                     "decision_model": job.decision_model,
@@ -628,6 +630,7 @@ class JobManager:
                 name=name,
                 llm_model=llm_model,
                 research_fallback=bool(raw.get("research_fallback", True)),
+                deep_retry=bool(raw.get("deep_retry", True)),
                 research_model=research_model,
                 custom_categories=categories,
                 decision_model=decision_model,
@@ -674,6 +677,7 @@ class JobManager:
         name: Optional[str] = None,
         llm_model: Optional[str] = None,
         research_fallback: bool = True,
+        deep_retry: bool = True,
         research_model: Optional[str] = None,
         custom_categories: Optional[dict] = None,
         decision_model: Optional[str] = None,
@@ -690,6 +694,7 @@ class JobManager:
             name=cleaned_name,
             llm_model=(llm_model or "").strip() or None,
             research_fallback=research_fallback,
+            deep_retry=deep_retry,
             research_model=(research_model or "").strip() or None,
             custom_categories=validate_categories(custom_categories)
             if custom_categories is not None
@@ -820,6 +825,8 @@ class JobManager:
             cmd.extend(["--llm-model", job.llm_model])
         if not job.research_fallback:
             cmd.extend(["--research-fallback", "off"])
+        if not job.deep_retry:
+            cmd.extend(["--deep-retry", "off"])
         if job.research_model:
             cmd.extend(["--research-model", job.research_model])
 
@@ -955,6 +962,7 @@ async def _ingest_spool_entry(entry: Path) -> None:
             "research_model": _clean_model_id(request.get("research_model")),
             "decision_model": _clean_model_id(request.get("decision_model")),
             "research_fallback": bool(request.get("research_fallback", True)),
+            "deep_retry": bool(request.get("deep_retry", True)),
         }
         stored = _unused_input_name(filename, payload)
         await asyncio.to_thread((INPUT_DIR / stored).write_bytes, payload)
@@ -1461,6 +1469,8 @@ def _job_settings_summary(job: Job) -> str:
             parts.append(f"decision: {job.decision_model}")
     if job.llm_model:
         parts.append(f"model: {job.llm_model}")
+    if not job.deep_retry:
+        parts.append("headless Chrome retry off")
     if not job.research_fallback:
         parts.append("research fallback off")
     elif job.research_model:
@@ -1908,6 +1918,7 @@ async def enqueue_job(
     name: Optional[str] = Form(default=None),
     llm_model: Optional[str] = Form(default=None),
     research_fallback: Optional[str] = Form(default=None),
+    deep_retry: Optional[str] = Form(default=None),
     research_model: Optional[str] = Form(default=None),
     custom_categories: Optional[str] = Form(default=None),
     decision_model: Optional[str] = Form(default=None),
@@ -1964,6 +1975,7 @@ async def enqueue_job(
     # hidden companion field posts "default" so API clients that omit both
     # keep the server default (enabled).
     fallback_enabled = research_fallback != "off" if research_fallback else True
+    deep_enabled = deep_retry != "off" if deep_retry else True
 
     await manager.create_job(
         safe_input,
@@ -1971,6 +1983,7 @@ async def enqueue_job(
         _normalize_job_name(name),
         llm_model=model,
         research_fallback=fallback_enabled,
+        deep_retry=deep_enabled,
         research_model=res_model,
         custom_categories=categories,
         decision_model=dec_model,

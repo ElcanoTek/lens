@@ -84,7 +84,7 @@ case "$cmd" in
     # progress, cost and downloads, exactly like a browser upload.
     if [[ $# -lt 1 || "$1" == -* ]]; then
       echo "usage: lens submit FILE [--name NAME] [--categories JSON] [--ctv] [--decision-model M]" >&2
-      echo "                        [--llm-model M] [--research-model M] [--no-research-fallback]" >&2
+      echo "                        [--llm-model M] [--research-model M] [--no-research-fallback] [--no-deep]" >&2
       exit 2
     fi
     file="$1"; shift

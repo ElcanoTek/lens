@@ -204,6 +204,14 @@
                   </select>
                   <span class="caption">Only cost-effective models are listed — classification doesn't benefit from frontier-priced models. “Latest” aliases track each vendor's current release automatically.</span>
                 </label>
+                <input type="hidden" name="deep_retry" value="off">
+                <label class="run-advanced-field run-advanced-check">
+                  <input type="checkbox" id="deep-retry-check" name="deep_retry" value="on" checked>
+                  <span>
+                    <span class="run-advanced-label">Retry with headless Chrome</span>
+                    <span class="caption">Sites the fast fetch can't read get one more try in a real browser (one at a time, ~15 s each). Turn off for large lists to send them straight to research.</span>
+                  </span>
+                </label>
                 <input type="hidden" name="research_fallback" value="off">
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="research-fallback-check" name="research_fallback" value="on" checked>

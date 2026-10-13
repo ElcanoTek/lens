@@ -183,6 +183,7 @@ python main.py --input-csv test-input/CTV_Master.csv --ctv
 | `--ctv` | Force the CTV pipeline |
 | `--llm-model MODEL` | Override the classification model for this run |
 | `--research-model MODEL` | Override the research model (needs built-in web search) |
+| `--deep-retry on\|off` | Toggle the headless-Chrome rung for this run (off is much faster on large lists) |
 | `--research-fallback on\|off` | Toggle the research rung for this run |
 | `--input-csv` / `--output-csv` / `--progress-file` / `--log-file` | Per-run paths |
 | `--allow-redirects` | Follow off-host redirects instead of failing them |
@@ -309,7 +310,7 @@ central account disablement, and sign-out-everywhere revoke Lens sessions; the
 legacy `elcano` magic-link mode remains the default and is unchanged.
 
 Tuning goes in `config.json` (git-ignored; copy from
-[`config.json.example`](config.json.example), which annotates all 58 keys).
+[`config.json.example`](config.json.example), which annotates all 59 keys).
 The ones you are most likely to touch:
 
 | Key | Default | Purpose |
