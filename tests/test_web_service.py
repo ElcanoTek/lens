@@ -871,7 +871,7 @@ def test_enqueue_job_with_research_model(monkeypatch, tmp_path):
     monkeypatch.setattr(
         web_service,
         "_model_catalog_cache",
-        (1e18, {"classify": [], "research": [{"id": "perplexity/sonar", "label": "Sonar"}]}),
+        (1e18, {"classify": [], "research": [{"id": "perplexity/sonar-pro", "label": "Sonar Pro"}]}),
     )
 
     with TestClient(web_service.app) as client:
@@ -879,7 +879,7 @@ def test_enqueue_job_with_research_model(monkeypatch, tmp_path):
 
         response = client.post(
             "/jobs",
-            data={"input_file": "list.csv", "research_model": "perplexity/sonar"},
+            data={"input_file": "list.csv", "research_model": "perplexity/sonar-pro"},
             follow_redirects=False,
         )
         assert response.status_code == 303
@@ -905,5 +905,5 @@ def test_enqueue_job_with_research_model(monkeypatch, tmp_path):
         assert "error=Unknown+research+model" in response.headers["location"]
 
     jobs = sorted(web_service.manager.jobs.values(), key=lambda j: j.created_at)[-2:]
-    assert jobs[0].research_model == "perplexity/sonar"
+    assert jobs[0].research_model == "perplexity/sonar-pro"
     assert jobs[1].research_model is None

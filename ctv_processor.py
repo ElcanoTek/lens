@@ -74,7 +74,7 @@ class CTVProcessor:
 
         # Research step configuration
         self.research_model = research_model or getattr(
-            config, "CTV_RESEARCH_MODEL", "perplexity/sonar-pro"
+            config, "CTV_RESEARCH_MODEL", "perplexity/sonar"
         )
         self.research_temperature = research_temperature
         self.research_max_tokens = research_max_tokens

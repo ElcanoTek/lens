@@ -41,7 +41,7 @@ from central_auth import (
     verify_access_token,
     verify_logout_token,
 )
-from config import DEFAULT_DECISION_MODEL
+from config import DEFAULT_DECISION_MODEL, DEFAULT_RESEARCH_MODEL
 from custom_categories import parse_categories, validate_categories
 
 logger = logging.getLogger("lens.web")
@@ -83,9 +83,10 @@ RECOMMENDED_MODEL = "~openai/gpt-luna-latest"
 # Browsers that saved the old recommended slug should follow the new default
 # once. An explicit later pick of that slug still sticks; see main.js.
 PREVIOUS_RECOMMENDED_MODELS = ("~google/gemini-flash-latest",)
-# The research fallback needs a model with built-in web search; Sonar Pro is
-# also what the CTV pipeline has used all along.
-RECOMMENDED_RESEARCH_MODEL = "perplexity/sonar-pro"
+# The research fallback and CTV research need a model with built-in web search.
+RECOMMENDED_RESEARCH_MODEL = DEFAULT_RESEARCH_MODEL
+# Browsers that saved the old recommended research model follow the new one once.
+PREVIOUS_RECOMMENDED_RESEARCH_MODELS = ("perplexity/sonar-pro",)
 # Supporting a search parameter does not mean a plain chat request searches.
 # These bounded, non-reasoning models search automatically in our current call
 # path. Other families require explicit tools/plugins and separate validation.
@@ -1787,6 +1788,7 @@ async def index(request: Request):
             "recommended_model": RECOMMENDED_MODEL,
             "previous_recommended_models": PREVIOUS_RECOMMENDED_MODELS,
             "recommended_research_model": RECOMMENDED_RESEARCH_MODEL,
+            "previous_recommended_research_models": PREVIOUS_RECOMMENDED_RESEARCH_MODELS,
             "recommended_decision_model": RECOMMENDED_DECISION_MODEL,
             "current_job_id": manager.current_job_id,
             "error": request.query_params.get("error", ""),

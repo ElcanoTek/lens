@@ -751,7 +751,7 @@ Analyze the website and provide your classification:"""
     async def research_website(
         self,
         domain: str,
-        research_model: str = "perplexity/sonar-pro",
+        research_model: str = "perplexity/sonar",
         temperature: float = 0.2,
         max_tokens: int = 1500,
         custom_questions: Optional[List[str]] = None,
@@ -1690,7 +1690,7 @@ Analyze the app and provide your classification:"""
         platform: str = "",
         url: str = "",
         publisher: str = "",
-        research_model: str = "perplexity/sonar-pro",
+        research_model: str = "perplexity/sonar",
         temperature: float = 0.3,
         max_tokens: int = 2000,
         custom_questions: Optional[List[str]] = None,
@@ -1708,7 +1708,7 @@ Analyze the app and provide your classification:"""
             platform: The CTV platform (Roku, Fire TV, Apple TV, etc.)
             url: Optional URL associated with the app
             publisher: Publisher name
-            research_model: Model to use for research (default: perplexity/sonar-pro)
+            research_model: Model to use for research (default: perplexity/sonar)
             temperature: Temperature for research model
             max_tokens: Maximum tokens for research response
 

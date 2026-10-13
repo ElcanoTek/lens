@@ -6,8 +6,8 @@ classification succeeds. Research requests include enabled custom questions so
 the summary can gather relevant evidence rather than only the standard rubric.
 
 `--research-model` selects the model for both website fallback and CTV research.
-The dashboard offers `perplexity/sonar-pro` (the default) and `perplexity/sonar`
-(the cheaper option). Both search automatically in the existing chat-completions
+The dashboard offers `perplexity/sonar` (the default since 2026-10-13) and
+`perplexity/sonar-pro`. Both search automatically in the existing chat-completions
 request path. Merely advertising `web_search_options` in the OpenRouter catalog
 does not establish that another model will search with that same request. Other
 families need explicitly configured search tools/plugins and validation first.
@@ -34,7 +34,7 @@ automatically more useful to the classifier.
 
 Recommendation: try Sonar per run for routine research; retain Sonar Pro as the
 default until a larger labeled sample covers obscure apps and custom rubrics.
-The production default has not been changed.
+The default was later switched to Sonar after the CTV batch comparison below.
 
 ## CTV batch comparison, 2026-10-13
 

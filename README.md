@@ -328,7 +328,7 @@ The ones you are most likely to touch:
 | `firecrawl_enabled` | `true` | Use the Firecrawl rung when it is running |
 | `firecrawl_proxy` | `basic` | Leave it. `auto` re-hammers hardened sites for nothing. |
 | `research_fallback_enabled` | `true` | Classify blocked sites from public research |
-| `research_model` | `perplexity/sonar-pro` | Needs built-in web search |
+| `research_model` | `perplexity/sonar` | Needs built-in web search |
 | `ios_request_delay` / `android_request_delay` | `5.0` / `10.0` | Store politeness. Lowering these gets you blocked. |
 
 Full reference: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#configuration-reference).
