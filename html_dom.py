@@ -138,13 +138,14 @@ def _attr_matches(value: Optional[str], wanted: AttrFilter) -> bool:
 
 
 class Element:
-    __slots__ = ("name", "attrs", "children", "parent")
+    __slots__ = ("name", "attrs", "children", "parent", "_position")
 
     def __init__(self, name: str, attrs: Dict[str, str], parent: Optional["Element"]) -> None:
         self.name = name
         self.attrs = attrs
         self.children: List[Node] = []
         self.parent = parent
+        self._position = 0  # index in parent.children; rechecked before use
 
     # -- attributes -------------------------------------------------------
 
@@ -204,7 +205,11 @@ class Element:
         if self.parent is None:
             return None
         siblings = self.parent.children
-        for node in siblings[siblings.index(self) + 1 :]:
+        position = self._position
+        if position >= len(siblings) or siblings[position] is not self:
+            position = siblings.index(self)  # a decompose() shifted us
+            self._position = position
+        for node in siblings[position + 1 :]:
             if isinstance(node, Element):
                 return node
         return None
@@ -320,9 +325,10 @@ class _TreeBuilder(HTMLParser):
         self._tree_preserving: List[Element] = []
         self._tree_text: List[str] = []
         self._tree_open: Dict[str, int] = {}  # open elements by name, for end tags
-        # Void elements closed on their start tag; a matching end tag later
-        # is redundant and swallowed (once per such element).
-        self._tree_closed_voids: List[str] = []
+        # Void elements closed on their start tag, counted by name: a
+        # matching end tag later is redundant and swallowed (once per such
+        # element). A counter, not a list, so each end tag is O(1).
+        self._tree_closed_voids: Dict[str, int] = {}
 
     # -- strings ----------------------------------------------------------
 
@@ -392,6 +398,7 @@ class _TreeBuilder(HTMLParser):
             attributes[key] = "" if value is None else value  # a repeat wins
         parent = self._tree_stack[-1]
         element = Element(tag, attributes, parent)
+        element._position = len(parent.children)
         parent.children.append(element)
         self._tree_stack.append(element)
         self._tree_open[tag] = self._tree_open.get(tag, 0) + 1
@@ -401,15 +408,17 @@ class _TreeBuilder(HTMLParser):
             self._tree_preserving.append(element)
         if closes_void and tag in _VOID_ELEMENTS:
             self.handle_endtag(tag, check_already_closed=False)
-            self._tree_closed_voids.append(tag)
+            self._tree_closed_voids[tag] = self._tree_closed_voids.get(tag, 0) + 1
 
     def handle_startendtag(self, tag, attrs) -> None:
         self.handle_starttag(tag, attrs, closes_void=False)
         self.handle_endtag(tag, check_already_closed=False)
 
     def handle_endtag(self, tag, check_already_closed: bool = True) -> None:
-        if check_already_closed and tag in self._tree_closed_voids:
-            self._tree_closed_voids.remove(tag)
+        if check_already_closed and self._tree_closed_voids.get(tag):
+            # bs4 swallows this end tag without ending the current string, so
+            # "a<br>b</br>c" keeps "bc" as one string; kept for parity.
+            self._tree_closed_voids[tag] -= 1
             return
         self._tree_flush()
         if not self._tree_open.get(tag):

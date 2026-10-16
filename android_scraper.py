@@ -208,7 +208,8 @@ class AndroidScraper:
                         "fetched_at": fetched_at,
                     }
 
-                return self._parse_html(package_name, html, fetched_at)
+                # Parsing a ~1 MB Play Store page blocks; keep it off the loop.
+                return await asyncio.to_thread(self._parse_html, package_name, html, fetched_at)
 
         except aiohttp.ClientError as exc:
             return {

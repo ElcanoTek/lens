@@ -10,6 +10,7 @@ in test_html_extractors.py.
 
 import re
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -130,3 +131,35 @@ def test_deeply_nested_unclosed_markup_does_not_recurse():
     assert doc.get_text() == "deep"
     assert len(doc.find_all("div")) == depth
     assert str(doc).startswith("<div><div>")
+
+
+def test_stray_void_end_tag_keeps_the_string_open_like_bs4():
+    # bs4 4.15.0 swallows the redundant </br> without ending the current
+    # string, so "b" and "c" are one string: get_text gives "a bc", not
+    # "a b c". Parity with the recorded extractor output wins here.
+    doc = parse_html("<p>a<br>b</br>c</p>")
+    assert doc.get_text(" ", strip=True) == "a bc"
+    assert parse_html("<p>a<img>b</img>c</p>").get_text(" ", strip=True) == "a bc"
+    # Each void element swallows at most one later end tag of its name.
+    assert parse_html("<p>a<br>b</br>c</br>d</p>").get_text(" ", strip=True) == "a bc d"
+
+
+def test_next_sibling_after_decompose():
+    doc = parse_html("<div>A</div><script>x</script><div>B</div><div>C</div>")
+    doc.find("script").decompose()
+    first, second, third = doc.find_all("div")
+    assert first.find_next_sibling() is second
+    assert second.find_next_sibling() is third
+
+
+@pytest.mark.parametrize("unit", ["<div><img></div>", "<br></br>x", "<div>"])
+def test_hostile_repeats_parse_in_linear_time(unit):
+    # A response body is capped at 5 MiB and is parsed in full. Each closed
+    # void element used to be appended to a list that every end tag scanned,
+    # so ~320 KB of "<div><img></div>" took seconds and a MiB took ~40 s
+    # (bs4 has the same quadratic shape). Linear, a MiB takes about a second;
+    # the bound sits far from both so a slow runner does not flake.
+    markup = unit * (1024 * 1024 // len(unit))
+    start = time.perf_counter()
+    parse_html(markup)
+    assert time.perf_counter() - start < 10

@@ -269,7 +269,8 @@ class ScraperClient:
             logger.info("Connection to %s failed; retrying via %s", url, fallback_url)
             html, status_code = await self._fetch_html_with_retries(fallback_url, timeout)
             url = fallback_url
-        parsed = self._parse_html(url, html)
+        # A 5 MiB body takes a noticeable moment to parse; keep it off the loop.
+        parsed = await asyncio.to_thread(self._parse_html, url, html)
         parsed["status_code"] = status_code
         return parsed
 
@@ -740,7 +741,7 @@ class ScraperClient:
                 self._ensure_same_host(url, final_url)
 
             html = await asyncio.to_thread(self._get_page_source, driver)
-            parsed = self._parse_html(url, html)
+            parsed = await asyncio.to_thread(self._parse_html, url, html)
             parsed["status_code"] = 200
             return parsed
         except RuntimeError:
