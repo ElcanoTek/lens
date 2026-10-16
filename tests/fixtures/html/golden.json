@@ -1,0 +1,340 @@
+{
+ "play_blocked.html": {
+  "_extract_app_name": "",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   0.0,
+   0
+  ],
+  "android": {
+   "error": "Could not extract app name - page might be blocked or app not found",
+   "fetched_at": "2026-01-01T00:00:00",
+   "package_name": "com.example.app",
+   "success": false
+  },
+  "site": {
+   "content": "We're sorry, but your computer or network may be sending automated queries. To protect our users, we can't process your request right now.",
+   "meta_description": "",
+   "title": "",
+   "url": "https://example.test/"
+  }
+ },
+ "play_full.html": {
+  "_extract_app_name": "Harbor Tide Tables",
+  "_extract_category": "Weather",
+  "_extract_content_rating": "Everyone",
+  "_extract_description": "Know the tide before you leave the dock. Harbor Tide Tables shows high & low water for 3,000+ stations, with sunrise, sunset and moon phase. • Offline charts • Widgets — no ads in the paid tier Questions? support@saltmarsh.example",
+  "_extract_developer": "Saltmarsh Software Ltd.",
+  "_extract_downloads": "10,000+",
+  "_extract_last_updated": "Mar 3, 2026",
+  "_extract_rating": [
+   4.6,
+   12487
+  ],
+  "android": {
+   "app_name": "Harbor Tide Tables",
+   "category": "Weather",
+   "content_for_llm": "App Name: Harbor Tide Tables\nDeveloper: Saltmarsh Software Ltd.\nCategory: Weather\nRating: 4.6/5.0 (12,487 reviews)\nDownloads: 10,000+\nContent Rating: Everyone\n\nDescription:\nKnow the tide before you leave the dock. Harbor Tide Tables shows high & low water for 3,000+ stations, with sunrise, sunset and moon phase. • Offline charts • Widgets — no ads in the paid tier Questions? support@saltmarsh.example",
+   "content_rating": "Everyone",
+   "description": "Know the tide before you leave the dock. Harbor Tide Tables shows high & low water for 3,000+ stations, with sunrise, sunset and moon phase. • Offline charts • Widgets — no ads in the paid tier Questions? support@saltmarsh.example",
+   "developer": "Saltmarsh Software Ltd.",
+   "downloads": "10,000+",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "Mar 3, 2026",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 4.6,
+   "rating_count": 12487,
+   "success": true
+  },
+  "site": {
+   "content": "Harbor Tide Tables - Apps on Google Play Games Apps Harbor Tide Tables Saltmarsh Software Ltd. 4.6 star 12.4K reviews 500K+ Downloads Everyone About this app Know the tide before you leave the dock. Harbor Tide Tables shows high & low water for 3,000+ stations, with sunrise, sunset and moon phase. • Offline charts • Widgets — no ads in the paid tier Questions? support@saltmarsh.example Updated on Mar 3, 2026 Weather Travel & Local 10,000+ downloads in the last month alone. © 2026 Google  · Terms",
+   "meta_description": "Tide charts, sunrise times and marine forecasts for every harbor.",
+   "title": "Harbor Tide Tables - Apps on Google Play",
+   "url": "https://example.test/"
+  }
+ },
+ "play_messy.html": {
+  "_extract_app_name": "Crumb & Co’s Bakery © 2026 &foo – done",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "Fresh bread daily. Order ahead—skip the line. Since 1998.",
+  "_extract_developer": "",
+  "_extract_downloads": "5,000+",
+  "_extract_last_updated": "Feb 29, 2024",
+  "_extract_rating": [
+   0.5,
+   0
+  ],
+  "android": {
+   "app_name": "Crumb & Co’s Bakery © 2026 &foo – done",
+   "category": "",
+   "content_for_llm": "App Name: Crumb & Co’s Bakery © 2026 &foo – done\nDeveloper: \nRating: 0.5/5.0\nDownloads: 5,000+\n\nDescription:\nFresh bread daily. Order ahead—skip the line. Since 1998.",
+   "content_rating": "",
+   "description": "Fresh bread daily. Order ahead—skip the line. Since 1998.",
+   "developer": "",
+   "downloads": "5,000+",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "Feb 29, 2024",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 0.5,
+   "rating_count": 0,
+   "success": true
+  },
+  "site": {
+   "content": "Crumb & Co’s Bakery © 2026 &foo – done - Apps on Google Play Rated 2.0 stars Unclosed paragraph Second bold both italic? Crumb Kitchens Food & Drink Preserved\n      whitespace Fresh bread daily. Order ahead—skip the line. Since 1998. keep   this Other app empty label 5K 5.1 0.9 3.3 after self-closed p\nUpdated on Feb 29, 2024 and again trailing text after html",
+   "meta_description": "",
+   "title": "Crumb & Co’s Bakery © 2026 &foo – done - Apps on Google Play",
+   "url": "https://example.test/"
+  }
+ },
+ "play_no_spans.html": {
+  "_extract_app_name": "Night Sky AtlasPro",
+  "_extract_category": "Education",
+  "_extract_content_rating": "Mature",
+  "_extract_description": "Point your phone at the sky. Identify stars , planets & satellites. AR mode Night mode",
+  "_extract_developer": "Orion Labs",
+  "_extract_downloads": "1M+",
+  "_extract_last_updated": "Nov 30, 2025",
+  "_extract_rating": [
+   4.8,
+   2001
+  ],
+  "android": {
+   "app_name": "Night Sky AtlasPro",
+   "category": "Education",
+   "content_for_llm": "App Name: Night Sky AtlasPro\nDeveloper: Orion Labs\nCategory: Education\nRating: 4.8/5.0 (2,001 reviews)\nDownloads: 1M+\nContent Rating: Mature\n\nDescription:\nPoint your phone at the sky. Identify stars , planets & satellites. AR mode Night mode",
+   "content_rating": "Mature",
+   "description": "Point your phone at the sky. Identify stars , planets & satellites. AR mode Night mode",
+   "developer": "Orion Labs",
+   "downloads": "1M+",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "Nov 30, 2025",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 4.8,
+   "rating_count": 2001,
+   "success": true
+  },
+  "site": {
+   "content": "Not Used - Apps on Google Play Night Sky Atlas Pro Orion Labs Education Point your phone at the sky. Identify stars , planets & satellites. AR mode Night mode Rated for 3+ Mature 17+ only for the companion web app Updated on Nov 30, 2025",
+   "meta_description": "",
+   "title": "Not Used - Apps on Google Play",
+   "url": "https://example.test/"
+  }
+ },
+ "play_og_only.html": {
+  "_extract_app_name": "Quiet Garden Sounds",
+  "_extract_category": "",
+  "_extract_content_rating": "12+",
+  "_extract_description": "Rain, wind and birdsong to help you sleep.",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   3.9,
+   87
+  ],
+  "android": {
+   "app_name": "Quiet Garden Sounds",
+   "category": "",
+   "content_for_llm": "App Name: Quiet Garden Sounds\nDeveloper: \nRating: 3.9/5.0 (87 reviews)\nContent Rating: 12+\n\nDescription:\nRain, wind and birdsong to help you sleep.",
+   "content_rating": "12+",
+   "description": "Rain, wind and birdsong to help you sleep.",
+   "developer": "",
+   "downloads": "",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 3.9,
+   "rating_count": 87,
+   "success": true
+  },
+  "site": {
+   "content": "Relax Sleep Rated for 12+",
+   "meta_description": "Ignored because og:description exists.",
+   "title": "",
+   "url": "https://example.test/"
+  }
+ },
+ "play_title_fallback.html": {
+  "_extract_app_name": "Pocket Ledger: Budget Planner",
+  "_extract_category": "Finance",
+  "_extract_content_rating": "Teen",
+  "_extract_description": "Track spending, split bills and plan a monthly budget in minutes.",
+  "_extract_developer": "Ledgerworks Inc",
+  "_extract_downloads": "500K+",
+  "_extract_last_updated": "January 5, 2025",
+  "_extract_rating": [
+   4.2,
+   0
+  ],
+  "android": {
+   "app_name": "Pocket Ledger: Budget Planner",
+   "category": "Finance",
+   "content_for_llm": "App Name: Pocket Ledger: Budget Planner\nDeveloper: Ledgerworks Inc\nCategory: Finance\nRating: 4.2/5.0\nDownloads: 500K+\nContent Rating: Teen\n\nDescription:\nTrack spending, split bills and plan a monthly budget in minutes.",
+   "content_rating": "Teen",
+   "description": "Track spending, split bills and plan a monthly budget in minutes.",
+   "developer": "Ledgerworks Inc",
+   "downloads": "500K+",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "January 5, 2025",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 4.2,
+   "rating_count": 0,
+   "success": true
+  },
+  "site": {
+   "content": "Pocket Ledger: Budget Planner - Apps on Google Play Ledgerworks Inc Finance Finance 4.2 stars * 500K+ Last updated: January 5, 2025 Content rating: Teen – violence",
+   "meta_description": "",
+   "title": "Pocket Ledger: Budget Planner - Apps on Google Play",
+   "url": "https://example.test/"
+  }
+ },
+ "site_article.html": {
+  "_extract_app_name": "Coastal Weekly — Local News & Weather",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "   Independent reporting from the coast since 1987.   ",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   0.0,
+   0
+  ],
+  "android": {
+   "app_name": "Coastal Weekly — Local News & Weather",
+   "category": "",
+   "content_for_llm": "App Name: Coastal Weekly — Local News & Weather\nDeveloper: \n\nDescription:\n   Independent reporting from the coast since 1987.   ",
+   "content_rating": "",
+   "description": "   Independent reporting from the coast since 1987.   ",
+   "developer": "",
+   "downloads": "",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 0.0,
+   "rating_count": 0,
+   "success": true
+  },
+  "site": {
+   "content": "Coastal Weekly — Local News & Weather Home News Sports Harbor dredging resumes after storm delay By R. Ames · October 14, 2026 Work to deepen the main channel restarted Monday, two weeks after a nor’easter pushed sand back into the cut. “We lost about ten days,” said the harbormaster. The project is expected to finish in December. The barge Sandpiper at work. Most read School board vote Ferry schedule changes © 2026 Coastal Weekly. All rights reserved.",
+   "meta_description": "Independent reporting from the coast since 1987.",
+   "title": "Coastal Weekly — Local News & Weather",
+   "url": "https://example.test/"
+  }
+ },
+ "site_long.html": {
+  "_extract_app_name": "Long page",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   0.0,
+   0
+  ],
+  "android": {
+   "app_name": "Long page",
+   "category": "",
+   "content_for_llm": "App Name: Long page\nDeveloper: ",
+   "content_rating": "",
+   "description": "",
+   "developer": "",
+   "downloads": "",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 0.0,
+   "rating_count": 0,
+   "success": true
+  },
+  "site": {
+   "content": "Long page Paragraph word0 lorem & ipsum dolor. Paragraph word1 lorem & ipsum dolor. Paragraph word2 lorem & ipsum dolor. Paragraph word3 lorem & ipsum dolor. Paragraph word4 lorem & ipsum dolor. Paragraph word5 lorem & ipsum dolor. Paragraph word6 lorem & ipsum dolor. Paragraph word7 lorem & ipsum dolor. Paragraph word8 lorem & ipsum dolor. Paragraph word9 lorem & ipsum dolor. Paragraph word10 lorem & ipsum dolor. Paragraph word11 lorem & ipsum dolor. Paragraph word12 lorem & ipsum dolor. Paragraph word13 lorem & ipsum dolor. Paragraph word14 lorem & ipsum dolor. Paragraph word15 lorem & ipsum dolor. Paragraph word16 lorem & ipsum dolor. Paragraph word17 lorem & ipsum dolor. Paragraph word18 lorem & ipsum dolor. Paragraph word19 lorem & ipsum dolor. Paragraph word20 lorem & ipsum dolor. Paragraph word21 lorem & ipsum dolor. Paragraph word22 lorem & ipsum dolor. Paragraph word23 lorem & ipsum dolor. Paragraph word24 lorem & ipsum dolor. Paragraph word25 lorem & ipsum dolor. Paragraph word26 lorem & ipsum dolor. Paragraph word27 lorem & ipsum dolor. Paragraph word28 lorem & ipsum dolor. Paragraph word29 lorem & ipsum dolor. Paragraph word30 lorem & ipsum dolor. Paragraph word31 lorem & ipsum dolor. Paragraph word32 lorem & ipsum dolor. Paragraph word33 lorem & ipsum dolor. Paragraph word34 lorem & ipsum dolor. Paragraph word35 lorem & ipsum dolor. Paragraph word36 lorem & ipsum dolor. Paragraph word37 lorem & ipsum dolor. Paragraph word38 lorem & ipsum dolor. Paragraph word39 lorem & ipsum dolor. Paragraph word40 lorem & ipsum dolor. Paragraph word41 lorem & ipsum dolor. Paragraph word42 lorem & ipsum dolor. Paragraph word43 lorem & ipsum dolor. Paragraph word44 lorem & ipsum dolor. Paragraph word45 lorem & ipsum dolor. Paragraph word46 lorem & ipsum dolor. Paragraph word47 lorem & ipsum dolor. Paragraph word48 lorem & ipsum dolor. Paragraph word49 lorem & ipsum dolor. Paragraph word50 lorem & ipsum dolor. Paragraph word51 lorem & ipsum dolor. Paragraph word52 lorem & ipsum dolor. Paragraph word53 lorem & ipsum dolor. Paragraph word54 lorem & ipsum dolor. Paragraph word55 lorem & ipsum dolor. Paragraph word56 lorem & ipsum dolor. Paragraph word57 lorem & ipsum dolor. Paragraph word58 lorem & ipsum dolor. Paragraph word59 lorem & ipsum dolor. Paragraph word0 lorem & ipsum dolor. Paragraph word1 lorem & ipsum dolor. Paragraph word2 lorem & ipsum dolor. Paragraph word3 lorem & ipsum dolor. Paragraph word4 lorem & ipsum dolor. Paragraph word5 lorem & ipsum dolor. Paragraph word6 lorem & ipsum dolor. Paragraph word7 lorem & ipsum dolor. Paragraph word8 lorem & ipsum dolor. Paragraph word9 lorem & ipsum dolor. Paragraph word10 lorem & ipsum dolor. Paragraph word11 lorem & ipsum dolor. Paragraph word12 lorem & ipsum dolor. Paragraph word13 lorem & ipsum dolor. Paragraph word14 lorem & ipsum dolor. Paragraph word15 lorem & ipsum dolor. Paragraph word16 lorem & ipsum dolor. Paragraph word17 lorem & ipsum dolor. Paragraph word18 lorem & ipsum dolor. Paragraph word19 lorem & ipsum dolor. Paragraph word20 lorem & ipsum dolor. Paragraph word21 lorem & ipsum dolor. Paragraph word22 lorem & ipsum dolor. Paragraph word23 lorem & ipsum dolor. Paragraph word24 lorem & ipsum dolor. Paragraph word25 lorem & ipsum dolor. Paragraph word26 lorem & ipsum dolor. Paragraph word27 lorem & ipsum dolor. Paragraph word28 lorem & ipsum dolor. Paragraph word29 lorem & ipsum dolor. Paragraph word30 lorem & ipsum dolor. Paragraph word31 lorem & ipsum dolor. Paragraph word32 lorem & ipsum dolor. Paragraph word33 lorem & ipsum dolor. Paragraph word34 lorem & ipsum dolor. Paragraph word35 lorem & ipsum dolor. Paragraph word36 lorem & ipsum dolor. Paragraph word37 lorem & ipsum dolor. Paragraph word38 lorem & ipsum dolor. Paragraph word39 lorem & ipsum dolor. Paragraph word40 lorem & ipsum dolor. Paragraph word41 lorem & ipsum dolor. Paragraph word42 lorem & ipsum dolor. Paragraph word43 lorem & ipsum dolor. Paragraph word44 lorem & ipsum dolor. Paragraph word45 lor...",
+   "meta_description": "",
+   "title": "Long page",
+   "url": "https://example.test/"
+  }
+ },
+ "site_malformed.html": {
+  "_extract_app_name": "Broken <markup> page",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   0.0,
+   0
+  ],
+  "android": {
+   "app_name": "Broken <markup> page",
+   "category": "",
+   "content_for_llm": "App Name: Broken <markup> page\nDeveloper: ",
+   "content_rating": "",
+   "description": "",
+   "developer": "",
+   "downloads": "",
+   "fetched_at": "2026-01-01T00:00:00",
+   "last_updated": "",
+   "package_name": "com.example.app",
+   "platform": "android",
+   "play_store_url": "https://play.google.com/store/apps/details?id=com.example.app",
+   "rating": 0.0,
+   "rating_count": 0,
+   "success": true
+  },
+  "site": {
+   "content": "Broken <markup> page unclosed cell one cell two visible &unknown entity & < & &",
+   "meta_description": "",
+   "title": "Broken <markup> page",
+   "url": "https://example.test/"
+  }
+ },
+ "site_meta_variants.html": {
+  "_extract_app_name": "",
+  "_extract_category": "",
+  "_extract_content_rating": "",
+  "_extract_description": "",
+  "_extract_developer": "",
+  "_extract_downloads": "",
+  "_extract_last_updated": "",
+  "_extract_rating": [
+   0.0,
+   0
+  ],
+  "android": {
+   "error": "Could not extract app name - page might be blocked or app not found",
+   "fetched_at": "2026-01-01T00:00:00",
+   "package_name": "com.example.app",
+   "success": false
+  },
+  "site": {
+   "content": "Text with spans Tabs\tand\nnewlines",
+   "meta_description": "",
+   "title": "",
+   "url": "https://example.test/"
+  }
+ }
+}
