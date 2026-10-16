@@ -7,7 +7,7 @@ import json
 import os
 from typing import Dict
 
-from dotenv import load_dotenv
+from _vendor.dotenv import load_dotenv
 
 
 def _load_dotenv() -> None:
@@ -97,8 +97,8 @@ class Config:
             "user_agent": DEFAULT_USER_AGENT,
             "min_content_length": 500,
             # Full rescue ladder by default (direct → deep → research). The
-            # deep rung is probed at runtime and skipped when Podman/Selenium
-            # aren't available, so this degrades gracefully to direct +
+            # deep rung is probed at runtime and skipped when Podman isn't
+            # available, so this degrades gracefully to direct +
             # research on a bare host. CI pins --scrape-mode direct.
             "scrape_mode": "auto",
             # The auto-mode deep retry pass exists to rescue hard sites, so it

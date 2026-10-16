@@ -59,7 +59,7 @@ def test_bootstrap_optional_secret_prompt(noninteractive, key, optional, stdin, 
 
 @pytest.mark.parametrize("existing", [False, True])
 def test_bootstrap_typesafe_env_roundtrip_preserves_existing_key(tmp_path, existing):
-    from dotenv import dotenv_values
+    from _vendor.dotenv import dotenv_values
 
     source = (ROOT / "scripts/bootstrap.sh").read_text()
     prompts = source[source.index("prompt() {") : source.index("[[ $EUID")]
@@ -74,6 +74,8 @@ def test_bootstrap_typesafe_env_roundtrip_preserves_existing_key(tmp_path, exist
     python = app / ".venv/bin/python"
     python.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} "$@"\n')
     python.chmod(0o755)
+    # Bootstrap runs this step after the release tree is synced into APP_DIR.
+    (app / "_vendor").symlink_to(ROOT / "_vendor", target_is_directory=True)
     env_file = app / ".env"
     if existing:
         env_file.write_text("TYPESAFE_API_KEY='existing-secret'\nOTHER_SETTING='preserved'\n")

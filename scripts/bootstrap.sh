@@ -4,7 +4,7 @@
 # scripts/bootstrap.sh — interactive installer for Elcano Lens.
 #
 # What this does:
-#   1. Installs system deps via dnf (python3, uv, selenium runtime libs)
+#   1. Installs system deps via dnf (python3, uv, chromium runtime libs)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
@@ -97,7 +97,8 @@ Safe to re-run: existing .env is preserved; only missing values are prompted.
 EOF
 
 step "1/7  Installing system dependencies via dnf"
-# chromium + chromedriver are needed by the selenium-based scrapers.
+# chromium + chromedriver are host packages; the deep scrape itself drives
+# the containerised Chrome over WebDriver.
 # If the operator runs scrapers headless-only, they can skip those
 # packages by exporting LENS_BOOTSTRAP_SKIP_CHROME=1.
 PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certificates)
@@ -181,9 +182,10 @@ if [[ -f "$ENV_FILE" ]]; then
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     # Load known configuration only, never execute .env as a root shell script.
     case "$key" in AUTH_*|LENS_*|OPENROUTER_API_KEY|TYPESAFE_API_KEY) export "$key=$value" ;; esac
-  done < <("$APP_DIR/.venv/bin/python" - "$ENV_FILE" <<'PY'
+  done < <("$APP_DIR/.venv/bin/python" -I - "$ENV_FILE" "$APP_DIR" <<'PY'
 import sys
-from dotenv import dotenv_values
+sys.path.insert(0, sys.argv[2])  # the release tree; -I keeps the cwd off sys.path
+from _vendor.dotenv import dotenv_values
 for key, value in dotenv_values(sys.argv[1], interpolate=False).items():
     if value is not None:
         sys.stdout.write(key + '\0' + value + '\0')
@@ -234,9 +236,10 @@ export TYPESAFE_API_KEY
 export AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}" LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}" AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
 # Merge only the configured keys; retain custom settings and comments on rerun.
-"$APP_DIR/.venv/bin/python" - "$ENV_FILE" <<'PY'
+"$APP_DIR/.venv/bin/python" -I - "$ENV_FILE" "$APP_DIR" <<'PY'
 import os, sys
-from dotenv import set_key
+sys.path.insert(0, sys.argv[2])
+from _vendor.dotenv import set_key
 for key in ('AUTH_SIGNING_PUBKEY', 'LENS_AUTH_MODE', 'LENS_SESSION_SECRET',
             'LENS_ACCESS_DB', 'OPENROUTER_API_KEY', 'TYPESAFE_API_KEY', 'AUTH_ISSUER_URL',
             'LENS_PUBLIC_URL', 'AUTH_CLIENT_ID', 'AUTH_CLIENT_SECRET'):
