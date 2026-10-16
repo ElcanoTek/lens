@@ -50,6 +50,10 @@ output, progress and log artifacts.](docs/images/dashboard.png)
 - **A web dashboard, or just the CLI.** The FastAPI dashboard adds uploads, a
   one-at-a-time job queue, live progress and artifact downloads. The CLI needs
   nothing but Python and a key.
+- **Drivable from agents and scripts.** An MCP server (`/mcp`) and a REST API
+  (`/api/v1`) let Fleet or any other caller start jobs, check progress, read
+  results and download files with a scoped, revocable token rather than an
+  admin key. [API and MCP reference](docs/API.md).
 
 ## How it works
 
@@ -393,6 +397,7 @@ the failure modes you will actually hit.
 | Document | What's in it |
 |---|---|
 | [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Production install, configuration reference, operations, troubleshooting |
+| [`docs/API.md`](docs/API.md) | The REST API and MCP server Fleet and other programs use: tokens, tools, errors |
 | [`docs/LICENSING.md`](docs/LICENSING.md) | What BSL 1.1 lets you do, what "non-production" means, how the Change Date works |
 | [`AGENTS.md`](AGENTS.md) | Architecture map, module responsibilities, and the non-obvious gotchas |
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, tests, branch and PR conventions |

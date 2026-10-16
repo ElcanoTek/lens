@@ -421,6 +421,22 @@ seconds and applies the same file checks as an upload. If the service is down,
 the request waits in the spool and is queued when it starts. Jobs run one at a
 time unless `LENS_MAX_PARALLEL_JOBS` allows more.
 
+### API tokens for Fleet and other services
+
+Programs drive Lens through `POST /mcp` (MCP, which is what Fleet uses) and
+`/api/v1` (REST). Both need a scoped bearer token that you mint on the host:
+
+```bash
+lens token create --label fleet-elcano     # prints the token once, plus Fleet's .env lines
+lens token list
+lens token revoke ID
+```
+
+Tokens carry `jobs:read` and/or `jobs:run` and never admin rights. Only their
+hashes are stored, in `/var/lib/lens/api_tokens.db` (`LENS_API_TOKEN_DB`).
+Set `LENS_PUBLIC_URL` so download links name the public host. The contract
+is in [API.md](API.md).
+
 ## Updating and rolling back
 
 `lens update` runs `scripts/update.sh`, which is deliberately staged so a bad
@@ -610,7 +626,10 @@ Back up `managed-files/outputs/` (the results you paid OpenRouter for) and
 `/opt/lens/.env` (the credentials). In central mode, also back up
 `/var/lib/lens/access.db`; it contains the local allowlist, Auth provisioning
 versions, hashed sessions, and revocation records and is not reproducible from
-git. Note that output CSVs
+git. If you have minted API tokens, also back up `/var/lib/lens/api_tokens.db`:
+it holds the token hashes and the download-link signing key, and restoring a
+host without it invalidates every Fleet or script integration until new tokens
+are minted and handed out. Note that output CSVs
 contain the identifiers you analysed and the access database contains client
 account metadata, so treat backups accordingly.
 
@@ -621,7 +640,7 @@ cannot change while `tar` reads them:
 sudo systemctl stop lens.service
 sudo tar czf lens-backup-$(date +%F).tar.gz \
   -C /opt/lens managed-files/outputs .env \
-  -C /var/lib/lens access.db
+  -C /var/lib/lens access.db api_tokens.db   # drop api_tokens.db if no token was ever minted
 sudo systemctl start lens.service
 ```
 

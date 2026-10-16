@@ -103,6 +103,9 @@ The web service (`web_service.py`) spawns `main.py` as a subprocess for each job
 | `progress_tracker.py` | JSON-based progress persistence; atomic writes; resumable processing |
 | `reporting.py` | Terminal reporter; Rich-based progress bar; JSONL logging |
 | `web_service.py` | FastAPI web dashboard; eagerly validated legacy/central auth provider, public readiness and signed-out routes; job queue (one at a time by default, `LENS_MAX_PARALLEL_JOBS` for more); file upload/download; watches `managed-files/spool/` for `lens submit` requests |
+| `lens_api.py` | Programmatic seam: `/api/v1` REST routes and the job/result/download operations MCP shares; bearer-token auth only, never the browser session (see `docs/API.md`) |
+| `lens_mcp.py` | `POST /mcp`: stateless Streamable-HTTP MCP server (JSON responses, no sessions) whose tools adapt `lens_api`; tools filtered and re-checked by token scope |
+| `api_tokens.py` | Scoped API tokens (`jobs:read`, `jobs:run`) stored as SHA-256 in `/var/lib/lens/api_tokens.db`, signed 15-minute download links, and the `lens token` CLI |
 | `submit_job.py` | `lens submit` client, run as the service user: validates categories, writes the spool request, waits for the job id |
 | `manage.py` | CLI utility for setup, progress, reset, validation, stats |
 | `content_taxonomy.tsv` | IAB content taxonomy used for classification; loaded and cached as class variable in `openrouter_client.py` |

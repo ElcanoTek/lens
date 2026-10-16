@@ -78,6 +78,22 @@ case "$cmd" in
     exec sudo -u lens --preserve-env=LENS_ACCESS_DB "$APP_DIR/.venv/bin/python" \
       "$APP_DIR/central_auth_admin.py" "$@"
     ;;
+  token)
+    # Scoped bearer tokens for Fleet and other programmatic callers (REST
+    # /api/v1 and MCP /mcp). Runs as the service user so the token database
+    # stays owned by it; secrets are printed once, on create, and never again.
+    [[ -x "$APP_DIR/.venv/bin/python" ]] || { echo "Lens virtualenv missing" >&2; exit 1; }
+    env_value() {
+      "${ROOT[@]}" awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); gsub(/["'"'"']/, ""); print }' \
+        "$ENV_FILE" 2>/dev/null || true
+    }
+    token_db=$(env_value LENS_API_TOKEN_DB)
+    public_url=$(env_value LENS_PUBLIC_URL)
+    cd "$APP_DIR"
+    exec sudo -u "$APP_USER" env \
+      LENS_API_TOKEN_DB="${token_db:-/var/lib/lens/api_tokens.db}" LENS_PUBLIC_URL="$public_url" \
+      "$APP_DIR/.venv/bin/python" "$APP_DIR/api_tokens.py" "$@"
+    ;;
   submit)
     # Queue a dashboard job from a file on this host. The running service
     # picks it up from the spool, so it appears in the Runs table with live
@@ -165,6 +181,9 @@ lens — scraper web UI operator CLI
   lens access list              list enabled central-auth accounts
   lens submit FILE [options]    queue a dashboard run from a file on this host
                                 (--name, --categories JSON, --ctv, model overrides)
+  lens token create --label NAME [--scope jobs:read|jobs:run]...
+                                mint a scoped API token for Fleet (shown once)
+  lens token list | revoke ID   show tokens (never secrets) / revoke one
   lens tls status|reload|restart   Caddy controls (if installed)
 EOF
     ;;
