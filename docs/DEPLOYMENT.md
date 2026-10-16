@@ -626,7 +626,10 @@ Back up `managed-files/outputs/` (the results you paid OpenRouter for) and
 `/opt/lens/.env` (the credentials). In central mode, also back up
 `/var/lib/lens/access.db`; it contains the local allowlist, Auth provisioning
 versions, hashed sessions, and revocation records and is not reproducible from
-git. Note that output CSVs
+git. If you have minted API tokens, also back up `/var/lib/lens/api_tokens.db`:
+it holds the token hashes and the download-link signing key, and restoring a
+host without it invalidates every Fleet or script integration until new tokens
+are minted and handed out. Note that output CSVs
 contain the identifiers you analysed and the access database contains client
 account metadata, so treat backups accordingly.
 
@@ -637,7 +640,7 @@ cannot change while `tar` reads them:
 sudo systemctl stop lens.service
 sudo tar czf lens-backup-$(date +%F).tar.gz \
   -C /opt/lens managed-files/outputs .env \
-  -C /var/lib/lens access.db
+  -C /var/lib/lens access.db api_tokens.db   # drop api_tokens.db if no token was ever minted
 sudo systemctl start lens.service
 ```
 

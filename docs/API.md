@@ -72,7 +72,9 @@ reports under `defaults`, and `get_job.settings` reports what the run
 actually uses. A model named explicitly is passed to the run even when it is
 the recommended one. `research_fallback` and `deep_retry` can only turn a
 pass *off*: an explicit `true` for a pass this instance has disabled is
-refused rather than silently ignored.
+refused rather than silently ignored. Unknown option names (a typo such as
+`deep_rety`) are refused too, so a costly run never starts with a default the
+caller meant to change.
 
 Tool failures come back as tool results with `isError: true` and a body of
 `{"ok": false, "error": "...", "code": "..."}`, not as protocol errors, so an

@@ -129,7 +129,7 @@ TOOLS: Dict[str, Dict[str, Any]] = {
                 },
                 "filename": {
                     "type": "string",
-                    "pattern": "(?i)^[^/\\\\]+\\.(csv|xlsx)$",
+                    "pattern": "^[^/\\\\]+\\.([cC][sS][vV]|[xX][lL][sS][xX])$",
                     "description": "Name for the uploaded file, ending .csv or .xlsx.",
                 },
                 "input_file": {

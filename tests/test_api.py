@@ -570,3 +570,89 @@ def test_paging_reuses_the_whole_file_summary(client, monkeypatch):
         f"/api/v1/jobs/{job.id}/results?quality=Premium&limit=0", headers=_auth(raw)
     ).json()
     assert premium["matching_rows"] == 2 and premium["rows"] == []
+
+
+def test_chunked_multipart_is_capped_while_parsing(client, monkeypatch):
+    monkeypatch.setattr(web_service, "MAX_UPLOAD_BYTES", 64)
+    boundary = "lensboundary"
+    body = (
+        (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="big.csv"\r\n'
+            "Content-Type: text/csv\r\n\r\nDomain\n"
+        ).encode()
+        + b"example.com\n" * 200_000
+        + f"\r\n--{boundary}--\r\n".encode()
+    )
+    response = client.post(
+        "/api/v1/jobs",
+        content=_chunked(body, 65536),
+        headers={**_auth(_token()), "Content-Type": f"multipart/form-data; boundary={boundary}"},
+    )
+    assert response.status_code == 413 and response.json()["code"] == "too_large"
+    assert not web_service.manager.jobs
+
+
+def test_omitted_decision_model_inherits_this_instances_default(client, monkeypatch):
+    from config import config
+
+    monkeypatch.setattr(config, "DECISION_MODEL", "vendor/configured-decisions")
+    spec = {"categories": [{"name": "Kids", "type": "boolean", "question": "For kids?"}]}
+    created = client.post(
+        "/api/v1/jobs",
+        json={"items": ["a.com"], "custom_categories": spec},
+        headers=_auth(_token()),
+    ).json()
+    assert web_service.manager.jobs[created["id"]].decision_model is None
+    assert created["settings"]["decision_model"] == "vendor/configured-decisions"
+
+
+def test_unknown_create_options_are_refused(client):
+    response = client.post(
+        "/api/v1/jobs", json={"items": ["a.com"], "deep_rety": False}, headers=_auth(_token())
+    )
+    assert response.status_code == 400 and "deep_rety" in response.json()["error"]
+    assert not web_service.manager.jobs
+    form = client.post(
+        "/api/v1/jobs",
+        files={"file": ("a.csv", b"Domain\na.com\n", "text/csv")},
+        data={"options": json.dumps({"reseach_fallback": False})},
+        headers=_auth(_token()),
+    )
+    assert form.status_code == 400 and "reseach_fallback" in form.json()["error"]
+
+
+def test_overlong_upload_names_are_invalid_files_not_500s(client):
+    response = client.post(
+        "/api/v1/jobs",
+        json={
+            "content_base64": base64.b64encode(b"Domain\na.com\n").decode(),
+            "filename": "x" * 300 + ".csv",
+        },
+        headers=_auth(_token()),
+    )
+    assert response.status_code == 400 and response.json()["code"] == "invalid_file"
+
+
+def test_tool_schemas_use_only_ecmascript_regex():
+    import re as _re
+
+    def patterns(node):
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key == "pattern":
+                    yield value
+                else:
+                    yield from patterns(value)
+        elif isinstance(node, list):
+            for value in node:
+                yield from patterns(value)
+
+    found = list(patterns([t["inputSchema"] for t in lens_mcp.TOOLS.values()]))
+    assert found
+    for pattern in found:
+        assert "(?" not in pattern, pattern  # inline flags are not ECMAScript
+        _re.compile(pattern)
+    upload = _re.compile(
+        lens_mcp.TOOLS["create_job"]["inputSchema"]["properties"]["filename"]["pattern"]
+    )
+    assert upload.match("List.XLSX") and upload.match("a.csv") and not upload.match("a.exe")

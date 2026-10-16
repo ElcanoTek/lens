@@ -57,6 +57,25 @@ JOB_STATUSES = {"queued", "running", "cancelling", *TERMINAL_STATUSES}
 # log; "input" the list the job was given; "categories" the custom-category
 # definitions it ran with.
 FILE_KINDS = ("output", "log", "input", "categories")
+CREATE_JOB_ARGS = frozenset(
+    {
+        "name",
+        "items",
+        "content_base64",
+        "filename",
+        "input_file",
+        "ctv",
+        "custom_categories",
+        "research_fallback",
+        "deep_retry",
+        "llm_model",
+        "research_model",
+        "decision_model",
+    }
+)
+# Comfortably under the 255-byte filename limit of common filesystems, leaving
+# room for the " (n)" suffix _store_unique_input may add.
+MAX_FILENAME_BYTES = 200
 JOB_ID_RE = re.compile(r"[0-9]{14}-[0-9a-f]{6}")
 
 
@@ -445,6 +464,10 @@ async def _store_input(filename: str, payload: bytes) -> str:
         ws._verify_input_payload(filename, payload)
     except ValueError as exc:
         raise ApiError(400, "invalid_file", str(exc)) from None
+    if len(filename.encode("utf-8")) > MAX_FILENAME_BYTES:
+        raise ApiError(
+            400, "invalid_file", f"Filename is longer than {MAX_FILENAME_BYTES} bytes; shorten it"
+        )
     ws.INPUT_DIR.mkdir(parents=True, exist_ok=True)
     stored = await asyncio.to_thread(ws._store_unique_input, filename, payload)
     await _require_identifiers(stored)
@@ -488,7 +511,8 @@ async def _validated_models(args: Dict[str, Any], categories) -> Dict[str, Optio
         (research, ws.RECOMMENDED_RESEARCH_MODEL, "research", "research_model"),
     ]
     if categories:
-        decision = decision or ws.RECOMMENDED_DECISION_MODEL
+        # Omitted stays None so main.py inherits this instance's configured
+        # DECISION_MODEL; only an explicit choice is validated and passed.
         checks.append((decision, ws.RECOMMENDED_DECISION_MODEL, "decision", "decision_model"))
     else:
         decision = None
@@ -522,6 +546,15 @@ async def create_job(
     request; MCP and JSON callers send ``content_base64`` instead."""
     ws = _ws()
     require_scope(token, SCOPE_RUN)
+    unknown = sorted(set(args) - CREATE_JOB_ARGS)
+    if unknown:
+        # A misspelt option (deep_rety) must not silently queue a costly run
+        # with the default it meant to change.
+        raise ApiError(
+            400,
+            "invalid_argument",
+            f"Unknown option(s): {', '.join(unknown)}. Valid: {', '.join(sorted(CREATE_JOB_ARGS))}.",
+        )
     sources = [key for key in ("items", "content_base64", "input_file") if args.get(key)]
     if upload is not None:
         sources.append("file")
@@ -913,6 +946,28 @@ MULTIPART_OVERHEAD_BYTES = 1024 * 1024
 UPLOAD_CHUNK_BYTES = 1024 * 1024
 
 
+def _capped_request(request: Request, limit: int) -> Request:
+    """``request`` re-wrapped so its ASGI receive channel stops at ``limit``.
+
+    The form parser reads through this, so a chunked multipart upload with no
+    Content-Length is refused while it streams in, before it can fill the
+    spool directory, not after the whole file has been written to disk.
+    """
+    received = 0
+    receive = request.receive
+
+    async def capped_receive():
+        nonlocal received
+        message = await receive()
+        if message.get("type") == "http.request":
+            received += len(message.get("body", b""))
+            if received > limit:
+                raise ApiError(413, "too_large", f"Request body exceeds {limit} bytes")
+        return message
+
+    return Request(request.scope, capped_receive)
+
+
 async def _read_capped(upload) -> bytes:
     """Read an uploaded part in chunks, refusing as soon as it passes the cap."""
     ws = _ws()
@@ -946,7 +1001,9 @@ async def _create_args(request: Request) -> tuple:
     if content_type.startswith("multipart/form-data"):
         # Starlette spools file parts to disk past 1 MB, so parsing does not
         # hold the file in memory; _read_capped then reads it once, capped.
-        form = await request.form()
+        form = await _capped_request(
+            request, ws.MAX_UPLOAD_BYTES * 4 // 3 + MULTIPART_OVERHEAD_BYTES
+        ).form(max_files=1, max_fields=16)
         args: Dict[str, Any] = {}
         raw_options = form.get("options")
         if raw_options:
