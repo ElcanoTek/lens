@@ -70,9 +70,9 @@ returns usable content:
                               │ too short or error — and NOT an anti-bot
                               │ block (401/403/429 or a block page)
   ┌───────────────────────────▼─────────────────────────────────────┐
-  │ 2. deep       Selenium headless Chrome in a Podman container    │
+  │ 2. deep       headless Chrome in a Podman container (WebDriver) │
   │               single-session, renders JavaScript; skipped when  │
-  │               Podman/Selenium aren't available                  │
+  │               Podman isn't available                            │
   └───────────────────────────┬─────────────────────────────────────┘
                               │ nothing could fetch the page
   ┌───────────────────────────▼─────────────────────────────────────┐

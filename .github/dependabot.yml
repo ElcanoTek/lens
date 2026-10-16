@@ -1,54 +1,60 @@
-# Dependabot config — https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-# Weekly version + security updates, all bundled into one PR per ecosystem.
-# Tests gate the merge — review the consolidated diff, don't read every changelog.
+# Dependabot proposes updates for Lens's two dependency surfaces: the pip
+# locks (requirements.in → requirements.txt / requirements-dev.txt, which
+# Dependabot recompiles with pip-compile) and the GitHub Actions the workflows
+# use. Modelled on fleet's .github/dependabot.yml.
 #
-# Each ecosystem declares two groups. A group's `applies-to` defaults to
-# version-updates, so a single catch-all group would leave security updates
-# ungrouped — one PR per advisory, arriving off-schedule. The paired
-# *-security groups keep that traffic bundled too.
+# Dependabot PROPOSES; a human merges a bump only when it earns it — a security
+# fix whose code path Lens uses, or a specific upstream commit we need (see
+# "Dependencies and in-housed code" in AGENTS.md). In-housed code (html_dom.py,
+# webdriver_client.py, _vendor/) is ours and is not tracked here.
+#
+# Daily polling with a supply-chain cooldown of 7 days (3 for patch releases):
+# a freshly published release is not proposed until it is that old, so a
+# compromised version the ecosystem yanks quickly never reaches review. Cooldown applies to version
+# updates only; security updates are never delayed. Minor + patch bumps are
+# grouped into one PR per ecosystem; majors stay separate for their own review.
+# There are no `ignore` rules; if one is ever needed, say which upstream
+# constraint forces it and what would let it go.
+#
+# Not covered: the Python interpreter (.python-version, the 3.11 floor in
+# test-classification.yml and pyproject.toml) and the selenium/standalone-chrome
+# image Lens pulls at runtime (config deep_scrape_image). There is no
+# Containerfile in this repo, so there is no docker entry.
 version: 2
 updates:
-  # Dependencies are locked with pip-tools. Dependabot recognises the
-  # requirements.in / requirements.txt pairing, so it edits the .in floor and
-  # recompiles the pinned .txt in the same PR. Because the locks pin every
-  # transitive dependency, these PRs are now the only way a version moves —
-  # which is the point.
   - package-ecosystem: pip
-    directory: /
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
+    cooldown:
+      default-days: 7
+      semver-major-days: 7
+      semver-minor-days: 7
+      semver-patch-days: 3
     labels:
       - dependencies
       - python
     commit-message:
-      prefix: chore(deps)
+      prefix: "deps(pip)"
     groups:
-      pip:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      pip-security:
-        applies-to: security-updates
-        patterns:
-          - "*"
+      pip-minor-patch:
+        update-types:
+          - minor
+          - patch
 
   - package-ecosystem: github-actions
-    directory: /
+    directory: "/"
     schedule:
-      interval: weekly
+      interval: daily
     open-pull-requests-limit: 10
     labels:
       - dependencies
       - github-actions
     commit-message:
-      prefix: chore(ci)
+      prefix: "deps(actions)"
     groups:
-      github-actions:
-        applies-to: version-updates
-        patterns:
-          - "*"
-      github-actions-security:
-        applies-to: security-updates
-        patterns:
-          - "*"
+      actions-minor-patch:
+        update-types:
+          - minor
+          - patch

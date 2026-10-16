@@ -1230,7 +1230,7 @@ def _read_dataframe_for_breakdown(path: Path):
     """CSV/Excel loader for breakdown counting.
 
     Deliberately independent of orchestration._load_input_dataframe (so the
-    web process doesn't pull in the scraper/selenium import chain) but mirrors
+    web process doesn't pull in the scraper import chain) but mirrors
     its preprocessing: BOM strip, delimiter re-sniff, and empty-column drop.
     """
     import pandas as pd

@@ -68,3 +68,6 @@ extend-immutable-calls = [
 
 [tool.ruff.format]
 docstring-code-format = true
+# Vendored third-party code stays byte-for-byte diffable against its upstream
+# release, so the formatter leaves it alone. The linter still checks it.
+exclude = ["_vendor/**"]

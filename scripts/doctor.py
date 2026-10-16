@@ -48,15 +48,22 @@ def service_user_can_read(path: Path, user: str) -> bool:
     return bool(mode & 0o004)
 
 
+# The release tree this script ships in; it carries the vendored dotenv parser.
+RELEASE_ROOT = Path(__file__).resolve().parent.parent
+
+
 def inspect_env(app):
     # Parse with the application's dotenv implementation, never source secrets
     # as shell commands. Return key names and booleans, never secret values.
+    # -I keeps the caller's cwd and PYTHON* variables out of the interpreter.
     return run(
         str(app / ".venv/bin/python"),
+        "-I",
         "-c",
         """
 import base64, json, sys
-from dotenv import dotenv_values
+sys.path.insert(0, sys.argv[2])
+from _vendor.dotenv import dotenv_values
 v = dotenv_values(sys.argv[1], interpolate=False)
 required = ['OPENROUTER_API_KEY', 'AUTH_SIGNING_PUBKEY']
 mode = v.get('LENS_AUTH_MODE', 'elcano')
@@ -73,6 +80,7 @@ print(json.dumps({'missing': missing, 'key_ok': key_ok,
                   'session_ok': mode != 'central' or len(v.get('LENS_SESSION_SECRET') or '') >= 32}))
 """,
         str(app / ".env"),
+        str(RELEASE_ROOT),
     )
 
 

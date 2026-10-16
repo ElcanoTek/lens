@@ -7,9 +7,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# PRs share a group per ref and cancel superseded runs. Every other event
+# (pushes to main, schedules) gets its own group per commit: a shared group
+# keeps only one pending run, so a third push would drop the second's CI.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -23,10 +26,12 @@ jobs:
       matrix:
         uv: ["0.7.22", "0.12.16"]
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.12"
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
       - name: Install uv under test
         run: pip install "uv==${{ matrix.uv }}"
       - name: Build and relocate a deployment venv
@@ -45,14 +50,17 @@ jobs:
           # Bootstrap re-runs rebuild over an existing venv; that must succeed too.
           lens_venv "$APP_DIR/staging"
           mv "$APP_DIR/staging" "$APP_DIR/live"
-          "$APP_DIR/live/.venv/bin/python" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          want="$(cut -d. -f1,2 .python-version)"
+          "$APP_DIR/live/.venv/bin/python" -c 'import sys; assert "%d.%d" % sys.version_info[:2] == sys.argv[1], sys.version' "$want"
 
   shell:
     name: deployment shell checks
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
       - name: Check deployment scripts
@@ -67,11 +75,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.12"
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
 
       # Ruff is a static analyser, so it needs no project dependencies —
       # installing it alone keeps this job to a few seconds. The version is
@@ -96,11 +106,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          python-version: "3.12"
+          persist-credentials: false
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version-file: .python-version
 
       # requirements-dev.txt is a fully pinned superset of the runtime lock,
       # so this single file is the whole dev environment — including httpx,
@@ -109,6 +121,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
+
+      # Known-vulnerability audit of both locks (pip-audit is pinned in
+      # requirements-dev.txt). The locks pin every transitive dependency, so
+      # --no-deps --disable-pip audits exactly those pins without resolving
+      # anything; --strict fails on any package it cannot audit.
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt -r requirements-dev.txt --strict --no-deps --disable-pip
 
       - name: Install deployment test dependency
         run: sudo apt-get update && sudo apt-get install -y rsync

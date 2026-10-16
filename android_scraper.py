@@ -15,7 +15,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import aiohttp
-from bs4 import BeautifulSoup
+
+from html_dom import Element, parse_html
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,8 @@ class AndroidScraper:
                         "fetched_at": fetched_at,
                     }
 
-                return self._parse_html(package_name, html, fetched_at)
+                # Parsing a ~1 MB Play Store page blocks; keep it off the loop.
+                return await asyncio.to_thread(self._parse_html, package_name, html, fetched_at)
 
         except aiohttp.ClientError as exc:
             return {
@@ -240,7 +242,7 @@ class AndroidScraper:
     def _parse_html(self, package_name: str, html: str, fetched_at: str) -> Dict[str, Any]:
         """Parse the Play Store HTML page to extract app metadata."""
         try:
-            soup = BeautifulSoup(html, "html.parser")
+            soup = parse_html(html)
 
             # Extract app name from title or h1
             app_name = self._extract_app_name(soup)
@@ -312,7 +314,7 @@ class AndroidScraper:
                 "fetched_at": fetched_at,
             }
 
-    def _extract_app_name(self, soup: BeautifulSoup) -> str:
+    def _extract_app_name(self, soup: Element) -> str:
         """Extract the app name from the page."""
         # Try the main h1 title
         h1 = soup.find("h1", itemprop="name")
@@ -338,7 +340,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_developer(self, soup: BeautifulSoup) -> str:
+    def _extract_developer(self, soup: Element) -> str:
         """Extract the developer name."""
         # Try the developer link
         dev_link = soup.find("a", href=re.compile(r"/store/apps/dev"))
@@ -359,7 +361,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_category(self, soup: BeautifulSoup) -> str:
+    def _extract_category(self, soup: Element) -> str:
         """Extract the app category."""
         # Try category link
         cat_link = soup.find("a", href=re.compile(r"/store/apps/category"))
@@ -376,7 +378,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_rating(self, soup: BeautifulSoup) -> tuple:
+    def _extract_rating(self, soup: Element) -> tuple:
         """Extract the app rating and review count."""
         rating = 0.0
         rating_count = 0
@@ -418,7 +420,7 @@ class AndroidScraper:
 
         return rating, rating_count
 
-    def _extract_downloads(self, soup: BeautifulSoup) -> str:
+    def _extract_downloads(self, soup: Element) -> str:
         """Extract the download count."""
         # Look for download count patterns
         download_patterns = [
@@ -444,7 +446,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_description(self, soup: BeautifulSoup) -> str:
+    def _extract_description(self, soup: Element) -> str:
         """Extract the app description."""
         # Try data-g-id="description"
         desc_div = soup.find(attrs={"data-g-id": "description"})
@@ -470,7 +472,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_last_updated(self, soup: BeautifulSoup) -> str:
+    def _extract_last_updated(self, soup: Element) -> str:
         """Extract the last updated date."""
         # Look for "Updated" text followed by a date
         text = soup.get_text()
@@ -486,7 +488,7 @@ class AndroidScraper:
 
         return ""
 
-    def _extract_content_rating(self, soup: BeautifulSoup) -> str:
+    def _extract_content_rating(self, soup: Element) -> str:
         """Extract the content rating."""
         # Look for content rating indicators
         rating_patterns = [

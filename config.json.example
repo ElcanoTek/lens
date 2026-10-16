@@ -26,7 +26,7 @@
   "reject_redirects": true,
   "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
 
-  "_comment_deep": "Second rung: headless Chrome (Selenium) in a rootless Podman container, one session at a time. Requires podman on PATH; skipped when Podman/Selenium are unavailable. The fully qualified image name avoids Podman short-name prompts. skip_deep_retry_on_block skips sites the direct pass proved are anti-bot blocked (401/403/429 or a block page) rather than retrying them from the same IP. retry_follow_redirects lets this pass follow cross-host redirects (e.g. foxnewsdigital.com -> foxnews.com) that the direct pass rejects.",
+  "_comment_deep": "Second rung: headless Chrome (WebDriver) in a rootless Podman container, one session at a time. Requires podman on PATH; skipped when Podman is unavailable. The fully qualified image name avoids Podman short-name prompts. skip_deep_retry_on_block skips sites the direct pass proved are anti-bot blocked (401/403/429 or a block page) rather than retrying them from the same IP. retry_follow_redirects lets this pass follow cross-host redirects (e.g. foxnewsdigital.com -> foxnews.com) that the direct pass rejects.",
   "skip_deep_retry_on_block": true,
   "deep_retry_enabled": true,
   "retry_follow_redirects": true,
