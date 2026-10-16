@@ -837,13 +837,9 @@ class SiteAnalysisOrchestrator:
         if not getattr(config, "DEEP_RETRY_ENABLED", True):
             return False
         podman = getattr(config, "DEEP_SCRAPE_PODMAN_BINARY", "podman")
-        if shutil.which(podman) is None:
-            return False
-        try:
-            import selenium  # noqa: F401
-        except ImportError:
-            return False
-        return True
+        # The WebDriver client is in-tree (webdriver_client.py), so podman is
+        # the only thing this host can be missing.
+        return shutil.which(podman) is not None
 
     def _is_antibot_failure(self, domain: str) -> bool:
         # A second headless-Chrome pass from the same datacenter IP can't
@@ -861,7 +857,7 @@ class SiteAnalysisOrchestrator:
         if not self._deep_crawl_available():
             logger.info(
                 "%d websites still failed, but the deep crawler is "
-                "unavailable on this host (podman/selenium missing) — keeping "
+                "unavailable on this host (podman missing) — keeping "
                 "earlier results",
                 len(retry_items),
             )

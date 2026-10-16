@@ -154,8 +154,6 @@ def test_chrome_container_wait_retries_connection_reset(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_deep_scrape_recovers_after_invalid_session(monkeypatch):
-    monkeypatch.setattr(scraper_client, "SELENIUM_AVAILABLE", True)
-
     class DummyDriver:
         def __init__(self, owner):
             self.owner = owner

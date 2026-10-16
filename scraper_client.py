@@ -20,18 +20,7 @@ from urllib.parse import urlparse
 import aiohttp
 
 from html_dom import parse_html
-
-try:  # Optional dependency for deep scraping mode
-    from selenium import webdriver
-    from selenium.common.exceptions import WebDriverException
-    from selenium.webdriver.chrome.options import Options
-
-    SELENIUM_AVAILABLE = True
-except ImportError:  # pragma: no cover - optional dependency
-    webdriver = None  # type: ignore[assignment]
-    WebDriverException = Exception  # type: ignore[assignment]
-    Options = None  # type: ignore[assignment]
-    SELENIUM_AVAILABLE = False
+from webdriver_client import RemoteSession, WebDriverException, chrome_capabilities
 
 logger = logging.getLogger(__name__)
 
@@ -141,12 +130,6 @@ class ScraperClient:
             raise ValueError(f"Unsupported scrape mode: {self.mode}")
 
         if self.mode == "deep":
-            if not SELENIUM_AVAILABLE:
-                raise RuntimeError(
-                    "Deep scrape mode requires the 'selenium' package. "
-                    "Install it with `pip install selenium`."
-                )
-
             if not self.keep_container:
                 await asyncio.to_thread(self._claim_private_container)
             await asyncio.to_thread(self._ensure_chrome_container)
@@ -698,34 +681,38 @@ class ScraperClient:
 
         raise RuntimeError("Timed out waiting for Chrome container to become ready")
 
-    def _create_webdriver(self):
-        assert SELENIUM_AVAILABLE and webdriver is not None and Options is not None
-
-        options = Options()
+    def _create_webdriver(self) -> RemoteSession:
         # Return from get() at DOMContentLoaded instead of the full load event.
         # Ad-heavy pages keep loading trackers/creatives for minutes and blow
         # the renderer timeout even though the article DOM rendered long ago;
         # wait_after_load below still gives client-side JS a beat to paint.
-        options.page_load_strategy = "eager"
-        options.add_argument("--headless=new")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--remote-allow-origins=*")
-        options.add_argument(f"--user-agent={self.user_agent}")
-        # Basic stealth: hide the automation fingerprints that trivially give
-        # away headless Selenium (navigator.webdriver, the automation infobar,
-        # and headless Chrome's default 800x600 window).
-        options.add_argument("--disable-blink-features=AutomationControlled")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--lang=en-US")
-        options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        options.add_experimental_option("useAutomationExtension", False)
-        driver = webdriver.Remote(
-            command_executor=f"{self._chrome_endpoint}/wd/hub",
-            options=options,
+        capabilities = chrome_capabilities(
+            arguments=[
+                "--headless=new",
+                "--disable-gpu",
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--remote-allow-origins=*",
+                f"--user-agent={self.user_agent}",
+                # Basic stealth: hide the automation fingerprints that trivially
+                # give away headless Chrome (navigator.webdriver, the automation
+                # infobar, and headless Chrome's default 800x600 window).
+                "--disable-blink-features=AutomationControlled",
+                "--window-size=1920,1080",
+                "--lang=en-US",
+            ],
+            exclude_switches=["enable-automation"],
+            use_automation_extension=False,
+            page_load_strategy="eager",
+            page_load_timeout=self.request_timeout,
         )
-        driver.set_page_load_timeout(self.request_timeout)
+        driver = RemoteSession(f"{self._chrome_endpoint}/wd/hub", capabilities)
+        try:
+            driver.set_page_load_timeout(self.request_timeout)
+        except BaseException:
+            # Never leave a browser session behind in the single-session image.
+            self._safe_quit_driver(driver)
+            raise
         return driver
 
     async def _scrape_with_chrome(

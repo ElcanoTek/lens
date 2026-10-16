@@ -67,7 +67,6 @@ def test_orphans_from_dead_runs_are_removed(podman, monkeypatch):
 
 
 def test_keep_container_uses_the_configured_name(monkeypatch, podman):
-    monkeypatch.setattr(scraper_client, "SELENIUM_AVAILABLE", True)
     ensured = []
     monkeypatch.setattr(
         ScraperClient,
@@ -80,7 +79,6 @@ def test_keep_container_uses_the_configured_name(monkeypatch, podman):
 
 
 def test_default_deep_run_claims_before_starting(monkeypatch, podman):
-    monkeypatch.setattr(scraper_client, "SELENIUM_AVAILABLE", True)
     ensured = []
     monkeypatch.setattr(
         ScraperClient,
