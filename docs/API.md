@@ -66,13 +66,21 @@ re-checks the scope.
 | `list_input_files` | `jobs:read` | The input library, with per-file website/app/CTV counts |
 | `get_options` | `jobs:read` | Default and selectable models, limits, the custom-categories format, and the output columns |
 
+**Options follow this Lens's configuration.** An option left out of
+`create_job` uses this instance's `config.json` value, which `get_options`
+reports under `defaults`, and `get_job.settings` reports what the run
+actually uses. A model named explicitly is passed to the run even when it is
+the recommended one. `research_fallback` and `deep_retry` can only turn a
+pass *off*: an explicit `true` for a pass this instance has disabled is
+refused rather than silently ignored.
+
 Tool failures come back as tool results with `isError: true` and a body of
 `{"ok": false, "error": "...", "code": "..."}`, not as protocol errors, so an
 agent can read and act on them. Codes include `unauthorized`, `forbidden`,
 `job_not_found`, `invalid_job_id`, `input_not_found`, `invalid_file`,
 `no_identifiers`, `too_many_items`, `invalid_model`,
 `invalid_custom_categories`, `not_cancellable`, `not_started`,
-`no_results_yet`, `output_missing` and `file_missing`.
+`no_results_yet`, `output_missing`, `file_missing` and `too_large` (a request body over the cap; bodies are read incrementally, so a chunked upload can't bypass it).
 
 ### Files in and out of Fleet
 

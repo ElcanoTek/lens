@@ -440,11 +440,9 @@ async def mcp_endpoint(request: Request):
             exc.body(), status_code=401, headers={"WWW-Authenticate": 'Bearer realm="lens"'}
         )
 
-    length = request.headers.get("content-length")
-    if length and length.isdecimal() and int(length) > MAX_BODY_BYTES:
-        return _rpc_error(None, -32600, "Request too large", status=413)
-    raw = await request.body()
-    if len(raw) > MAX_BODY_BYTES:
+    try:
+        raw = await lens_api.read_body_capped(request, MAX_BODY_BYTES)
+    except ApiError:
         return _rpc_error(None, -32600, "Request too large", status=413)
     try:
         message = json.loads(raw)

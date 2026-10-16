@@ -492,3 +492,81 @@ def test_concurrent_uploads_with_one_name_keep_their_own_bytes(client):
     assert len(set(names)) == 8
     for name, payload in zip(names, payloads, strict=True):
         assert (web_service.INPUT_DIR / name).read_bytes() == payload
+
+
+def _chunked(data: bytes, size: int = 1024):
+    for start in range(0, len(data), size):
+        yield data[start : start + size]
+
+
+def test_chunked_bodies_are_capped_while_streaming(client, monkeypatch):
+    raw = _token()
+    monkeypatch.setattr(lens_mcp, "MAX_BODY_BYTES", 4096)
+    big = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "ping", "pad": "x" * 10_000}).encode()
+    # A generator body is sent with Transfer-Encoding: chunked (no Content-Length).
+    response = client.post(
+        "/mcp", content=_chunked(big), headers={**_auth(raw), "Content-Type": "application/json"}
+    )
+    assert response.status_code == 413
+    monkeypatch.setattr(web_service, "MAX_UPLOAD_BYTES", 64)
+    rest = client.post(
+        "/api/v1/jobs",
+        content=_chunked(json.dumps({"items": ["a.com"], "pad": "x" * 2_000_000}).encode(), 65536),
+        headers={**_auth(raw), "Content-Type": "application/json"},
+    )
+    assert rest.status_code == 413 and rest.json()["code"] == "too_large"
+
+
+def test_settings_report_what_the_run_uses_on_this_instance(client, monkeypatch):
+    from config import config
+
+    raw = _token()
+    monkeypatch.setattr(config, "LLM_MODEL", "vendor/configured-classifier")
+    monkeypatch.setattr(config, "DEEP_RETRY_ENABLED", False)
+    created = client.post("/api/v1/jobs", json={"items": ["a.com"]}, headers=_auth(raw)).json()
+    assert created["settings"]["llm_model"] == "vendor/configured-classifier"
+    assert created["settings"]["deep_retry"] is False
+    # An explicit request for the recommended model is kept and passed on.
+    explicit = client.post(
+        "/api/v1/jobs",
+        json={"items": ["b.com"], "llm_model": web_service.RECOMMENDED_MODEL},
+        headers=_auth(raw),
+    ).json()
+    assert web_service.manager.jobs[explicit["id"]].llm_model == web_service.RECOMMENDED_MODEL
+    assert explicit["settings"]["llm_model"] == web_service.RECOMMENDED_MODEL
+    # An explicit true this instance would ignore is refused, not misreported.
+    refused = client.post(
+        "/api/v1/jobs", json={"items": ["c.com"], "deep_retry": True}, headers=_auth(raw)
+    )
+    assert refused.status_code == 400 and "deep_retry" in refused.json()["error"]
+    options = client.get("/api/v1/options", headers=_auth(raw)).json()
+    assert options["defaults"]["llm_model"] == "vendor/configured-classifier"
+    assert options["defaults"]["deep_retry"] is False
+
+
+def test_paging_reuses_the_whole_file_summary(client, monkeypatch):
+    raw = _token()
+    job = client.portal.call(_queued)
+    _finish(job, ROWS)
+    lens_api._SUMMARY_CACHE.clear()
+    scans = []
+    real_open = open
+
+    def counting_open(path, *args, **kwargs):
+        if str(path).endswith("_output.csv"):
+            scans.append(path)
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", counting_open)
+    pages = [
+        client.get(f"/api/v1/jobs/{job.id}/results?offset={i}&limit=1", headers=_auth(raw)).json()
+        for i in range(3)
+    ]
+    assert [p["rows"][0]["Domain"] for p in pages] == ["example.com", "example.org", "example.net"]
+    assert all(p["summary"]["quality"] == {"Premium": 2, "Standard": 1} for p in pages)
+    # One summary scan, then one (early-stopping) page read per call.
+    assert len(scans) == 1 + 3
+    premium = client.get(
+        f"/api/v1/jobs/{job.id}/results?quality=Premium&limit=0", headers=_auth(raw)
+    ).json()
+    assert premium["matching_rows"] == 2 and premium["rows"] == []

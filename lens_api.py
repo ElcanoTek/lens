@@ -113,6 +113,25 @@ def require_scope(token: ApiToken, scope: str) -> None:
         )
 
 
+async def read_body_capped(request: Request, limit: int) -> bytes:
+    """The request body, refused with 413 as soon as it passes ``limit``.
+
+    Reads the stream incrementally, so a chunked request with no
+    Content-Length cannot make the worker buffer an unbounded body before a
+    size check runs (the reverse proxy imposes no body limit).
+    """
+    length = request.headers.get("content-length", "")
+    if length.isdecimal() and int(length) > limit:
+        raise ApiError(413, "too_large", f"Request body exceeds {limit} bytes")
+    chunks, total = [], 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise ApiError(413, "too_large", f"Request body exceeds {limit} bytes")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 # --- Views -----------------------------------------------------------------
 
 
@@ -194,18 +213,35 @@ def _available_files(job) -> List[str]:
     return kinds
 
 
+def _is_ctv(job) -> bool:
+    if job.mode == "ctv":
+        return True
+    return bool(_ws()._get_breakdown(_ws().INPUT_DIR / job.input_file).get("ctv"))
+
+
 def _settings(job) -> Dict[str, object]:
-    ws = _ws()
+    """What the job's main.py subprocess actually runs with.
+
+    A value the job does not carry is not passed as a flag, so main.py falls
+    back to this instance's config.json; report that value rather than the
+    shipped default, or provenance is wrong on any Lens that overrides it.
+    """
+    ctv = _is_ctv(job)
+    configured_llm = config.CTV_CLASSIFICATION_MODEL if ctv else config.LLM_MODEL
+    configured_research = config.CTV_RESEARCH_MODEL if ctv else config.RESEARCH_MODEL
     return {
         "mode": job.mode,
-        "llm_model": job.llm_model or ws.RECOMMENDED_MODEL,
-        "research_fallback": job.research_fallback,
-        "research_model": job.research_model or ws.RECOMMENDED_RESEARCH_MODEL,
-        "deep_retry": job.deep_retry,
+        "content": "ctv" if ctv else "websites/apps",
+        "llm_model": job.llm_model or configured_llm,
+        "research_model": job.research_model or configured_research,
+        "research_fallback": job.research_fallback and bool(config.RESEARCH_FALLBACK_ENABLED),
+        "deep_retry": job.deep_retry and bool(config.DEEP_RETRY_ENABLED),
         "custom_categories": [
             c["name"] for c in (job.custom_categories or {}).get("categories", [])
         ],
-        "decision_model": job.decision_model,
+        "decision_model": (job.decision_model or config.DECISION_MODEL)
+        if job.custom_categories
+        else None,
     }
 
 
@@ -467,8 +503,11 @@ async def _validated_models(args: Dict[str, Any], categories) -> Dict[str, Optio
                 f"{name} {value!r} is not offered by this Lens. Call get_options for the list.",
             )
     return {
-        "llm_model": None if llm == ws.RECOMMENDED_MODEL else llm,
-        "research_model": None if research == ws.RECOMMENDED_RESEARCH_MODEL else research,
+        # An explicit choice is stored and passed to the subprocess even when
+        # it names the recommended model: this instance's config.json may
+        # default to something else, and the caller asked for this one.
+        "llm_model": llm,
+        "research_model": research,
         "decision_model": decision,
     }
 
@@ -498,6 +537,19 @@ async def create_job(
     ctv = _optional_bool(args.get("ctv"), "ctv", default=False)
     research_fallback = _optional_bool(args.get("research_fallback"), "research_fallback")
     deep_retry = _optional_bool(args.get("deep_retry"), "deep_retry")
+    # The job can only turn these passes OFF (main.py gets `--... off`); "on"
+    # defers to config.json. Refuse an explicit true this Lens would ignore
+    # instead of reporting a setting the run never used.
+    for flag, wanted, enabled in (
+        ("research_fallback", args.get("research_fallback"), config.RESEARCH_FALLBACK_ENABLED),
+        ("deep_retry", args.get("deep_retry"), config.DEEP_RETRY_ENABLED),
+    ):
+        if wanted is not None and _optional_bool(wanted, flag) and not enabled:
+            raise ApiError(
+                400,
+                "invalid_argument",
+                f"{flag} is turned off on this Lens (config.json); omit it or pass false.",
+            )
 
     categories = None
     raw_categories = args.get("custom_categories")
@@ -575,52 +627,88 @@ async def cancel_job(
     return job_view(job, request, detail=True)
 
 
-def _read_output(
-    path: Path, offset: int, limit: int, columns: Optional[List[str]], quality: Optional[str]
-):
-    summary: Dict[str, Dict[str, int]] = {"quality": {}, "type": {}, "iab_tier_1": {}}
-    rows: List[Dict[str, str]] = []
-    matched = 0
+# Whole-file summaries, keyed by (path, mtime_ns, size) so a file that is
+# still being written (a running job) is re-summarised as it grows, while
+# paging through a finished one reads the summary once.
+_SUMMARY_CACHE: "Dict[tuple, Dict[str, object]]" = {}
+_SUMMARY_CACHE_MAX = 32
+
+
+def _summarise_output(path: Path) -> Dict[str, object]:
+    stat = path.stat()
+    key = (str(path), stat.st_mtime_ns, stat.st_size)
+    cached = _SUMMARY_CACHE.get(key)
+    if cached is not None:
+        return cached
+    counts: Dict[str, Dict[str, int]] = {"quality": {}, "type": {}, "iab_tier_1": {}}
     total = 0
     with open(path, newline="", encoding="utf-8", errors="replace") as handle:
         reader = csv.DictReader(handle)
         fieldnames = list(reader.fieldnames or [])
-        if columns:
-            unknown = [c for c in columns if c not in fieldnames]
-            if unknown:
-                raise ApiError(
-                    400, "invalid_argument", f"Unknown column(s) {unknown}; available: {fieldnames}"
-                )
         for row in reader:
             total += 1
-            for key, column in (
+            for name, column in (
                 ("quality", "Quality"),
                 ("type", "Type"),
                 ("iab_tier_1", "IAB Tier 1"),
             ):
                 value = (row.get(column) or "").strip() or "(blank)"
-                summary[key][value] = summary[key].get(value, 0) + 1
-            if quality and (row.get("Quality") or "").strip().lower() != quality.lower():
-                continue
-            matched += 1
-            if matched <= offset or len(rows) >= limit:
-                continue
-            picked = {c: row.get(c, "") for c in (columns or fieldnames)}
-            rows.append(
-                {
-                    k: (v if len(v or "") <= PREVIEW_CELL_CHARS else v[:PREVIEW_CELL_CHARS] + "…")
-                    for k, v in picked.items()
-                }
+                counts[name][value] = counts[name].get(value, 0) + 1
+    summary = {
+        "fieldnames": fieldnames,
+        "total_rows": total,
+        "quality": counts["quality"],
+        "type": counts["type"],
+        "top_iab_tier_1": dict(sorted(counts["iab_tier_1"].items(), key=lambda kv: -kv[1])[:15]),
+    }
+    if len(_SUMMARY_CACHE) >= _SUMMARY_CACHE_MAX:
+        _SUMMARY_CACHE.pop(next(iter(_SUMMARY_CACHE)))
+    _SUMMARY_CACHE[key] = summary
+    return summary
+
+
+def _read_output(
+    path: Path, offset: int, limit: int, columns: Optional[List[str]], quality: Optional[str]
+):
+    summary = _summarise_output(path)
+    fieldnames = summary["fieldnames"]
+    if columns:
+        unknown = [c for c in columns if c not in fieldnames]
+        if unknown:
+            raise ApiError(
+                400, "invalid_argument", f"Unknown column(s) {unknown}; available: {fieldnames}"
             )
-    top_tier_1 = dict(sorted(summary["iab_tier_1"].items(), key=lambda kv: -kv[1])[:15])
+    if quality:
+        matching = sum(n for q, n in summary["quality"].items() if q.lower() == quality.lower())
+    else:
+        matching = summary["total_rows"]
+    rows: List[Dict[str, str]] = []
+    if limit and offset < matching:
+        seen = 0
+        with open(path, newline="", encoding="utf-8", errors="replace") as handle:
+            for row in csv.DictReader(handle):
+                if quality and (row.get("Quality") or "").strip().lower() != quality.lower():
+                    continue
+                seen += 1
+                if seen <= offset:
+                    continue
+                picked = {c: row.get(c, "") or "" for c in (columns or fieldnames)}
+                rows.append(
+                    {
+                        k: v if len(v) <= PREVIEW_CELL_CHARS else v[:PREVIEW_CELL_CHARS] + "…"
+                        for k, v in picked.items()
+                    }
+                )
+                if len(rows) >= limit:
+                    break  # the page is full; the summary already covers the rest
     return {
         "columns": columns or fieldnames,
-        "total_rows": total,
-        "matching_rows": matched,
+        "total_rows": summary["total_rows"],
+        "matching_rows": matching,
         "summary": {
             "quality": summary["quality"],
             "type": summary["type"],
-            "top_iab_tier_1": top_tier_1,
+            "top_iab_tier_1": summary["top_iab_tier_1"],
         },
         "rows": rows,
     }
@@ -739,12 +827,16 @@ async def get_options() -> Dict[str, object]:
         return [{"id": o["id"], "label": o["label"]} for o in catalog.get(kind, [])]
 
     return {
+        # What a job gets when it leaves each option out, on THIS Lens
+        # (config.json may override the shipped defaults).
         "defaults": {
-            "llm_model": ws.RECOMMENDED_MODEL,
-            "research_model": ws.RECOMMENDED_RESEARCH_MODEL,
+            "llm_model": config.LLM_MODEL,
+            "research_model": config.RESEARCH_MODEL,
+            "ctv_classification_model": config.CTV_CLASSIFICATION_MODEL,
+            "ctv_research_model": config.CTV_RESEARCH_MODEL,
             "decision_model": ws.RECOMMENDED_DECISION_MODEL,
-            "research_fallback": True,
-            "deep_retry": True,
+            "research_fallback": bool(config.RESEARCH_FALLBACK_ENABLED),
+            "deep_retry": bool(config.DEEP_RETRY_ENABLED),
         },
         "models": {
             "classify": ids("classify"),
@@ -875,8 +967,9 @@ async def _create_args(request: Request) -> tuple:
                 raise ApiError(400, "invalid_file", "The uploaded file is empty")
             upload = (part.filename or "", payload)
         return args, upload
+    raw = await read_body_capped(request, ws.MAX_UPLOAD_BYTES * 4 // 3 + MULTIPART_OVERHEAD_BYTES)
     try:
-        body = await request.json()
+        body = json.loads(raw)
     except ValueError:
         raise ApiError(
             400, "invalid_argument", "Send a JSON object or multipart/form-data"
