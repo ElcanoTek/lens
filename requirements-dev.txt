@@ -6,7 +6,7 @@
 #
 aiohappyeyeballs==2.7.1
     # via aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.5
     # via -r requirements.in
 aiosignal==1.4.0
     # via aiohttp
@@ -36,11 +36,11 @@ cffi==2.1.1
     # via cryptography
 click==8.5.0
     # via uvicorn
-cryptography==50.0.1
+cryptography==50.0.2
     # via -r requirements.in
 et-xmlfile==2.0.0
     # via openpyxl
-fastapi==0.141.1
+fastapi==0.143.0
     # via -r requirements.in
 frozenlist==1.8.0
     # via
@@ -87,10 +87,12 @@ multidict==6.7.1
     #   yarl
 numpy==2.4.6
     # via pandas
-openai==3.20.0
+openai==3.29.0
     # via -r requirements.in
 openpyxl==3.1.5
     # via -r requirements.in
+opentelemetry-api==1.45.1
+    # via fastapi
 outcome==1.3.0.post0
     # via
     #   trio
@@ -127,15 +129,15 @@ pytest-asyncio==1.4.0
     # via -r requirements-dev.in
 python-dateutil==2.9.0.post0
     # via pandas
-python-dotenv==1.2.3
+python-dotenv==1.2.4
     # via -r requirements.in
 python-multipart==0.0.32
     # via -r requirements.in
 rich==15.0.0
     # via -r requirements.in
-ruff==0.16.9
+ruff==0.17.0
     # via -r requirements-dev.in
-selenium==4.49.0
+selenium==4.51.0
     # via -r requirements.in
 six==1.17.0
     # via python-dateutil
@@ -168,6 +170,7 @@ typing-extensions==4.16.0
     #   fastapi
     #   httpx2
     #   openai
+    #   opentelemetry-api
     #   pydantic
     #   pydantic-core
     #   pytest-asyncio
@@ -186,5 +189,5 @@ websocket-client==1.9.0
     # via selenium
 wsproto==1.3.2
     # via trio-websocket
-yarl==1.24.5
+yarl==1.25.1
     # via aiohttp
