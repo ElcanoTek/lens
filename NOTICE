@@ -123,15 +123,29 @@ Runtime and development dependencies are declared in requirements.txt and
 installed from PyPI at build time. They are not redistributed here. Each
 carries its own licence, principally Apache-2.0, BSD and MIT:
 
-  aiohttp, beautifulsoup4, cryptography, fastapi, jinja2, openai, openpyxl,
-  pandas, python-dotenv, python-multipart, rich, selenium, uvicorn,
-  and for development: black, flake8, pytest, pytest-asyncio
+  aiohttp, cryptography, fastapi, itsdangerous, jinja2, openai, openpyxl,
+  pandas, python-multipart, uvicorn,
+  and for development: httpx, pytest, pytest-asyncio, ruff
 
 Review the licences of your resolved dependency tree before redistributing a
 built artifact.
 
 
-7. Sample data — synthetic
+7. python-dotenv — bundled (vendored source)
+--------------------------------------------
+
+_vendor/dotenv/ is a trimmed copy of python-dotenv 1.2.3
+(https://github.com/theskumar/python-dotenv), used to read .env files:
+
+  Copyright (c) 2014, Saurabh Kumar (python-dotenv), 2013, Ted Tieken
+  (django-dotenv-rw), 2013, Jacob Kaplan-Moss (django-dotenv)
+  BSD-3-Clause — full text in _vendor/dotenv/LICENSE
+
+The ported upstream tests (tests/test_vendored_dotenv_*.py) are under the same
+licence.
+
+
+8. Sample data — synthetic
 --------------------------
 
 The fixtures in test-input/ are synthetic. App names, publisher names, SSP

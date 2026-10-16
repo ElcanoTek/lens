@@ -29,7 +29,7 @@ python main.py --scrape-mode direct --quiet
 # Run CTV workflow
 python main.py --ctv
 
-# Run with deep scrape (Selenium via Podman container)
+# Run with deep scrape (headless Chrome via Podman container)
 python main.py --deep-scrape
 
 
@@ -90,18 +90,20 @@ The web service (`web_service.py`) spawns `main.py` as a subprocess for each job
 |---|---|
 | `main.py` | CLI entry point; argparse for all flags; creates orchestrator and runs async |
 | `orchestration.py` | Core orchestrator; loads input, auto-detects types, initializes clients, processes items concurrently with semaphore; CTV workflow dispatch; signal handlers for graceful shutdown |
-| `config.py` | Central config class; loads from `config.json` + env vars via dotenv; **creates global singleton on import** (`config = Config()`) |
+| `config.py` | Central config class; loads from `config.json` + env vars via the vendored dotenv parser (`_vendor/dotenv/`); **creates global singleton on import** (`config = Config()`) |
 | `shared_types.py` | `ContentType` enum, `WorkItem` (frozen dataclass), `CTVWorkItem` (mutable dataclass) |
 | `input_detector.py` | Content type detection: TLD classification, Android package validation, CTV input detection, column detection |
-| `scraper_client.py` | Async HTTP scraper (aiohttp direct mode + Selenium deep mode via Podman container) |
+| `scraper_client.py` | Async HTTP scraper (aiohttp direct mode + headless-Chrome deep mode via Podman container) |
+| `webdriver_client.py` | Minimal W3C WebDriver client (stdlib `urllib`) the deep mode drives Chrome with |
+| `html_dom.py` | Small HTML tree on stdlib `html.parser`: find / find_all / get_text / title; what the extractors parse with |
 | `domain_processing.py` | Website pipeline: scrape → validate → classify → record |
 | `openrouter_client.py` | OpenRouter LLM client (OpenAI SDK); function calling schemas for structured output; taxonomy loading; retry with exponential backoff; CTV two-step methods |
 | `ios_api_client.py` | iTunes Search API client; async with rate limiting |
-| `android_scraper.py` | Google Play Store HTML scraper; BeautifulSoup parsing; block page detection |
+| `android_scraper.py` | Google Play Store HTML scraper; `html_dom` parsing; block page detection |
 | `app_processor.py` | iOS/Android app processor; fetches metadata then classifies via LLM |
 | `ctv_processor.py` | CTV two-step processor; research → classify → post-process; markdown stripping; research truncation; platform detection from bundle ID |
 | `progress_tracker.py` | JSON-based progress persistence; atomic writes; resumable processing |
-| `reporting.py` | Terminal reporter; Rich-based progress bar; JSONL logging |
+| `reporting.py` | Terminal reporter; plain progress/metrics lines; JSONL logging |
 | `web_service.py` | FastAPI web dashboard; eagerly validated legacy/central auth provider, public readiness and signed-out routes; job queue (one at a time by default, `LENS_MAX_PARALLEL_JOBS` for more); file upload/download; watches `managed-files/spool/` for `lens submit` requests |
 | `lens_api.py` | Programmatic seam: `/api/v1` REST routes and the job/result/download operations MCP shares; bearer-token auth only, never the browser session (see `docs/API.md`) |
 | `lens_mcp.py` | `POST /mcp`: stateless Streamable-HTTP MCP server (JSON responses, no sessions) whose tools adapt `lens_api`; tools filtered and re-checked by token scope |
@@ -154,11 +156,11 @@ CTV items are detected by column headers or the `--ctv` flag, not by the identif
 
 ### Deep scrape forces single concurrency
 
-`--deep-scrape` mode uses Selenium via a Podman Chrome container and forces `max_concurrent=1` because only one Chrome session is practical.
+`--deep-scrape` mode drives the Podman Chrome container (`selenium/standalone-chrome`) over WebDriver and forces `max_concurrent=1` because only one Chrome session is practical.
 
 ### Auto-mode ladder, anti-bot, and ban avoidance
 
-Auto mode runs `direct → deep → research`. `direct` is a plain HTTP fetch (no JS); the deep pass (Selenium headless Chrome in a rootless Podman container, single session) rescues JS-rendered sites and is skipped when Podman/Selenium are unavailable; and the **research fallback** classifies whatever still failed from a web-search research summary (`research_website` in `openrouter_client.py`, default model `perplexity/sonar`; Sonar Pro is still selectable) instead of failing it. Research rows carry `Scrape_Mode="research"`; domains the research model finds nothing about stay Failed rather than being guessed at. (Firecrawl used to sit between direct and deep; it was removed. A legacy `scrape_mode: "firecrawl"` in `config.json` maps to `auto` with a warning, dashboard jobs persisted with mode `firecrawl` run as `auto`, and other `firecrawl_*` keys are ignored.)
+Auto mode runs `direct → deep → research`. `direct` is a plain HTTP fetch (no JS); the deep pass (headless Chrome in a rootless Podman container, single session) rescues JS-rendered sites and is skipped when Podman is unavailable; and the **research fallback** classifies whatever still failed from a web-search research summary (`research_website` in `openrouter_client.py`, default model `perplexity/sonar`; Sonar Pro is still selectable) instead of failing it. Research rows carry `Scrape_Mode="research"`; domains the research model finds nothing about stay Failed rather than being guessed at. (Firecrawl used to sit between direct and deep; it was removed. A legacy `scrape_mode: "firecrawl"` in `config.json` maps to `auto` with a warning, dashboard jobs persisted with mode `firecrawl` run as `auto`, and other `firecrawl_*` keys are ignored.)
 
 What no scrape backend can do is beat commercial anti-bot (Cloudflare/DataDome/PerimeterX) from this host's datacenter IP. Those sites (reuters, bloomberg, wsj, economist, politico, barrons, marketwatch, mansionglobal, …) block the IP outright. The setup is deliberately tuned to fail those **fast and quietly** rather than fight them, because repeated hammering from one IP is what escalates a soft block into a permanent ban — the research fallback then classifies them without ever touching the site from this host:
 
@@ -227,6 +229,41 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 
 `pytest.ini` sets `asyncio_mode = auto`, so all async test functions are automatically wrapped — no need for `@pytest.mark.asyncio` decorators.
 
+## Dependencies and in-housed code
+
+Prefer the standard library or a small module we own; add a dependency only
+when it clearly earns its maintenance and supply-chain cost. Do not bump a
+dependency on a schedule: update it only for a specific upstream commit we
+need, or for a CVE whose code path Lens actually reaches (Dependabot opens pip
+security updates only). On a CVE, check
+reachability first; if the affected code is unused, delete it (or leave the
+pin and record why), and if it is used, adapt the fix. `requirements.in` is
+the intent and both `.txt` files are pip-compile output; regenerate them with
+`pip-compile` on Python 3.11 (see the file headers), never by hand. Check the
+runtime lock with `pip-audit -r requirements.txt --no-deps --disable-pip`.
+
+What used to be a PyPI dependency and now lives in the tree:
+
+| Replaced (with what left `requirements.txt`) | Now | Upstream / version / licence |
+|---|---|---|
+| `beautifulsoup4` (+ `soupsieve`) | `html_dom.py` — own code on `html.parser`, reproducing bs4's `html.parser` tree (no implicit closes, bs4's entity rules, whitespace collapse, script/style text excluded) | own code; behaviour pinned by `tests/fixtures/html/golden.json`, recorded with bs4 4.15.0 |
+| `selenium` (+ `trio`, `trio-websocket`, `outcome`, `sortedcontainers`, `wsproto`, `websocket-client`, `pysocks`, `urllib3`, `certifi`) | `webdriver_client.py` — own W3C WebDriver client (new session, navigate, current URL, page source, quit) | own code; the Chrome container image is still `selenium/standalone-chrome` |
+| `python-dotenv` | `_vendor/dotenv/` — `main.py` (trimmed: no `get_key`/`unset_key`), `parser.py`, `variables.py` copied unchanged | python-dotenv 1.2.3, BSD-3-Clause; licence in `_vendor/dotenv/LICENSE`, upstream tests ported as `tests/test_vendored_dotenv_*.py` |
+| `rich` (+ `markdown-it-py`, `mdurl`, `pygments`) | removed — `reporting.py` prints plain lines on every terminal | — |
+
+Vendored files carry a header naming the release and upstream path, keep
+their licence beside them, are linted but not reformatted (`[tool.ruff.format]
+exclude`), and must stay diffable against upstream: change them only to apply
+an upstream fix. Nothing vendored here has a data file to refresh. The deploy
+scripts (`bootstrap.sh`, `doctor.py`) import `_vendor.dotenv` from the release
+tree with `python -I`, so they never pick up modules from the caller's cwd.
+
+Deliberately still dependencies: `openai` (the OpenRouter client), `fastapi` /
+`starlette` / `uvicorn` / `python-multipart` (the web service), `jinja2`,
+`itsdangerous`, `cryptography` (Ed25519 verification), `aiohttp` (the direct
+scraper) and `pandas` / `numpy` / `openpyxl` (CSV/XLSX I/O) — each does real
+work we should not own.
+
 ## Testing
 
 - **Framework**: pytest + pytest-asyncio
@@ -289,7 +326,7 @@ Production target: **Fedora/RHEL 9+**
 | `--quiet` | Suppress per-item output |
 | `--verbose` | Show size, retries, cache status |
 | `--jsonl` | Write per-item JSONL log |
-| `--scrape-mode auto\|direct\|deep` | Auto ladder (direct → deep → research), HTTP-only, or Selenium deep scrape |
+| `--scrape-mode auto\|direct\|deep` | Auto ladder (direct → deep → research), HTTP-only, or headless-Chrome deep scrape |
 | `--llm-model MODEL` | Override the classification model (OpenRouter ID) for this run |
 | `--deep-retry on\|off` | Enable/disable the deep (headless Chrome) retry pass for this run |
 | `--research-fallback on\|off` | Enable/disable the research fallback pass for this run |

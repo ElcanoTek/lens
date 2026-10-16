@@ -192,7 +192,8 @@ environment / CLI flags.
 ### Environment variables
 
 Read from `/opt/lens/.env` via `EnvironmentFile=` (and from `.env` in the
-working directory via python-dotenv for CLI runs).
+working directory via the vendored dotenv parser, `_vendor/dotenv/`, for CLI
+runs).
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
@@ -354,7 +355,7 @@ each run gets current Chrome.
 
 To run a host with no containers at all, install with
 `LENS_BOOTSTRAP_SKIP_DEEP=1`. Auto mode probes the deep rung at runtime and
-skips it when Podman or Selenium isn't there, degrading cleanly to a plain
+skips it when Podman isn't there, degrading cleanly to a plain
 direct crawl plus the research fallback.
 
 Sites the direct pass proved are blocked by anti-bot (401/403/429 or a block
@@ -807,7 +808,8 @@ under the entire service home as root; it also reaches container storage.
 
 Two separate Chromes are in play. `chromium` + `chromedriver` come from `dnf`
 (skipped by `LENS_BOOTSTRAP_SKIP_CHROME=1`), while the deep-scrape pass uses
-the **containerised** Selenium Chrome and needs only podman.
+the **containerised** Chrome (`selenium/standalone-chrome`, driven by Lens's
+own WebDriver client) and needs only podman.
 
 - `chromedriver: command not found`: `sudo dnf install -y chromium chromedriver`.
 - `short-name resolution enforced but cannot prompt without a TTY`: the image

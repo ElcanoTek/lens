@@ -142,7 +142,8 @@ See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 Lens ships reference data from IAB Tech Lab and IANA, and bundles Nebula Sans
 (SIL OFL 1.1) as its interface typeface and Hack (MIT) as its monospace face.
-None of that is covered by this licence — see [`NOTICE`](../NOTICE).
+It also vendors a trimmed copy of python-dotenv (BSD-3-Clause) under
+`_vendor/dotenv/`. None of that is covered by this licence — see [`NOTICE`](../NOTICE).
 
 The bundled IAB Tech Lab Content Taxonomy 3.1 is licensed under CC BY 3.0,
 which is permissive and **not copyleft** — it imposes no share-alike
