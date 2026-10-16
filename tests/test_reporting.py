@@ -57,3 +57,37 @@ async def test_retry_rescue_flips_failure_to_success():
     await _attempt(reporter, "a.com", ok=True)
     assert reporter.completed == 1
     assert (reporter.successes, reporter.failures) == (1, 0)
+
+
+async def test_plain_output_on_any_terminal(capsys, tmp_path):
+    # rich was removed: the same plain lines go to a TTY and to a log file.
+    reporter = TerminalReporter(
+        total=2,
+        completed=1,
+        successes=1,
+        failures=0,
+        quiet=False,
+        verbose=True,
+        jsonl_path=str(tmp_path / "run.jsonl"),
+    )
+    reporter.start()
+    await _attempt(reporter, "a.com", ok=False)
+    reporter.log_retry(domain="b.com", attempt=1, total=3, delay=2.0, reason="timeout")
+    reporter.stop()
+    reporter.render_summary({"total_domains": 2, "successful": 1, "errors": 1}, 61)
+    out = capsys.readouterr().out.splitlines()
+
+    assert out[0] == "Progress: 1/2 | Succ: 1 | Fail: 0 | Failure Rate: 0.0%"
+    assert out[1].endswith("❌ Failed a.com (boom) after 0.10s | Size: 1.0KB | Retries: 0")
+    assert out[2] == "Progress: 2/2 | Succ: 1 | Fail: 1 | Failure Rate: 50.0%"
+    assert out[3].endswith("⚠️ Retry 1/3 for b.com in 2.0s (timeout)")
+    assert out[4:] == [
+        "",
+        "--- Lens run complete ---",
+        "Total: 2",
+        "✅ Success: 1",
+        "❌ Failures: 1",
+        "Failure Rate: 50.0%",
+        "Duration: 1m1s",
+    ]
+    assert '"domain": "a.com"' in (tmp_path / "run.jsonl").read_text()
