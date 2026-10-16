@@ -17,5 +17,5 @@ httpx>=0.28.1
 
 # Ruff is pinned exactly, unlike the floors above: a linter that floats can
 # turn CI red on a release that merely adds a rule, with no change to this
-# repo. Dependabot bumps it as a reviewable PR instead.
+# repo. Bump it deliberately, in its own reviewed PR.
 ruff==0.16.9
