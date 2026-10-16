@@ -232,11 +232,11 @@ The iOS API client explicitly sets `content_type=None` when parsing JSON respons
 ## Dependencies and in-housed code
 
 Prefer the standard library or a small module we own; add a dependency only
-when it clearly earns its maintenance and supply-chain cost. Do not bump a
-dependency on a schedule: update it only for a specific upstream commit we
-need, or for a CVE whose code path Lens actually reaches (Dependabot opens pip
-security updates only). On a CVE, check
-reachability first; if the affected code is unused, delete it (or leave the
+when it clearly earns its maintenance and supply-chain cost. Dependabot
+proposes updates (daily, 7-day cooldown, grouped); a human merges them only
+when the bump earns it — a security fix whose code path we use, or a specific
+commit we need. In-housed code is ours and is not tracked by Dependabot. On a
+CVE, check reachability first; if the affected code is unused, delete it (or leave the
 pin and record why), and if it is used, adapt the fix. `requirements.in` is
 the intent and both `.txt` files are pip-compile output; regenerate them with
 `pip-compile` on Python 3.11 (see the file headers), never by hand. CI's

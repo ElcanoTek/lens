@@ -15,21 +15,36 @@ on:
 # exercised (the suite proves requirements.txt installs); only the live
 # classification is skipped. Human PRs and pushes have the secret and run fully.
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# The lowest supported Python: pyproject's ruff target-version and the version
+# both locks are compiled on. The pytest job runs .python-version (deploy's).
+env:
+  LOWEST_PYTHON: "3.11"
+
 jobs:
   test-urls:
     name: Test Website Classification
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: ${{ env.LOWEST_PYTHON }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -59,7 +74,7 @@ jobs:
 
       - name: Upload classification results
         if: always() && env.OPENROUTER_API_KEY != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: classification-results-urls
           path: |
@@ -84,17 +99,20 @@ jobs:
   test-apps:
     name: Test App Classification
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: ${{ env.LOWEST_PYTHON }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -124,7 +142,7 @@ jobs:
 
       - name: Upload classification results
         if: always() && env.OPENROUTER_API_KEY != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: classification-results-apps
           path: |
@@ -149,17 +167,20 @@ jobs:
   test-ctv:
     name: Test CTV Classification
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     env:
       OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Set up Python
-        uses: actions/setup-python@v7
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: '3.11'
+          python-version: ${{ env.LOWEST_PYTHON }}
           cache: 'pip'
 
       - name: Install dependencies
@@ -212,7 +233,7 @@ jobs:
 
       - name: Upload classification results
         if: always() && env.OPENROUTER_API_KEY != ''
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: classification-results-ctv
           path: |
