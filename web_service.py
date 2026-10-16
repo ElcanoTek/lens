@@ -491,6 +491,9 @@ class Job:
     research_model: Optional[str] = None  # None = server default
     custom_categories: Optional[dict] = None
     decision_model: Optional[str] = None  # None = server default
+    # Label of the API token that queued the job (Fleet, a script); None for
+    # the dashboard and `lens submit`.
+    submitted_by: Optional[str] = None
     status: str = "queued"
     created_at: str = field(default_factory=_utc_now)
     started_at: Optional[str] = None
@@ -539,6 +542,7 @@ class JobManager:
                     "research_model": job.research_model,
                     "custom_categories": job.custom_categories,
                     "decision_model": job.decision_model,
+                    "submitted_by": job.submitted_by,
                     "status": job.status,
                     "created_at": job.created_at,
                     "started_at": job.started_at,
@@ -623,11 +627,13 @@ class JobManager:
                 status = "failed"
                 raw["error"] = "Invalid saved custom category definitions"
 
+            submitted_by = raw.get("submitted_by")
             job = Job(
                 id=job_id,
                 input_file=input_file,
                 mode=mode,
                 name=name,
+                submitted_by=str(submitted_by)[:80] if submitted_by else None,
                 llm_model=llm_model,
                 research_fallback=bool(raw.get("research_fallback", True)),
                 deep_retry=bool(raw.get("deep_retry", True)),
@@ -681,6 +687,7 @@ class JobManager:
         research_model: Optional[str] = None,
         custom_categories: Optional[dict] = None,
         decision_model: Optional[str] = None,
+        submitted_by: Optional[str] = None,
     ) -> Job:
         if mode not in ALLOWED_MODES:
             raise ValueError(f"Invalid mode: {mode}")
@@ -700,6 +707,7 @@ class JobManager:
             if custom_categories is not None
             else None,
             decision_model=(decision_model or "").strip() or None,
+            submitted_by=submitted_by,
         )
 
         async with self.lock:
@@ -1031,6 +1039,14 @@ async def _lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Lens Internal Service", version="1.0.0", lifespan=_lifespan)
+
+# Programmatic callers (Fleet, scripts) use scoped bearer tokens on these two
+# surfaces and never the browser session; see docs/API.md.
+import lens_api  # noqa: E402  (reads this module's globals at call time)
+import lens_mcp  # noqa: E402
+
+app.include_router(lens_api.router)
+app.include_router(lens_mcp.router)
 
 
 def _cookie_secure() -> bool:
@@ -1463,6 +1479,8 @@ def _job_settings_summary(job: Job) -> str:
     distinguishable from its neighbors after the fact.
     """
     parts: List[str] = []
+    if job.submitted_by:
+        parts.append(f"via API: {job.submitted_by}")
     if job.custom_categories:
         parts.append("custom: " + ", ".join(c["name"] for c in job.custom_categories["categories"]))
         if job.decision_model:

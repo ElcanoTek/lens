@@ -174,6 +174,11 @@ def isolate_managed_paths(
         target.parent.mkdir(parents=True, exist_ok=True)
         monkeypatch.setattr(config_singleton, attribute, str(target))
 
+    # The API token store is outside the checkout (/var/lib/lens) and is
+    # located by env at call time, so it is isolated here rather than as a
+    # path global: a test that mints a token must never touch the host's.
+    monkeypatch.setenv("LENS_API_TOKEN_DB", str(sandbox / "api_tokens.db"))
+
     yield sandbox
 
 
