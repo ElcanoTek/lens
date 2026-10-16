@@ -40,9 +40,12 @@ from api_tokens import SCOPE_READ, SCOPE_RUN, ApiToken
 from lens_api import ApiError
 
 SERVER_INFO = {"name": "lens", "title": "Elcano Lens", "version": "1.0.0"}
-# Newest first. A client asking for one of these gets it back; anything else
-# gets the newest, and the client decides whether it can proceed.
-SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05")
+# Newest first: the Streamable HTTP revisions. A client asking for one of
+# these gets it back; anything else gets the newest, and the client decides
+# whether it can proceed. 2024-11-05 is deliberately absent: it used the old
+# HTTP+SSE transport (a GET stream plus a message endpoint), which this
+# server does not implement, so agreeing to it would strand the client.
+SUPPORTED_PROTOCOL_VERSIONS = ("2025-11-25", "2025-06-18", "2025-03-26")
 MAX_BODY_BYTES = 4 * 1024 * 1024  # a 2 MiB upload is ~2.8 MB once base64-encoded
 
 INSTRUCTIONS = " ".join(

@@ -410,8 +410,13 @@ async def _store_input(filename: str, payload: bytes) -> str:
     except ValueError as exc:
         raise ApiError(400, "invalid_file", str(exc)) from None
     ws.INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    stored = ws._unused_input_name(filename, payload)
-    await asyncio.to_thread((ws.INPUT_DIR / stored).write_bytes, payload)
+    stored = await asyncio.to_thread(ws._store_unique_input, filename, payload)
+    await _require_identifiers(stored)
+    return stored
+
+
+async def _require_identifiers(stored: str) -> None:
+    ws = _ws()
     breakdown = await asyncio.to_thread(ws._get_breakdown, ws.INPUT_DIR / stored)
     if not breakdown.get("total"):
         # Keep the file (it is now in the library and harmless) but refuse to
@@ -424,7 +429,6 @@ async def _store_input(filename: str, payload: bytes) -> str:
             "CTV list with a Bundle ID column.",
             input_file=stored,
         )
-    return stored
 
 
 async def _validated_models(args: Dict[str, Any], categories) -> Dict[str, Optional[str]]:
@@ -470,11 +474,18 @@ async def _validated_models(args: Dict[str, Any], categories) -> Dict[str, Optio
 
 
 async def create_job(
-    request: Optional[Request], token: ApiToken, args: Dict[str, Any]
+    request: Optional[Request],
+    token: ApiToken,
+    args: Dict[str, Any],
+    upload: Optional[tuple] = None,
 ) -> Dict[str, object]:
+    """Queue a job. ``upload`` is ``(filename, bytes)`` from a REST multipart
+    request; MCP and JSON callers send ``content_base64`` instead."""
     ws = _ws()
     require_scope(token, SCOPE_RUN)
     sources = [key for key in ("items", "content_base64", "input_file") if args.get(key)]
+    if upload is not None:
+        sources.append("file")
     if len(sources) != 1:
         raise ApiError(
             400,
@@ -482,12 +493,17 @@ async def create_job(
             "Give exactly one input: items (a list of identifiers), content_base64 + filename "
             "(a CSV/XLSX file), or input_file (a file already in the Lens library).",
         )
+    # Validate every option before anything is written to the library.
     name = ws._normalize_job_name(args.get("name"))
     ctv = _optional_bool(args.get("ctv"), "ctv", default=False)
+    research_fallback = _optional_bool(args.get("research_fallback"), "research_fallback")
+    deep_retry = _optional_bool(args.get("deep_retry"), "deep_retry")
 
     categories = None
     raw_categories = args.get("custom_categories")
-    if raw_categories:
+    if raw_categories is not None:
+        # An empty object is a malformed request, not "no categories": running
+        # without the columns the caller asked for would waste the whole run.
         try:
             categories = validate_categories(
                 json.loads(raw_categories) if isinstance(raw_categories, str) else raw_categories
@@ -507,6 +523,13 @@ async def create_job(
     elif args.get("content_base64"):
         filename, payload = _decode_upload(args.get("content_base64"), args.get("filename"))
         stored = await _store_input(filename, payload)
+    elif upload is not None:
+        filename, payload = upload
+        try:
+            filename = ws._validate_input_filename(filename)
+        except ValueError as exc:
+            raise ApiError(400, "invalid_file", str(exc)) from None
+        stored = await _store_input(filename, payload)
     else:
         try:
             stored = ws._validate_input_filename(str(args["input_file"]).strip())
@@ -518,13 +541,14 @@ async def create_job(
                 "input_not_found",
                 f"No input file named {stored!r}. Use list_input_files to see the library.",
             )
+        await _require_identifiers(stored)
 
     job = await ws.manager.create_job(
         stored,
         "ctv" if ctv else ws.DEFAULT_MODE,
         name,
-        research_fallback=_optional_bool(args.get("research_fallback"), "research_fallback"),
-        deep_retry=_optional_bool(args.get("deep_retry"), "deep_retry"),
+        research_fallback=research_fallback,
+        deep_retry=deep_retry,
         custom_categories=categories,
         submitted_by=token.label,
         **models,
@@ -782,18 +806,55 @@ async def api_whoami(request: Request):
 
 @router.get("/jobs")
 async def api_list_jobs(
-    request: Request, status: Optional[str] = None, limit: Optional[int] = None
+    request: Request, status: Optional[str] = None, limit: Optional[str] = None
 ):
+    # Query values arrive as strings and are validated by the API's own layer
+    # (after the bearer check), so a bad ?limit= gets the documented
+    # invalid_argument body, not FastAPI's 422.
     return await _run(
         request, SCOPE_READ, lambda _t: list_jobs(request, status=status, limit=limit)
     )
 
 
-async def _create_args(request: Request) -> Dict[str, Any]:
+# Multipart framing (boundaries, part headers, small fields) on top of the file.
+MULTIPART_OVERHEAD_BYTES = 1024 * 1024
+UPLOAD_CHUNK_BYTES = 1024 * 1024
+
+
+async def _read_capped(upload) -> bytes:
+    """Read an uploaded part in chunks, refusing as soon as it passes the cap."""
+    ws = _ws()
+    declared = getattr(upload, "size", None)
+    if declared is not None and declared > ws.MAX_UPLOAD_BYTES:
+        raise ApiError(
+            413, "file_too_large", f"File exceeds {ws.MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+        )
+    chunks, total = [], 0
+    while chunk := await upload.read(UPLOAD_CHUNK_BYTES):
+        total += len(chunk)
+        if total > ws.MAX_UPLOAD_BYTES:
+            raise ApiError(
+                413, "file_too_large", f"File exceeds {ws.MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _create_args(request: Request) -> tuple:
+    """``(args, upload)`` from a JSON body or a multipart form."""
+    ws = _ws()
+    length = request.headers.get("content-length", "")
+    if length.isdecimal() and int(length) > ws.MAX_UPLOAD_BYTES * 4 // 3 + MULTIPART_OVERHEAD_BYTES:
+        # Refuse before parsing: neither a JSON body (base64) nor a form can
+        # carry an acceptable file this large.
+        raise ApiError(
+            413, "file_too_large", f"File exceeds {ws.MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+        )
     content_type = request.headers.get("content-type", "")
     if content_type.startswith("multipart/form-data"):
+        # Starlette spools file parts to disk past 1 MB, so parsing does not
+        # hold the file in memory; _read_capped then reads it once, capped.
         form = await request.form()
-        upload = form.get("file")
         args: Dict[str, Any] = {}
         raw_options = form.get("options")
         if raw_options:
@@ -806,13 +867,14 @@ async def _create_args(request: Request) -> Dict[str, Any]:
         for key in ("name", "input_file"):
             if form.get(key):
                 args[key] = str(form.get(key))
-        if upload is not None and hasattr(upload, "read"):
-            payload = await upload.read()
-            args["content_base64"] = base64.b64encode(payload).decode() if payload else ""
-            args.setdefault("filename", upload.filename or "")
+        part = form.get("file")
+        upload = None
+        if part is not None and hasattr(part, "read"):
+            payload = await _read_capped(part)
             if not payload:
                 raise ApiError(400, "invalid_file", "The uploaded file is empty")
-        return args
+            upload = (part.filename or "", payload)
+        return args, upload
     try:
         body = await request.json()
     except ValueError:
@@ -821,13 +883,14 @@ async def _create_args(request: Request) -> Dict[str, Any]:
         ) from None
     if not isinstance(body, dict):
         raise ApiError(400, "invalid_argument", "The request body must be a JSON object")
-    return body
+    return body, None
 
 
 @router.post("/jobs")
 async def api_create_job(request: Request):
     async def operation(token):
-        return await create_job(request, token, await _create_args(request))
+        args, upload = await _create_args(request)
+        return await create_job(request, token, args, upload)
 
     response = await _run(request, SCOPE_RUN, operation)
     if response.status_code == 200:
@@ -849,8 +912,8 @@ async def api_cancel_job(request: Request, job_id: str):
 async def api_job_results(
     request: Request,
     job_id: str,
-    offset: Optional[int] = None,
-    limit: Optional[int] = None,
+    offset: Optional[str] = None,
+    limit: Optional[str] = None,
     quality: Optional[str] = None,
     columns: Optional[str] = None,
 ):

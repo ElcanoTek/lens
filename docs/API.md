@@ -49,8 +49,8 @@ shows it on the run's row as `via API: <label>`.
 `Mcp-Session-Id` is issued, each POST carries one JSON-RPC message, responses
 are `application/json`, and notifications get `202`. `GET`/`DELETE` return
 `405`. Requests from a browser `Origin` other than the Lens host are refused.
-Supported protocol versions are 2025-11-25, 2025-06-18, 2025-03-26 and
-2024-11-05.
+Supported protocol versions are 2025-11-25, 2025-06-18 and 2025-03-26 (the
+Streamable HTTP ones). 2024-11-05's HTTP+SSE transport is not served.
 
 `tools/list` shows a token only the tools its scopes allow, and `tools/call`
 re-checks the scope.

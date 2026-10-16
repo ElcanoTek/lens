@@ -84,6 +84,10 @@ def _finish(job, rows):
     (web_service.OUTPUT_DIR / job.log_file).write_text("started\nfinished\n")
 
 
+def _domains(csv_text):
+    return [row["Domain"] for row in csv.DictReader(io.StringIO(csv_text))]
+
+
 ROWS = [
     {"Domain": "example.com", "Type": "WEBSITE", "Quality": "Premium", "IAB Tier 1": "News"},
     {"Domain": "example.org", "Type": "WEBSITE", "Quality": "Standard", "IAB Tier 1": "News"},
@@ -202,6 +206,8 @@ def test_rest_multipart_upload(client):
             {"items": ["a.com"], "custom_categories": {"categories": []}},
             "invalid_custom_categories",
         ),
+        ({"items": ["a.com"], "custom_categories": {}}, "invalid_custom_categories"),
+        ({"items": ["a.com"], "deep_retry": "maybe"}, "invalid_argument"),
         ({"items": ["a.com"], "ctv": True}, "invalid_argument"),
         ({"items": ["x"] * (lens_api.MAX_INLINE_ITEMS + 1)}, "too_many_items"),
     ],
@@ -257,7 +263,8 @@ def test_rest_results_files_and_cancel(client):
     assert "More rows remain" in results["note"]
 
     output = client.get(f"/api/v1/jobs/{job.id}/files/output", headers=_auth(raw))
-    assert output.status_code == 200 and "example.net" in output.text
+    assert output.status_code == 200
+    assert _domains(output.text) == ["example.com", "example.org", "example.net"]
     assert client.get(f"/api/v1/jobs/{job.id}/files/output").status_code == 401
     assert (
         client.get(f"/api/v1/jobs/{job.id}/files/categories", headers=_auth(raw)).status_code == 404
@@ -287,7 +294,8 @@ def test_signed_download_link_is_bearer_free_scoped_and_expires(client, monkeypa
     assert link["url"].startswith(f"https://{LENS_HOST}/api/v1/downloads/")
     path = link["url"].split(LENS_HOST, 1)[1]
     fetched = client.get(path)
-    assert fetched.status_code == 200 and "example.org" in fetched.text
+    assert fetched.status_code == 200
+    assert _domains(fetched.text) == ["example.com", "example.org", "example.net"]
     assert "attachment" in fetched.headers["content-disposition"]
 
     payload, signature = path.rsplit("/", 1)[1].split(".")
@@ -334,6 +342,9 @@ def test_mcp_handshake(client):
     assert "mcp-session-id" not in init.headers
     unknown = _rpc(client, raw, "initialize", {"protocolVersion": "1999-01-01"})
     assert unknown.json()["result"]["protocolVersion"] == lens_mcp.SUPPORTED_PROTOCOL_VERSIONS[0]
+    # The 2024 HTTP+SSE transport is not served, so it is never agreed to.
+    legacy = _rpc(client, raw, "initialize", {"protocolVersion": "2024-11-05"})
+    assert legacy.json()["result"]["protocolVersion"] != "2024-11-05"
     note = client.post(
         "/mcp", json={"jsonrpc": "2.0", "method": "notifications/initialized"}, headers=_auth(raw)
     )
@@ -429,3 +440,55 @@ def test_mcp_tool_errors_are_results_not_protocol_failures(client):
     assert "Unknown argument" in extra["structuredContent"]["error"]
     required = _call(client, raw, "get_job")
     assert "Missing required" in required["structuredContent"]["error"]
+
+
+def test_rest_query_errors_use_the_api_error_shape(client):
+    raw = _token()
+    # Auth comes first, then the API's own validation (not FastAPI's 422).
+    assert client.get("/api/v1/jobs?limit=abc").status_code == 401
+    response = client.get("/api/v1/jobs?limit=abc", headers=_auth(raw))
+    assert response.status_code == 400 and response.json()["code"] == "invalid_argument"
+    job = client.portal.call(_queued)
+    _finish(job, ROWS)
+    bad = client.get(f"/api/v1/jobs/{job.id}/results?offset=-1", headers=_auth(raw))
+    assert bad.status_code == 400 and bad.json()["code"] == "invalid_argument"
+
+
+def test_library_file_without_identifiers_is_refused_before_queueing(client):
+    (web_service.INPUT_DIR / "notes.csv").write_text("Notes\nhello\n")
+    response = client.post(
+        "/api/v1/jobs", json={"input_file": "notes.csv"}, headers=_auth(_token())
+    )
+    assert response.status_code == 400 and response.json()["code"] == "no_identifiers"
+    assert not web_service.manager.jobs
+
+
+def test_oversized_multipart_upload_is_refused(client, monkeypatch):
+    monkeypatch.setattr(web_service, "MAX_UPLOAD_BYTES", 64)
+    response = client.post(
+        "/api/v1/jobs",
+        files={"file": ("big.csv", b"Domain\n" + b"example.com\n" * 20, "text/csv")},
+        headers=_auth(_token()),
+    )
+    assert response.status_code == 413 and response.json()["code"] == "file_too_large"
+    assert not (web_service.INPUT_DIR / "big.csv").exists()
+
+
+def test_input_names_are_claimed_atomically(client):
+    first = web_service._store_unique_input("list.csv", b"Domain\na.com\n")
+    same = web_service._store_unique_input("list.csv", b"Domain\na.com\n")
+    other = web_service._store_unique_input("list.csv", b"Domain\nb.com\n")
+    third = web_service._store_unique_input("list.csv", b"Domain\nc.com\n")
+    assert (first, same, other, third) == ("list.csv", "list.csv", "list (2).csv", "list (3).csv")
+    assert (web_service.INPUT_DIR / "list (2).csv").read_bytes() == b"Domain\nb.com\n"
+
+
+def test_concurrent_uploads_with_one_name_keep_their_own_bytes(client):
+    import concurrent.futures
+
+    payloads = [f"Domain\nsite{i}.com\n".encode() for i in range(8)]
+    with concurrent.futures.ThreadPoolExecutor(8) as pool:
+        names = list(pool.map(lambda p: web_service._store_unique_input("same.csv", p), payloads))
+    assert len(set(names)) == 8
+    for name, payload in zip(names, payloads, strict=True):
+        assert (web_service.INPUT_DIR / name).read_bytes() == payload

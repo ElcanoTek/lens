@@ -924,16 +924,38 @@ def _clean_model_id(value: object) -> Optional[str]:
     return model
 
 
-def _unused_input_name(filename: str, payload: bytes) -> str:
-    """Keep a submitted file's name unless a different file already has it."""
-    path = INPUT_DIR / filename
-    if not path.exists() or path.read_bytes() == payload:
-        return filename
+def _store_unique_input(filename: str, payload: bytes) -> str:
+    """Write a submitted file into the library and return the name it got.
+
+    Keeps the name unless a different file already has it, then tries
+    "name (2).csv", "name (3).csv", … A name is claimed with O_CREAT|O_EXCL,
+    so two submissions racing for one name (API calls, `lens submit`) can
+    never both write the same path and leave one job pointing at the other's
+    list. Identical bytes reuse the existing file. Blocking; run it in a
+    thread.
+    """
     stem, suffix = Path(filename).stem, Path(filename).suffix
-    n = 2
-    while (INPUT_DIR / f"{stem} ({n}){suffix}").exists():
-        n += 1
-    return f"{stem} ({n}){suffix}"
+    candidate, n = filename, 1
+    while True:
+        path = INPUT_DIR / candidate
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644)
+        except FileExistsError:
+            try:
+                if path.is_file() and path.read_bytes() == payload:
+                    return candidate
+            except OSError:
+                pass
+            n += 1
+            candidate = f"{stem} ({n}){suffix}"
+            continue
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(payload)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
+        return candidate
 
 
 def _write_spool_result(entry: Path, result: dict) -> None:
@@ -972,8 +994,7 @@ async def _ingest_spool_entry(entry: Path) -> None:
             "research_fallback": bool(request.get("research_fallback", True)),
             "deep_retry": bool(request.get("deep_retry", True)),
         }
-        stored = _unused_input_name(filename, payload)
-        await asyncio.to_thread((INPUT_DIR / stored).write_bytes, payload)
+        stored = await asyncio.to_thread(_store_unique_input, filename, payload)
         await asyncio.to_thread(_get_breakdown, INPUT_DIR / stored)
         job = await manager.create_job(
             input_file=stored, mode=mode, custom_categories=categories, **options
