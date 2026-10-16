@@ -149,8 +149,8 @@ Why locks: every install — CI, a fresh clone, a production deploy — resolves
 to byte-identical versions. Previously the floors were `>=` with nothing
 pinned, so `pip` picked the newest release at install time and an upstream
 change could break CI with no commit in this repo. Now a dependency moves only
-when a reviewed PR moves it. Dependabot proposes updates (daily, 7-day
-cooldown, minor/patch grouped); a human merges one only when the bump earns it
+when a reviewed PR moves it. Dependabot proposes updates (daily, cooldown
+7 days (3 for patch releases), minor/patch grouped); a human merges one only when the bump earns it
 (a security fix whose code path Lens uses, or an upstream commit we need). Before adding a dependency, check whether the standard library or a
 small module of our own would do — see "Dependencies and in-housed code" in
 [`AGENTS.md`](AGENTS.md) for the policy and what is already vendored.

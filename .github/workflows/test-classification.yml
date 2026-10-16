@@ -15,9 +15,12 @@ on:
 # exercised (the suite proves requirements.txt installs); only the live
 # classification is skipped. Human PRs and pushes have the secret and run fully.
 
+# PRs share a group per ref and cancel superseded runs. Every other event
+# (pushes to main, schedules) gets its own group per commit: a shared group
+# keeps only one pending run, so a third push would drop the second's CI.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

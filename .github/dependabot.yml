@@ -8,9 +8,9 @@
 # "Dependencies and in-housed code" in AGENTS.md). In-housed code (html_dom.py,
 # webdriver_client.py, _vendor/) is ours and is not tracked here.
 #
-# Daily polling with a supply-chain cooldown: a freshly published release is
-# not proposed until it is a few days old, so a compromised version that the
-# ecosystem yanks quickly never reaches review. Cooldown applies to version
+# Daily polling with a supply-chain cooldown of 7 days (3 for patch releases):
+# a freshly published release is not proposed until it is that old, so a
+# compromised version the ecosystem yanks quickly never reaches review. Cooldown applies to version
 # updates only; security updates are never delayed. Minor + patch bumps are
 # grouped into one PR per ecosystem; majors stay separate for their own review.
 # There are no `ignore` rules; if one is ever needed, say which upstream
