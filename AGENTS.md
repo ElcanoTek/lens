@@ -239,8 +239,16 @@ security updates only). On a CVE, check
 reachability first; if the affected code is unused, delete it (or leave the
 pin and record why), and if it is used, adapt the fix. `requirements.in` is
 the intent and both `.txt` files are pip-compile output; regenerate them with
-`pip-compile` on Python 3.11 (see the file headers), never by hand. Check the
-runtime lock with `pip-audit -r requirements.txt --no-deps --disable-pip`.
+`pip-compile` on Python 3.11 (see the file headers), never by hand. CI's
+pytest job audits both locks with the pinned `pip-audit` (`pip-audit -r
+requirements.txt -r requirements-dev.txt --strict --no-deps --disable-pip`).
+
+Worked example: multidict 6.7.1 (aiohttp's header/query container) carried
+PYSEC-2026-4244 / CVE-2026-104874, a C-extension reference leak. It sits under
+aiohttp on every HTTP request path, so "probably unreachable" was not
+evidence enough; the fix was the targeted bump `pip-compile --upgrade-package
+multidict==6.9.1` (the first fixed release, within aiohttp's `multidict<7`),
+with no other pin moved.
 
 What used to be a PyPI dependency and now lives in the tree:
 

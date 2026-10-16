@@ -110,6 +110,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
+      # Known-vulnerability audit of both locks (pip-audit is pinned in
+      # requirements-dev.txt). The locks pin every transitive dependency, so
+      # --no-deps --disable-pip audits exactly those pins without resolving
+      # anything; --strict fails on any package it cannot audit.
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt -r requirements-dev.txt --strict --no-deps --disable-pip
+
       - name: Install deployment test dependency
         run: sudo apt-get update && sudo apt-get install -y rsync
 
