@@ -116,11 +116,14 @@ def _numeric_reference(number: int) -> str:
 class Text:
     """A string in the tree. ``kind`` says what sort (see module docstring)."""
 
-    __slots__ = ("value", "kind")
+    __slots__ = ("value", "kind", "parent", "previous_sibling", "next_sibling")
 
     def __init__(self, value: str, kind: str) -> None:
         self.value = value
         self.kind = kind
+        self.parent: Optional[Element] = None
+        self.previous_sibling: Optional[Node] = None
+        self.next_sibling: Optional[Node] = None
 
 
 Node = Union["Element", Text]
@@ -138,14 +141,32 @@ def _attr_matches(value: Optional[str], wanted: AttrFilter) -> bool:
 
 
 class Element:
-    __slots__ = ("name", "attrs", "children", "parent", "_position")
+    """An element. Children form a doubly linked list (``first_child``,
+    ``next_sibling`` …), so appending, removing and stepping to a sibling are
+    all O(1) whatever the page's shape; ``children`` builds a list on demand.
+    Every walk below is iterative and linear in the nodes it visits — the
+    scaling tests in tests/test_html_dom.py hold each operation to that."""
 
-    def __init__(self, name: str, attrs: Dict[str, str], parent: Optional["Element"]) -> None:
+    __slots__ = (
+        "name",
+        "attrs",
+        "parent",
+        "previous_sibling",
+        "next_sibling",
+        "first_child",
+        "last_child",
+        "child_count",
+    )
+
+    def __init__(self, name: str, attrs: Dict[str, str]) -> None:
         self.name = name
         self.attrs = attrs
-        self.children: List[Node] = []
-        self.parent = parent
-        self._position = 0  # index in parent.children; rechecked before use
+        self.parent: Optional[Element] = None
+        self.previous_sibling: Optional[Node] = None
+        self.next_sibling: Optional[Node] = None
+        self.first_child: Optional[Node] = None
+        self.last_child: Optional[Node] = None
+        self.child_count = 0
 
     # -- attributes -------------------------------------------------------
 
@@ -155,18 +176,45 @@ class Element:
     def __getitem__(self, key: str) -> str:
         return self.attrs[key]
 
-    # -- traversal --------------------------------------------------------
+    # -- structure --------------------------------------------------------
+
+    def append(self, node: Node) -> None:
+        node.parent = self
+        node.previous_sibling = self.last_child
+        node.next_sibling = None
+        if self.last_child is None:
+            self.first_child = node
+        else:
+            self.last_child.next_sibling = node
+        self.last_child = node
+        self.child_count += 1
+
+    @property
+    def children(self) -> List[Node]:
+        out: List[Node] = []
+        node = self.first_child
+        while node is not None:
+            out.append(node)
+            node = node.next_sibling
+        return out
 
     def descendants(self) -> Iterator[Node]:
-        """Every node below this one, in document order (iterative: pages
-        with thousands of unclosed tags nest deeper than the recursion
-        limit)."""
-        stack: List[Node] = list(reversed(self.children))
-        while stack:
-            node = stack.pop()
+        """Every node below this one, in document order, by walking the links
+        (no recursion, no stack: pages with thousands of unclosed tags nest
+        deeper than the recursion limit)."""
+        node = self.first_child
+        while node is not None:
             yield node
-            if isinstance(node, Element) and node.children:
-                stack.extend(reversed(node.children))
+            if isinstance(node, Element) and node.first_child is not None:
+                node = node.first_child
+                continue
+            while node is not self and node.next_sibling is None:
+                node = node.parent
+            if node is self:
+                return
+            node = node.next_sibling
+
+    # -- searching --------------------------------------------------------
 
     def find_all(
         self,
@@ -202,17 +250,10 @@ class Element:
                 yield node
 
     def find_next_sibling(self) -> Optional["Element"]:
-        if self.parent is None:
-            return None
-        siblings = self.parent.children
-        position = self._position
-        if position >= len(siblings) or siblings[position] is not self:
-            position = siblings.index(self)  # a decompose() shifted us
-            self._position = position
-        for node in siblings[position + 1 :]:
-            if isinstance(node, Element):
-                return node
-        return None
+        node = self.next_sibling
+        while node is not None and not isinstance(node, Element):
+            node = node.next_sibling
+        return node
 
     @property
     def title(self) -> Optional["Element"]:
@@ -240,46 +281,79 @@ class Element:
     def string(self) -> Optional[str]:
         """The only string under this element, following single-child
         elements down; ``None`` when there are zero or several children."""
-        node: Node = self
+        node: Optional[Node] = self
         while isinstance(node, Element):
-            if len(node.children) != 1:
+            if node.child_count != 1:
                 return None
-            node = node.children[0]
-        return node.value
+            node = node.first_child
+        return node.value if node is not None else None
 
     # -- mutation ---------------------------------------------------------
 
     def decompose(self) -> None:
-        """Remove this element and everything inside it from the tree."""
-        if self.parent is not None:
-            self.parent.children.remove(self)
-            self.parent = None
+        """Remove this element and everything inside it from the tree, in
+        O(1): it is unlinked from its siblings and its subtree goes with it."""
+        parent = self.parent
+        if parent is None:
+            return
+        if self.previous_sibling is None:
+            parent.first_child = self.next_sibling
+        else:
+            self.previous_sibling.next_sibling = self.next_sibling
+        if self.next_sibling is None:
+            parent.last_child = self.previous_sibling
+        else:
+            self.next_sibling.previous_sibling = self.previous_sibling
+        parent.child_count -= 1
+        self.parent = self.previous_sibling = self.next_sibling = None
 
     # -- serialisation ----------------------------------------------------
 
     def __str__(self) -> str:
         """Markup for this element. Approximate (attribute order and quoting
         follow the parse, entities are minimally re-escaped); callers only
-        search it for substrings."""
+        search it for substrings. One pass over the subtree's links."""
         out: List[str] = []
-        stack: List[Union[Node, str]] = [self]
-        while stack:
-            node = stack.pop()
-            if isinstance(node, str):
-                out.append(node)
+        if self.name != _ROOT_NAME:
+            out.append(_open_tag(self))
+        for node, closing in self._events():
+            if closing:
+                out.append(f"</{node.name}>")
             elif isinstance(node, Text):
                 out.append(_serialise_text(node))
-            elif node.name == _ROOT_NAME:
-                stack.extend(reversed(node.children))
             else:
-                attrs = "".join(f" {k}={_quote_attr(v)}" for k, v in node.attrs.items())
-                if not node.children and node.name in _VOID_ELEMENTS:
-                    out.append(f"<{node.name}{attrs}/>")
-                    continue
-                out.append(f"<{node.name}{attrs}>")
-                stack.append(f"</{node.name}>")
-                stack.extend(reversed(node.children))
+                out.append(_open_tag(node))
+        if self.name != _ROOT_NAME and not _self_closing(self):
+            out.append(f"</{self.name}>")
         return "".join(out)
+
+    def _events(self) -> Iterator[tuple]:
+        """(node, is_end) for every node below this one: a start for each
+        node, and an end after an element's subtree unless it self-closes."""
+        node = self.first_child
+        while node is not None:
+            yield node, False
+            if isinstance(node, Element) and node.first_child is not None:
+                node = node.first_child
+                continue
+            while True:
+                if isinstance(node, Element) and not _self_closing(node):
+                    yield node, True
+                if node.next_sibling is not None:
+                    node = node.next_sibling
+                    break
+                node = node.parent
+                if node is self:
+                    return
+
+
+def _self_closing(element: Element) -> bool:
+    return element.first_child is None and element.name in _VOID_ELEMENTS
+
+
+def _open_tag(element: Element) -> str:
+    attrs = "".join(f" {k}={_quote_attr(v)}" for k, v in element.attrs.items())
+    return f"<{element.name}{attrs}{'/' if _self_closing(element) else ''}>"
 
 
 def _escape(value: str) -> str:
@@ -319,7 +393,7 @@ class _TreeBuilder(HTMLParser):
         # Every attribute and helper here is prefixed ``tree_`` because
         # HTMLParser keeps private state on self (``_pending`` among it), and
         # a name clash silently reorders text.
-        self.tree_root = Element(_ROOT_NAME, {}, None)
+        self.tree_root = Element(_ROOT_NAME, {})
         self._tree_stack: List[Element] = [self.tree_root]
         self._tree_containers: List[Element] = []
         self._tree_preserving: List[Element] = []
@@ -341,8 +415,7 @@ class _TreeBuilder(HTMLParser):
             data = "\n" if "\n" in data else " "
         if kind == TEXT and self._tree_containers:
             kind = self._tree_containers[-1].name
-        current = self._tree_stack[-1]
-        current.children.append(Text(data, kind))
+        self._tree_stack[-1].append(Text(data, kind))
 
     def handle_data(self, data: str) -> None:
         self._tree_text.append(data)
@@ -396,10 +469,8 @@ class _TreeBuilder(HTMLParser):
         attributes: Dict[str, str] = {}
         for key, value in attrs:
             attributes[key] = "" if value is None else value  # a repeat wins
-        parent = self._tree_stack[-1]
-        element = Element(tag, attributes, parent)
-        element._position = len(parent.children)
-        parent.children.append(element)
+        element = Element(tag, attributes)
+        self._tree_stack[-1].append(element)
         self._tree_stack.append(element)
         self._tree_open[tag] = self._tree_open.get(tag, 0) + 1
         if tag in _STRING_CONTAINERS:
