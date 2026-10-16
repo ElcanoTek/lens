@@ -18,7 +18,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlparse
 
 import aiohttp
-from bs4 import BeautifulSoup
+
+from html_dom import parse_html
 
 try:  # Optional dependency for deep scraping mode
     from selenium import webdriver
@@ -427,7 +428,7 @@ class ScraperClient:
         return b"".join(chunks)
 
     def _parse_html(self, url: str, html: str) -> Dict[str, Any]:
-        soup = BeautifulSoup(html, "html.parser")
+        soup = parse_html(html)
 
         for element in soup(["script", "style", "noscript"]):
             element.decompose()

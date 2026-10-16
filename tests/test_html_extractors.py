@@ -5,7 +5,8 @@
 
 ``tests/fixtures/html/golden.json`` was recorded from these fixtures while the
 extractors still parsed with BeautifulSoup 4.15.0 (``html.parser`` backend).
-This test holds them to byte-identical output: the website scraper's title / meta
+The extractors now run on the stdlib-based ``html_dom`` module, and this test
+holds them to byte-identical output: the website scraper's title / meta
 description / text, the Play Store parse result, and each ``_extract_*``
 helper on its own (so a fallback branch that the full parse never reaches
 because an earlier extractor already answered is still pinned).
@@ -26,8 +27,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 os.environ.setdefault("OPENROUTER_API_KEY", "test-key")
 
 import android_scraper
+import html_dom
 import scraper_client
-from bs4 import BeautifulSoup
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures" / "html"
 GOLDEN = FIXTURES / "golden.json"
@@ -52,7 +53,7 @@ def extract_everything(html: str) -> dict:
         "android": android._parse_html("com.example.app", html, "2026-01-01T00:00:00"),
     }
     for name in ANDROID_EXTRACTORS:
-        value = getattr(android, name)(BeautifulSoup(html, "html.parser"))
+        value = getattr(android, name)(html_dom.parse_html(html))
         result[name] = list(value) if isinstance(value, tuple) else value
     return result
 
