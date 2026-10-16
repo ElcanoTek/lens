@@ -376,7 +376,9 @@ def _text_result(body: Dict[str, Any], is_error: bool = False) -> Dict[str, Any]
 
 async def _call_tool(request: Request, token: ApiToken, params: Dict[str, Any]) -> Dict[str, Any]:
     name = params.get("name")
-    args = params.get("arguments") or {}
+    args = params.get("arguments")
+    if args is None:
+        args = {}
     tool = TOOLS.get(name) if isinstance(name, str) else None
     if tool is None or not token.allows(tool["scope"]):
         raise _RpcError(-32602, f"Unknown tool: {name}")
@@ -460,7 +462,10 @@ async def mcp_endpoint(request: Request):
         return Response(status_code=202)
     if not isinstance(method, str):
         return _rpc_error(message_id, -32600, "Invalid Request", status=400)
-    params = message.get("params") or {}
+    # Only an absent or null params means "none"; [] / false / 0 are invalid.
+    params = message.get("params")
+    if params is None:
+        params = {}
     if not isinstance(params, dict):
         return _rpc_error(message_id, -32602, "params must be an object")
 

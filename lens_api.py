@@ -33,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 import api_tokens
@@ -165,7 +165,9 @@ def public_base_url(request: Optional[Request]) -> str:
     host = host.split(",")[0].strip()
     if not host:
         return str(request.base_url).rstrip("/")
-    local = host.split(":")[0] in {"127.0.0.1", "localhost", "::1", "[::1]"}
+    # "[::1]:8808" keeps its brackets; "127.0.0.1:8808" drops its port.
+    hostname = host.split("]")[0] + "]" if host.startswith("[") else host.rsplit(":", 1)[0]
+    local = hostname in {"127.0.0.1", "localhost", "[::1]"}
     scheme = request.headers.get("x-forwarded-proto") or ("http" if local else "https")
     return f"{scheme.split(',')[0].strip()}://{host}"
 
@@ -204,6 +206,29 @@ def _eta_seconds(job, progress: Dict[str, object]) -> Optional[int]:
     remaining = max(0, total - attempts) * (elapsed / attempts)
     remaining += retrying * _ws().DEEP_RETRY_SECONDS_PER_ITEM
     return int(round(remaining))
+
+
+TAIL_READ_BYTES = 64 * 1024
+
+
+def _tail_lines(path: Path, lines: int) -> List[str]:
+    """The last ``lines`` lines, reading at most TAIL_READ_BYTES from the end.
+
+    A long job's log can be large and get_job is polled, so this never reads
+    (or splits) the whole file.
+    """
+    try:
+        with open(path, "rb") as handle:
+            handle.seek(0, os.SEEK_END)
+            size = handle.tell()
+            handle.seek(max(0, size - TAIL_READ_BYTES))
+            chunk = handle.read()
+    except OSError:
+        return []
+    text = chunk.decode("utf-8", errors="ignore").splitlines()
+    if size > TAIL_READ_BYTES and text:
+        text = text[1:]  # the first line is probably cut in half
+    return text[-lines:]
 
 
 def _file_path(job, kind: str) -> Optional[Path]:
@@ -321,7 +346,7 @@ def job_view(job, request: Optional[Request] = None, *, detail: bool = False) ->
             queue = list(ws.manager.queue)
             view["queue_position"] = queue.index(job.id) + 1 if job.id in queue else None
         if job.status in {"failed", "running"} and job.log_file:
-            view["log_tail"] = ws._tail_text(ws.OUTPUT_DIR / job.log_file, max_lines=LOG_TAIL_LINES)
+            view["log_tail"] = _tail_lines(ws.OUTPUT_DIR / job.log_file, LOG_TAIL_LINES)
         view["next_step"] = _next_step(job, files)
     return view
 
@@ -359,7 +384,10 @@ async def list_jobs(
 
 
 async def get_job(request: Optional[Request], job_id: object) -> Dict[str, object]:
-    return job_view(await get_job_or_404(job_id), request, detail=True)
+    job = await get_job_or_404(job_id)
+    # The detail view reads progress, a log tail and the input breakdown from
+    # disk; get_job is the polled call, so keep that off the event loop.
+    return await asyncio.to_thread(job_view, job, request, detail=True)
 
 
 def _bounded_int(value: object, name: str, *, default: int, low: int, high: int) -> int:
@@ -867,7 +895,7 @@ async def get_options() -> Dict[str, object]:
             "research_model": config.RESEARCH_MODEL,
             "ctv_classification_model": config.CTV_CLASSIFICATION_MODEL,
             "ctv_research_model": config.CTV_RESEARCH_MODEL,
-            "decision_model": ws.RECOMMENDED_DECISION_MODEL,
+            "decision_model": config.DECISION_MODEL,
             "research_fallback": bool(config.RESEARCH_FALLBACK_ENABLED),
             "deep_retry": bool(config.DEEP_RETRY_ENABLED),
         },
@@ -1001,9 +1029,18 @@ async def _create_args(request: Request) -> tuple:
     if content_type.startswith("multipart/form-data"):
         # Starlette spools file parts to disk past 1 MB, so parsing does not
         # hold the file in memory; _read_capped then reads it once, capped.
-        form = await _capped_request(
-            request, ws.MAX_UPLOAD_BYTES * 4 // 3 + MULTIPART_OVERHEAD_BYTES
-        ).form(max_files=1, max_fields=16)
+        try:
+            form = await _capped_request(
+                request, ws.MAX_UPLOAD_BYTES * 4 // 3 + MULTIPART_OVERHEAD_BYTES
+            ).form(max_files=1, max_fields=16)
+        except ApiError:
+            raise  # the size cap tripped mid-parse
+        except HTTPException as exc:
+            # Starlette's own parser errors (too many parts, bad framing) would
+            # otherwise bypass _run and answer in FastAPI's shape.
+            raise ApiError(400, "invalid_argument", f"Bad multipart form: {exc.detail}") from None
+        except Exception as exc:  # noqa: BLE001 - python-multipart raises its own types
+            raise ApiError(400, "invalid_argument", f"Bad multipart form: {exc}") from None
         args: Dict[str, Any] = {}
         raw_options = form.get("options")
         if raw_options:

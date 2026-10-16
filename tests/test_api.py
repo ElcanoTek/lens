@@ -656,3 +656,54 @@ def test_tool_schemas_use_only_ecmascript_regex():
         lens_mcp.TOOLS["create_job"]["inputSchema"]["properties"]["filename"]["pattern"]
     )
     assert upload.match("List.XLSX") and upload.match("a.csv") and not upload.match("a.exe")
+
+
+def test_mcp_rejects_falsey_non_object_params(client):
+    raw = _token()
+    for bad in ([], False, 0):
+        response = client.post(
+            "/mcp",
+            json={"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": bad},
+            headers=_auth(raw),
+        )
+        assert response.json()["error"]["code"] == -32602
+    response = _rpc(client, raw, "tools/call", {"name": "get_options", "arguments": []})
+    assert response.json()["error"]["code"] == -32602
+
+
+def test_malformed_multipart_gets_the_api_error_shape(client):
+    response = client.post(
+        "/api/v1/jobs",
+        content=b"--x\r\nnot a real part",
+        headers={**_auth(_token()), "Content-Type": "multipart/form-data; boundary=x"},
+    )
+    assert response.status_code in {400, 413}
+    assert response.json()["ok"] is False and "code" in response.json()
+
+
+def test_local_ipv6_hosts_get_http_links(monkeypatch):
+    monkeypatch.delenv("LENS_PUBLIC_URL", raising=False)
+
+    class FakeRequest:
+        def __init__(self, host):
+            self.headers = {"host": host}
+            self.base_url = f"http://{host}/"
+
+    assert lens_api.public_base_url(FakeRequest("[::1]:8808")) == "http://[::1]:8808"
+    assert lens_api.public_base_url(FakeRequest("127.0.0.1:8808")) == "http://127.0.0.1:8808"
+    assert lens_api.public_base_url(FakeRequest("lens.example.com")) == "https://lens.example.com"
+
+
+def test_log_tail_reads_only_the_end(tmp_path):
+    log = tmp_path / "big.log"
+    log.write_text("".join(f"line {i}\n" for i in range(200_000)))
+    assert lens_api._tail_lines(log, 3) == ["line 199997", "line 199998", "line 199999"]
+    assert lens_api._tail_lines(tmp_path / "missing.log", 3) == []
+
+
+def test_options_report_the_configured_decision_model(client, monkeypatch):
+    from config import config
+
+    monkeypatch.setattr(config, "DECISION_MODEL", "vendor/configured-decisions")
+    options = client.get("/api/v1/options", headers=_auth(_token())).json()
+    assert options["defaults"]["decision_model"] == "vendor/configured-decisions"
