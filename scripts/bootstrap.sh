@@ -14,6 +14,10 @@
 #   6. Installs the lens systemd unit + operator CLI
 #   7. Enables and starts the service; health-checks /health
 #
+# Given a public hostname, it also names the box after it when the current
+# hostname is an unset cloud default (vultr.guest, localhost,
+# localhost.localdomain). LENS_SET_HOSTNAME=1 forces, =0 skips.
+#
 # Usage:
 #   sudo bash scripts/bootstrap.sh
 #
@@ -30,6 +34,8 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 # shellcheck source=lib/deploy.sh
 . "$SRC_DIR/scripts/lib/deploy.sh"
+# shellcheck source=lib/hostname.sh
+. "$SRC_DIR/scripts/lib/hostname.sh"
 # runuser keeps the caller's working directory. Started from /root, the service
 # user's uv and podman fail on the unreadable cwd (uv: "failed to open file
 # /root/uv.toml: Permission denied"). update.sh does the same. Resolve paths
@@ -234,6 +240,14 @@ if [[ -n "$HOSTNAME_FOR_TLS" && "$HOSTNAME_FOR_TLS" != "localhost" ]]; then
       LE_EMAIL="$(prompt LENS_BOOTSTRAP_LE_EMAIL "LE contact email (blank to skip)" "${LENS_BOOTSTRAP_LE_EMAIL:-}" optional)"
     fi
   fi
+fi
+
+# A Vultr box comes up as "vultr.guest", so every prompt reads root@vultr.
+# Name it after the public hostname, but only from an unset cloud-image
+# default (vultr.guest, localhost[.localdomain]); any other name is left alone
+# with a hint. LENS_SET_HOSTNAME=1 forces, =0 skips (scripts/lib/hostname.sh).
+if [[ -n "$HOSTNAME_FOR_TLS" ]]; then
+  lens_set_hostname "$HOSTNAME_FOR_TLS"
 fi
 
 umask 077

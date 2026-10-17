@@ -104,6 +104,7 @@ then pass these same variables to `bash` with that file.
 | `LENS_BOOTSTRAP_SKIP_CHROME` | `0` | Skip the `chromium` + `chromedriver` packages |
 | `LENS_BOOTSTRAP_SKIP_DEEP` | `0` | Skip podman and the Selenium Chrome image |
 | `LENS_BOOTSTRAP_HOSTNAME` | — | Public hostname for TLS; blank skips Caddy |
+| `LENS_SET_HOSTNAME` | — | `1` renames the box to the public hostname whatever its current name; `0` never renames. Unset renames only from `vultr.guest`/`localhost`/`localhost.localdomain` |
 | `LENS_BOOTSTRAP_SETUP_CADDY` | `Y` | Install and configure Caddy (only asked when a hostname is given) |
 | `LENS_BOOTSTRAP_USE_LETSENCRYPT` | `Y` | `n` uses Caddy's `tls internal` self-signed certificate instead |
 | `LENS_BOOTSTRAP_LE_EMAIL` | — | ACME contact address, written into the global Caddyfile |
@@ -150,6 +151,20 @@ Seven steps, in order:
    Lens never becomes ready. It then optionally installs Caddy, opens
    http/https in firewalld and waits up to 45 s for TLS.
    Finally it installs `deploy/motd` to `/etc/motd`.
+
+Given a public hostname (step 5), bootstrap also names the box after it, so
+prompts stop reading `root@vultr`. It renames only when the current static
+hostname is an unset cloud-image default (`vultr.guest`, `localhost`,
+`localhost.localdomain`); any other name, short ones included, is left alone and
+bootstrap prints the `hostnamectl set-hostname <fqdn>` to run.
+`LENS_SET_HOSTNAME=1` forces the rename, `LENS_SET_HOSTNAME=0` skips the step.
+A rename runs `hostnamectl set-hostname`, writes
+`/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg` (`preserve_hostname: true`,
+`manage_etc_hosts: false`) when `/etc/cloud` exists, and rewrites the
+`127.0.0.1`/`::1` lines in `/etc/hosts` that named the old hostname to
+`<addr> <fqdn> <short>` (appending both when no line names the FQDN; a line
+naming `localhost` is never rewritten). It is idempotent, never fails the
+install, and `lens update` never renames a box (`scripts/lib/hostname.sh`).
 
 Bootstrap, deploys and host-changing operations share a non-blocking lock
 (`/run/lock/lens-deploy.lock`); a concurrent operation exits 75. Run bootstrap
