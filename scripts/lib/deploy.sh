@@ -150,7 +150,7 @@ lens_ssh_key_only() {
     return 0
   fi
   local dir="${SSH_KEY_ONLY_ROOT:-}/etc/ssh/sshd_config.d"
-  local conf="$dir/01-no-password-login.conf" keys tmp prev=""
+  local conf="$dir/01-no-password-login.conf" keys tmp prev="" eff
   command -v sshd >/dev/null 2>&1 && [[ -d "$dir" ]] || return 0
   if [[ -f "$conf" ]] && printf '%s\n' "$SSH_KEY_ONLY_CONF" | cmp -s - "$conf"; then
     return 0
@@ -162,7 +162,10 @@ lens_ssh_key_only() {
   fi
   # A key only helps if sshd will take it: with public-key login off, turning
   # passwords off locks everyone out too.
-  if ! sshd -T 2>/dev/null | grep -qix 'pubkeyauthentication yes'; then
+  # Capture sshd -T first: under pipefail, grep -q exiting early can SIGPIPE
+  # sshd and the pipeline then reads as "no match".
+  eff="$(sshd -T 2>/dev/null || true)"
+  if ! grep -qix 'pubkeyauthentication yes' <<<"$eff"; then
     warn "sshd does not accept public keys (PubkeyAuthentication) — leaving password login on so nobody is locked out"
     return 0
   fi
@@ -192,7 +195,8 @@ lens_ssh_key_only() {
   else
     warn "wrote $conf but could not reload sshd — run: systemctl reload sshd"
   fi
-  if sshd -T 2>/dev/null | grep -qiE '^(passwordauthentication|permitrootlogin) yes$'; then
+  eff="$(sshd -T 2>/dev/null || true)"
+  if grep -qiE '^(passwordauthentication|permitrootlogin) yes$' <<<"$eff"; then
     warn "sshd still accepts passwords: an earlier directive wins (e.g. 'PermitRootLogin yes' above the Include line in /etc/ssh/sshd_config) — fix it by hand"
   fi
   return 0
