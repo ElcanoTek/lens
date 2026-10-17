@@ -642,7 +642,8 @@ def ssh_key_only(tmp_path, keys=1, **env):
             "sshd",
             'case "$1" in -t) [ "${STUB_T_FAIL:-0}" != 1 ];; '
             '-T) echo "authorizedkeysfile .ssh/authorized_keys"; '
-            'echo "passwordauthentication ${STUB_PA:-no}";; esac',
+            'echo "passwordauthentication ${STUB_PA:-no}"; '
+            'echo "pubkeyauthentication ${STUB_PK:-yes}";; esac',
         ),
         ("systemctl", "true"),
     ):
@@ -705,6 +706,7 @@ def test_ssh_key_only_is_idempotent(tmp_path):
         (1, {"LENS_KEEP_SSH_PASSWORDS": "1"}, "INFO LENS_KEEP_SSH_PASSWORDS=1"),
         (1, {"DRY_RUN": "1"}, "INFO [dry-run] would write"),
         (1, {"STUB_T_FAIL": "1"}, "WARN sshd -t rejected"),
+        (1, {"STUB_PK": "no"}, "WARN sshd does not accept public keys"),
     ],
 )
 def test_ssh_key_only_leaves_sshd_alone(tmp_path, keys, env, expect):

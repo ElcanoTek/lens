@@ -160,6 +160,12 @@ lens_ssh_key_only() {
     warn "no SSH authorized keys found — leaving password login on so nobody is locked out; add a key, then re-run bootstrap"
     return 0
   fi
+  # A key only helps if sshd will take it: with public-key login off, turning
+  # passwords off locks everyone out too.
+  if ! sshd -T 2>/dev/null | grep -qix 'pubkeyauthentication yes'; then
+    warn "sshd does not accept public keys (PubkeyAuthentication) — leaving password login on so nobody is locked out"
+    return 0
+  fi
   if [[ "${DRY_RUN:-0}" == 1 ]]; then
     info "[dry-run] would write $conf (key-only SSH), check it with sshd -t and reload sshd"
     return 0

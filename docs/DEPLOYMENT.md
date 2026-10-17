@@ -131,7 +131,8 @@ Seven steps, in order:
    without the `elcano-key-only-ssh` startup script. It skips with a warning
    when root and `/home/*` have no authorized key (that would lock everyone
    out), does nothing when the file is already in place, removes the file
-   again if `sshd -t` rejects it, and never fails the install.
+   again if `sshd -t` rejects it, and never fails the install. It also skips
+   when `sshd -T` shows public-key login off.
    `LENS_KEEP_SSH_PASSWORDS=1` skips it.
 2. **User and directory** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
