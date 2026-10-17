@@ -104,6 +104,7 @@ then pass these same variables to `bash` with that file.
 | `LENS_BOOTSTRAP_SKIP_CHROME` | `0` | Skip the `chromium` + `chromedriver` packages |
 | `LENS_BOOTSTRAP_SKIP_DEEP` | `0` | Skip podman and the Selenium Chrome image |
 | `LENS_BOOTSTRAP_HOSTNAME` | — | Public hostname for TLS; blank skips Caddy |
+| `LENS_SET_HOSTNAME` | — | `1` renames the box to the public hostname whatever its current name; `0` never renames. Unset renames only from `vultr.guest`/`localhost`/`localhost.localdomain` |
 | `LENS_BOOTSTRAP_SETUP_CADDY` | `Y` | Install and configure Caddy (only asked when a hostname is given) |
 | `LENS_BOOTSTRAP_USE_LETSENCRYPT` | `Y` | `n` uses Caddy's `tls internal` self-signed certificate instead |
 | `LENS_BOOTSTRAP_LE_EMAIL` | — | ACME contact address, written into the global Caddyfile |
@@ -118,7 +119,10 @@ Seven steps, in order:
 
 1. **`dnf install`** — `git curl jq python3 python3-devel gcc uv rsync openssl`,
    plus `chromium chromedriver` (unless `SKIP_CHROME`), and `podman` (unless
-   `SKIP_DEEP`).
+   `SKIP_DEEP`). Then, when `cockpit-ws` is installed, it removes Cockpit with
+   `dnf -y remove 'cockpit*'`: the Vultr Fedora image ships Cockpit's
+   root-capable web login on :9090, and Lens hosts are administered over ssh
+   only. `LENS_KEEP_COCKPIT=1` keeps it; a failed removal only warns.
 2. **User and directory** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
    prerequisites: subuid/subgid ranges `200000-265535` (system users get none
@@ -149,6 +153,19 @@ Seven steps, in order:
    Lens never becomes ready. It then optionally installs Caddy, opens
    http/https in firewalld and waits up to 45 s for TLS.
    Finally it installs `deploy/motd` to `/etc/motd`.
+
+Given a public hostname (step 5), bootstrap also names the box after it, so
+prompts stop reading `root@vultr`. It renames only when the current static
+hostname is an unset cloud-image default (`vultr.guest`, `localhost`,
+`localhost.localdomain`); any other name, short ones included, is left alone and
+bootstrap prints the `hostnamectl set-hostname <fqdn>` to run.
+`LENS_SET_HOSTNAME=1` forces the rename, `LENS_SET_HOSTNAME=0` skips the step.
+A rename runs `hostnamectl set-hostname`, writes
+`/etc/cloud/cloud.cfg.d/99-preserve-hostname.cfg` (`preserve_hostname: true`,
+`manage_etc_hosts: false`) when `/etc/cloud` exists, and replaces the old hostname on the `127.0.0.1`/`::1` lines in `/etc/hosts`
+with `<fqdn> <short>`, keeping every other alias on the line (localhost names
+are never replaced). When no line names the FQDN, it appends both loopback lines. It is idempotent, never fails the
+install, and `lens update` never renames a box (`scripts/lib/hostname.sh`).
 
 Bootstrap, deploys and host-changing operations share a non-blocking lock
 (`/run/lock/lens-deploy.lock`); a concurrent operation exits 75. Run bootstrap

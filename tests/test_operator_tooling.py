@@ -429,3 +429,201 @@ def test_prune_rollbacks_without_snapshots_is_quiet(tmp_path):
         '. "$1"; lens_prune_rollbacks "$2" 2', ROOT / "scripts/lib/deploy.sh", tmp_path / "lens"
     )
     assert result.returncode == 0 and result.stdout == ""
+
+
+VULTR_HOSTS = (
+    "127.0.0.1   localhost localhost.localdomain\n"
+    "::1         localhost localhost.localdomain\n"
+    "127.0.0.1 vultr.guest vultr\n"
+)
+PRESERVE_CFG = (
+    "# The hostname is set by hand; do not let cloud-init reset it from Vultr metadata.\n"
+    "preserve_hostname: true\n"
+    "manage_etc_hosts: false\n"
+)
+
+
+def set_hostname(box, fqdn, current="vultr.guest", hostnamectl=True, hosts=VULTR_HOSTS, **env):
+    """Run lens_set_hostname on a scratch box; return (output, name, hosts, cloud cfg)."""
+    bindir = box / "bin"
+    bindir.mkdir()
+    name = box / "hostname"
+    hosts_file = box / "hosts"
+    cloud = box / "cloud"
+    cloud.mkdir()
+    name.write_text(current + "\n")
+    hosts_file.write_text(hosts)
+    for tool in ("awk", "cat", "mkdir"):
+        (bindir / tool).symlink_to(shutil.which(tool))
+    if hostnamectl:
+        (bindir / "hostnamectl").write_text(
+            "#!/bin/sh\n"
+            f"case \"$1\" in --static) cat '{name}' ;; "
+            f"set-hostname) printf '%s\\n' \"$2\" > '{name}' ;; esac\n"
+        )
+        (bindir / "hostnamectl").chmod(0o755)
+    result = subprocess.run(
+        [
+            shutil.which("bash"),
+            "-c",
+            'set -euo pipefail; . "$1"; info() { echo "INFO $*"; }; ok() { echo "OK $*"; }; '
+            'warn() { echo "WARN $*"; }; lens_set_hostname "$2"; echo "RC=$?"',
+            "test",
+            str(ROOT / "scripts/lib/hostname.sh"),
+            fqdn,
+        ],
+        env={
+            "PATH": str(bindir),
+            "LENS_HOSTS_FILE": str(hosts_file),
+            "LENS_CLOUD_DIR": str(cloud),
+            **env,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0 and "RC=0" in result.stdout, result.stdout + result.stderr
+    cfg = cloud / "cloud.cfg.d/99-preserve-hostname.cfg"
+    return (
+        result.stdout,
+        name.read_text().strip(),
+        hosts_file.read_text(),
+        cfg.read_text() if cfg.exists() else "",
+    )
+
+
+def test_set_hostname_renames_a_vultr_default_once(tmp_path):
+    out, name, hosts, cfg = set_hostname(tmp_path, "Lens.Example.com")
+    assert name == "lens.example.com", out
+    assert cfg == PRESERVE_CFG
+    assert hosts == (
+        "127.0.0.1   localhost localhost.localdomain\n"
+        "::1         localhost localhost.localdomain\n"
+        "127.0.0.1 lens.example.com lens\n"
+    )
+    (tmp_path / "again").mkdir()
+    out, name, again, _ = set_hostname(
+        tmp_path / "again", "lens.example.com", current="lens.example.com", hosts=hosts
+    )
+    assert again == hosts
+    assert "hostname already lens.example.com" in out
+
+
+def test_set_hostname_never_rewrites_a_localhost_line(tmp_path):
+    _, name, hosts, _ = set_hostname(
+        tmp_path,
+        "lens.example.com",
+        current="localhost",
+        hosts="127.0.0.1 localhost\n::1 localhost\n",
+    )
+    assert name == "lens.example.com"
+    assert hosts == (
+        "127.0.0.1 localhost\n::1 localhost\n"
+        "127.0.0.1 lens.example.com lens\n::1 lens.example.com lens\n"
+    )
+
+
+@pytest.mark.parametrize("current", ["yoga", "fedora", "lens.client.example"])
+def test_set_hostname_leaves_a_deliberate_name(tmp_path, current):
+    out, name, hosts, cfg = set_hostname(tmp_path, "lens.example.com", current=current)
+    assert (name, hosts, cfg) == (current, VULTR_HOSTS, "")
+    assert "hostnamectl set-hostname lens.example.com" in out
+
+
+@pytest.mark.parametrize(
+    "fqdn,hostnamectl,env",
+    [
+        ("lens.example.com", True, {"LENS_SET_HOSTNAME": "0"}),
+        ("localhost", True, {}),
+        ("10.0.0.5", True, {}),
+        ("lens.example.com", False, {}),
+        ("lens.example.com", True, {"DRY_RUN": "1"}),
+    ],
+)
+def test_set_hostname_skips(tmp_path, fqdn, hostnamectl, env):
+    out, name, hosts, cfg = set_hostname(tmp_path, fqdn, hostnamectl=hostnamectl, **env)
+    assert (name, hosts, cfg) == ("vultr.guest", VULTR_HOSTS, ""), out
+
+
+def test_set_hostname_force_renames_a_deliberate_name(tmp_path):
+    _, name, _, _ = set_hostname(
+        tmp_path, "lens.example.com", current="yoga", LENS_SET_HOSTNAME="1"
+    )
+    assert name == "lens.example.com"
+
+
+def test_only_bootstrap_sets_the_hostname():
+    assert "lens_set_hostname" in ((ROOT / "scripts") / "bootstrap.sh").read_text()
+    assert "set_hostname" not in ((ROOT / "scripts") / "update.sh").read_text()
+
+
+def cockpit_uninstall(tmp_path, rpm=True, **env):
+    """Run lens_cockpit_uninstall with stub rpm/dnf; return (output, calls)."""
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+    for name, body in (
+        ("rpm", '[ "${STUB_INSTALLED:-0}" = 1 ]'),
+        ("dnf", '[ "${STUB_FAIL:-0}" != 1 ]'),
+    ):
+        if name == "rpm" and not rpm:
+            continue
+        (bindir / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "$STUB_LOG"\n{body}\n')
+        (bindir / name).chmod(0o755)
+    result = subprocess.run(
+        [
+            shutil.which("bash"),
+            "-c",
+            'set -euo pipefail; . "$1"; info() { echo "INFO $*"; }; ok() { echo "OK $*"; }; '
+            'warn() { echo "WARN $*"; }; lens_cockpit_uninstall; echo "RC=$?"',
+            "test",
+            str(LIB),
+        ],
+        env={"PATH": str(bindir), "STUB_LOG": str(log), **env},
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0 and "RC=0" in result.stdout, result.stdout + result.stderr
+    return result.stdout, log.read_text() if log.exists() else ""
+
+
+def test_cockpit_uninstall_removes_an_installed_cockpit(tmp_path):
+    out, calls = cockpit_uninstall(tmp_path, STUB_INSTALLED="1")
+    assert "dnf -y remove cockpit*" in calls
+    assert "OK removed Cockpit" in out
+
+
+@pytest.mark.parametrize(
+    "rpm,env",
+    [
+        (True, {}),
+        (False, {"STUB_INSTALLED": "1"}),
+        (True, {"STUB_INSTALLED": "1", "LENS_KEEP_COCKPIT": "1"}),
+        (True, {"STUB_INSTALLED": "1", "DRY_RUN": "1"}),
+    ],
+)
+def test_cockpit_uninstall_skips(tmp_path, rpm, env):
+    out, calls = cockpit_uninstall(tmp_path, rpm=rpm, **env)
+    assert "dnf" not in calls, out
+    if env.get("DRY_RUN"):
+        assert "[dry-run] dnf -y remove 'cockpit*'" in out
+
+
+def test_cockpit_uninstall_failure_only_warns(tmp_path):
+    out, _ = cockpit_uninstall(tmp_path, STUB_INSTALLED="1", STUB_FAIL="1")
+    assert "WARN could not remove Cockpit" in out
+
+
+def test_cockpit_is_removed_by_bootstrap_only():
+    assert "\nlens_cockpit_uninstall\n" in (ROOT / "scripts/bootstrap.sh").read_text()
+    assert "cockpit" not in (ROOT / "scripts/update.sh").read_text()
+
+
+def test_set_hostname_keeps_other_loopback_aliases(tmp_path):
+    _, name, hosts, _ = set_hostname(
+        tmp_path,
+        "lens.example.com",
+        hosts="127.0.0.1 localhost\n127.0.0.1 vultr.guest vultr myalias # note\n",
+    )
+    assert name == "lens.example.com"
+    assert hosts == "127.0.0.1 localhost\n127.0.0.1 lens.example.com lens myalias # note\n"

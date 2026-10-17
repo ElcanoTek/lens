@@ -4,13 +4,19 @@
 # scripts/bootstrap.sh — interactive installer for Elcano Lens.
 #
 # What this does:
-#   1. Installs system deps via dnf (python3, uv, chromium runtime libs)
+#   1. Installs system deps via dnf (python3, uv, chromium runtime libs),
+#      then removes Cockpit when cockpit-ws is installed
+#      (LENS_KEEP_COCKPIT=1 keeps it)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
 #   5. Writes /opt/lens/.env and migrates persistent auth state to /var/lib/lens
 #   6. Installs the lens systemd unit + operator CLI
 #   7. Enables and starts the service; health-checks /health
+#
+# Given a public hostname, it also names the box after it when the current
+# hostname is an unset cloud default (vultr.guest, localhost,
+# localhost.localdomain). LENS_SET_HOSTNAME=1 forces, =0 skips.
 #
 # Usage:
 #   sudo bash scripts/bootstrap.sh
@@ -28,6 +34,8 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 # shellcheck source=lib/deploy.sh
 . "$SRC_DIR/scripts/lib/deploy.sh"
+# shellcheck source=lib/hostname.sh
+. "$SRC_DIR/scripts/lib/hostname.sh"
 # runuser keeps the caller's working directory. Started from /root, the service
 # user's uv and podman fail on the unreadable cwd (uv: "failed to open file
 # /root/uv.toml: Permission denied"). update.sh does the same. Resolve paths
@@ -109,6 +117,9 @@ PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certi
 dnf install -y "${PKGS[@]}" >/dev/null
 command -v uv >/dev/null 2>&1 || die "uv missing after dnf install"
 ok "installed: ${PKGS[*]}"
+
+# The Vultr Fedora image ships Cockpit's root-capable web login on :9090; our boxes are administered over ssh only.
+lens_cockpit_uninstall
 
 step "2/7  Preparing $APP_DIR + '$APP_USER' user"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
@@ -227,6 +238,14 @@ if [[ -n "$HOSTNAME_FOR_TLS" && "$HOSTNAME_FOR_TLS" != "localhost" ]]; then
       LE_EMAIL="$(prompt LENS_BOOTSTRAP_LE_EMAIL "LE contact email (blank to skip)" "${LENS_BOOTSTRAP_LE_EMAIL:-}" optional)"
     fi
   fi
+fi
+
+# A Vultr box comes up as "vultr.guest", so every prompt reads root@vultr.
+# Name it after the public hostname, but only from an unset cloud-image
+# default (vultr.guest, localhost[.localdomain]); any other name is left alone
+# with a hint. LENS_SET_HOSTNAME=1 forces, =0 skips (scripts/lib/hostname.sh).
+if [[ -n "$HOSTNAME_FOR_TLS" ]]; then
+  lens_set_hostname "$HOSTNAME_FOR_TLS"
 fi
 
 umask 077
