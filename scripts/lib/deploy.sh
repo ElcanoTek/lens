@@ -87,13 +87,42 @@ lens_prune_rollbacks() {
 # update, so an existing box stays healed (mirrors keel's step_cockpit).
 #
 # Safe on any host: does nothing (one line) unless systemd has a cockpit.socket
-# unit; touches the firewall only when firewalld is running and a zone lists
+# unit; blanks cockpit's login-banner notice; touches the firewall only when firewalld is running and a zone lists
 # cockpit; never installs or removes packages, never touches ufw/iptables, and
 # never fails the caller. Idempotent: a masked socket is left alone. With
 # DRY_RUN=1 it prints the commands instead. Uses the caller's say/ok/warn.
+# Masking leaves cockpit's login-banner notice ("Activate the web console
+# with: ...") in the MOTD: /etc/motd.d/cockpit links to /run/cockpit/issue,
+# which the package's tmpfiles.d entry recreates at boot. A same-named
+# /etc/tmpfiles.d copy overrides it and survives cockpit-ws upgrades.
+# Overridable for the tests only; pure bash so sourcing never needs PATH.
+LENS_COCKPIT_PKG_TMPFILES="${LENS_COCKPIT_PKG_TMPFILES:-/usr/lib/tmpfiles.d/cockpit-ws.conf}"
+LENS_COCKPIT_ETC_TMPFILES="${LENS_COCKPIT_ETC_TMPFILES:-/etc/tmpfiles.d/cockpit-ws.conf}"
+_lens_lib_dir="${BASH_SOURCE[0]%/*}"
+[[ "${BASH_SOURCE[0]}" == */* ]] || _lens_lib_dir=.
+LENS_COCKPIT_TMPFILES_SRC="${_lens_lib_dir}/../../deploy/cockpit-ws.tmpfiles.conf"
+unset _lens_lib_dir
+
 _lens_cockpit_do() {
   if [[ "${DRY_RUN:-0}" == 1 ]]; then say "  [dry-run] $*"; else "$@"; fi
 }
+_lens_cockpit_banner() {
+  local src="$LENS_COCKPIT_TMPFILES_SRC" dst="$LENS_COCKPIT_ETC_TMPFILES"
+  [[ -f "$LENS_COCKPIT_PKG_TMPFILES" ]] || return 0
+  command -v systemd-tmpfiles >/dev/null 2>&1 || return 0
+  if cmp -s "$src" "$dst"; then
+    ok "cockpit's login-banner notice already blank ($dst)"
+  elif [[ ! -f "$src" ]]; then
+    warn "missing $src — cockpit's login-banner notice stays"
+  elif _lens_cockpit_do install -D -m 0644 "$src" "$dst" \
+    && _lens_cockpit_do systemd-tmpfiles --create "$dst"; then
+    [[ "${DRY_RUN:-0}" == 1 ]] || ok "blanked cockpit's login-banner notice ($dst)"
+  else
+    warn "could not blank cockpit's login-banner notice — run: install -m 0644 $src $dst && systemd-tmpfiles --create $dst"
+  fi
+  return 0
+}
+
 lens_cockpit_off() {
   local zone zones="" services fw_failed=0
   if ! command -v systemctl >/dev/null 2>&1 \
@@ -109,6 +138,7 @@ lens_cockpit_off() {
   else
     warn "could not turn cockpit off — run: systemctl disable --now cockpit.socket && systemctl mask cockpit.socket"
   fi
+  _lens_cockpit_banner
   command -v firewall-cmd >/dev/null 2>&1 || return 0
   [[ "$(firewall-cmd --state 2>/dev/null || true)" == running ]] || return 0
   for zone in $(firewall-cmd --permanent --get-zones 2>/dev/null || true); do

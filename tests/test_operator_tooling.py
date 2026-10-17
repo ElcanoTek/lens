@@ -460,7 +460,13 @@ COCKPIT_FW = {
     "STUB_SVC_public": "ssh dhcpv6-client cockpit",
     "STUB_SVC_trusted": "ssh",
 }
-MUTATIONS = ("systemctl disable", "systemctl mask", "--remove-service", "--reload")
+MUTATIONS = (
+    "systemctl disable",
+    "systemctl mask",
+    "--remove-service",
+    "--reload",
+    "systemd-tmpfiles --create",
+)
 
 
 def cockpit_off(tmp_path, *, systemctl=True, firewall=True, **env):
@@ -474,6 +480,15 @@ def cockpit_off(tmp_path, *, systemctl=True, firewall=True, **env):
         if wanted:
             (bindir / name).write_text("#!/bin/sh\n" + body)
             (bindir / name).chmod(0o755)
+    tmpfiles = bindir / "systemd-tmpfiles"
+    tmpfiles.write_text('#!/bin/sh\nprintf \'systemd-tmpfiles %s\\n\' "$*" >> "$STUB_LOG"\n')
+    tmpfiles.chmod(0o755)
+    # Never the host's real cockpit-ws tmpfiles paths.
+    env = {
+        "LENS_COCKPIT_PKG_TMPFILES": str(tmp_path / "absent.conf"),
+        "LENS_COCKPIT_ETC_TMPFILES": str(tmp_path / "etc/tmpfiles.d/cockpit-ws.conf"),
+        **env,
+    }
     log = tmp_path / "calls.log"
     result = subprocess.run(
         [
@@ -570,3 +585,22 @@ def test_doctor_reports_cockpit(tmp_path, monkeypatch, load, active, status):
     monkeypatch.setattr(doctor.shutil, "which", lambda name: None)
     checks = [c for c in doctor.diagnose(tmp_path, tmp_path, "lens") if c["name"] == "cockpit"]
     assert [c["status"] for c in checks] == ([status] if status else [])
+
+
+def test_cockpit_off_blanks_the_login_banner_once(tmp_path):
+    pkg = tmp_path / "pkg-cockpit-ws.conf"
+    pkg.write_text("L /run/cockpit/issue - - - - active.issue\n")
+    etc = tmp_path / "etc/tmpfiles.d/cockpit-ws.conf"
+    env = {
+        "STUB_COCKPIT": "masked",
+        "LENS_COCKPIT_PKG_TMPFILES": str(pkg),
+        "LENS_COCKPIT_ETC_TMPFILES": str(etc),
+    }
+    (tmp_path / "one").mkdir()
+    out, mutations, _ = cockpit_off(tmp_path / "one", firewall=False, **env)
+    assert mutations == [f"systemd-tmpfiles --create {etc}"], out
+    assert etc.read_text() == (ROOT / "deploy/cockpit-ws.tmpfiles.conf").read_text()
+    (tmp_path / "two").mkdir()
+    out, mutations, _ = cockpit_off(tmp_path / "two", firewall=False, **env)
+    assert mutations == []
+    assert "already blank" in out

@@ -537,6 +537,14 @@ so bootstrap and every `lens update` run `lens_cockpit_off`
   else, the firewall included);
 - `systemctl disable --now cockpit.socket` and `systemctl mask cockpit.socket`,
   unless it is already masked;
+- blank Cockpit's login-banner notice ("Activate the web console with: …"),
+  which masking leaves in the MOTD: `/etc/motd.d/cockpit` links to
+  `/run/cockpit/issue`, recreated at boot by the package's
+  `/usr/lib/tmpfiles.d/cockpit-ws.conf`. When that file exists,
+  `deploy/cockpit-ws.tmpfiles.conf` is installed as
+  `/etc/tmpfiles.d/cockpit-ws.conf` (the same name overrides the package copy
+  and survives cockpit-ws upgrades) and applied with `systemd-tmpfiles
+  --create`; skipped when already identical;
 - when firewalld is running, `firewall-cmd --permanent --zone=<zone>
   --remove-service=cockpit` for each zone that lists it, then `firewall-cmd
   --reload`.
