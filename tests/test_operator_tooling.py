@@ -763,3 +763,27 @@ def test_set_hostname_keeps_other_loopback_aliases(tmp_path):
     )
     assert name == "lens.example.com"
     assert hosts == "127.0.0.1 localhost\n127.0.0.1 lens.example.com lens myalias # note\n"
+
+
+def test_ssh_key_only_puts_back_a_hand_made_drop_in_when_sshd_t_fails(tmp_path):
+    _, _, conf = ssh_key_only(tmp_path)
+    conf.write_text("PasswordAuthentication no\n")
+    result = subprocess.run(
+        [
+            shutil.which("bash"),
+            "-c",
+            '. "$1"; warn() { echo "WARN $*"; }; lens_ssh_key_only; echo "RC=$?"',
+            "t",
+            str(LIB),
+        ],
+        env={
+            "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+            "STUB_LOG": str(tmp_path / "calls.log"),
+            "SSH_KEY_ONLY_ROOT": str(tmp_path / "root"),
+            "STUB_T_FAIL": "1",
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert "WARN sshd -t rejected" in result.stdout, result.stdout + result.stderr
+    assert conf.read_text() == "PasswordAuthentication no\n"

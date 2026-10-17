@@ -181,7 +181,8 @@ lens_ssh_key_only() {
   fi
   rm -f "$tmp"
   if ! sshd -t >/dev/null 2>&1; then
-    if [[ -n "$prev" ]]; then mv -f "$prev" "$conf"; else rm -f "$conf"; fi
+    # cp onto the new inode, not mv: mv would carry /tmp's SELinux label along.
+    if [[ -n "$prev" ]]; then cp "$prev" "$conf"; rm -f "$prev"; else rm -f "$conf"; fi
     warn "sshd -t rejected the key-only drop-in — reverted $conf; sshd left as it was"
     return 0
   fi
