@@ -2,6 +2,10 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2026 ElcanoTek, Inc.
 # scripts/update.sh — staged update for a Lens install.
+#
+# Every run first keeps the Cockpit web console off (lens_cockpit_off in
+# scripts/lib/deploy.sh, the same step bootstrap runs), even when there is
+# nothing new to deploy, so existing boxes stay healed.
 
 set -euo pipefail
 
@@ -36,6 +40,11 @@ die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_reset" >&2; exit 1; }
 [[ -d "$SRC_DIR/.git" ]] || die "no source checkout at $SRC_DIR"
 [[ -d "$APP_DIR" ]]      || die "no existing install at $APP_DIR"
 lens_lock "$@"
+
+# Before the fetch: the "already up to date" exit below must not skip it.
+# Idempotent, a no-op without cockpit, and never fatal.
+step "Keeping the Cockpit web console off"
+lens_cockpit_off
 
 step "1/4  Fetching latest"
 cd "$SRC_DIR"

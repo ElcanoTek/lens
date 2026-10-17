@@ -4,7 +4,9 @@
 # scripts/bootstrap.sh — interactive installer for Elcano Lens.
 #
 # What this does:
-#   1. Installs system deps via dnf (python3, uv, chromium runtime libs)
+#   1. Installs system deps via dnf (python3, uv, chromium runtime libs),
+#      then keeps the Cockpit web console off (cockpit.socket masked, cockpit
+#      dropped from firewalld; a no-op without cockpit)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
@@ -109,6 +111,11 @@ PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certi
 dnf install -y "${PKGS[@]}" >/dev/null
 command -v uv >/dev/null 2>&1 || die "uv missing after dnf install"
 ok "installed: ${PKGS[*]}"
+
+# The Vultr Fedora image ships cockpit: a root-capable web login on :9090.
+# Lens is administered over ssh only (scripts/lib/deploy.sh).
+step "Keeping the Cockpit web console off"
+lens_cockpit_off
 
 step "2/7  Preparing $APP_DIR + '$APP_USER' user"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then

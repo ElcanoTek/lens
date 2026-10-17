@@ -273,6 +273,26 @@ def diagnose(app, src, user, public_url=None):
             "Firecrawl was removed from Lens; run `lens update` to retire the old stack",
             warning=True,
         )
+    # bootstrap and every update mask cockpit.socket (lens_cockpit_off): the
+    # Vultr Fedora image's root-capable web login on :9090. Absent: no finding.
+    code, load = run("systemctl", "show", "--property=LoadState", "--value", "cockpit.socket")
+    if code == 0 and load == "masked":
+        add("cockpit", True, "cockpit.socket masked; no web console on :9090", "")
+    elif code == 0 and load == "loaded":
+        listening = run("systemctl", "is-active", "--quiet", "cockpit.socket")[0] == 0
+        add(
+            "cockpit",
+            False,
+            "",
+            (
+                "cockpit.socket is LISTENING: a root-capable web login on :9090"
+                if listening
+                else "cockpit.socket is installed but not masked"
+            )
+            + "; run `sudo lens update` (or: systemctl disable --now cockpit.socket"
+            " && systemctl mask cockpit.socket)",
+            warning=not listening,
+        )
     if public_url:
         code, status = run(
             "curl",

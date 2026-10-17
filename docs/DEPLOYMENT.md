@@ -118,7 +118,8 @@ Seven steps, in order:
 
 1. **`dnf install`** — `git curl jq python3 python3-devel gcc uv rsync openssl`,
    plus `chromium chromedriver` (unless `SKIP_CHROME`), and `podman` (unless
-   `SKIP_DEEP`).
+   `SKIP_DEEP`). Then it keeps the Cockpit web console off (see
+   [Cockpit stays off](#cockpit-stays-off)).
 2. **User and directory** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
    prerequisites: subuid/subgid ranges `200000-265535` (system users get none
@@ -443,6 +444,9 @@ is in [API.md](API.md).
 `lens update` runs `scripts/update.sh`, which is deliberately staged so a bad
 build cannot take down a working install:
 
+0. **Cockpit.** Keep the Cockpit web console off (see
+   [Cockpit stays off](#cockpit-stays-off)). This runs before the fetch, so it
+   also runs when there is nothing new to deploy.
 1. **Fetch.** `git fetch origin`, resolve the target branch (the checked-out
    branch; if HEAD is detached, a branch pointing at HEAD, else `origin/HEAD`,
    overridable with `LENS_UPDATE_BRANCH`), print the incoming commits and ask
@@ -522,6 +526,27 @@ a branch and fast-forwards straight back to the tip you were trying to leave.
 The end of a successful update prints the retained snapshot path. Prefer that
 snapshot when a previous failed update already advanced the source checkout.
 
+### Cockpit stays off
+
+The Vultr Fedora image ships Cockpit, whose `cockpit.socket` serves a
+root-capable web login on port 9090. Lens hosts are administered over ssh only,
+so bootstrap and every `lens update` run `lens_cockpit_off`
+(`scripts/lib/deploy.sh`):
+
+- only when systemd has a `cockpit.socket` unit (otherwise one line, nothing
+  else, the firewall included);
+- `systemctl disable --now cockpit.socket` and `systemctl mask cockpit.socket`,
+  unless it is already masked;
+- when firewalld is running, `firewall-cmd --permanent --zone=<zone>
+  --remove-service=cockpit` for each zone that lists it, then `firewall-cmd
+  --reload`.
+
+It never installs or removes a package, never touches ufw or iptables, and never
+fails the install or update: a command that fails prints a warning with the
+commands to run by hand. `lens doctor` fails while `cockpit.socket` is
+listening and warns while it is installed but not masked. To use Cockpit
+deliberately, `systemctl unmask cockpit.socket`; the next update masks it again.
+
 ## Doctor and host maintenance
 
 ```bash
@@ -537,7 +562,8 @@ lens host upgrade --dry-run                     # current → latest stable Fedo
 Doctor is read-only: configuration presence/key shape (no secret values), Python
 minor, dependency consistency, running interpreter, service/readiness, deployed
 revision, source drift, disk space, OS support deadline, rootless Podman and
-a leftover `firecrawl.service` (run `lens update` to retire it).
+a leftover `firecrawl.service` (run `lens update` to retire it), and Cockpit
+(fails while `cockpit.socket` listens on :9090, warns while it is not masked).
 `env-permissions` only checks that `.env` is mode 0600 or 0640. `env-readable` checks that the service user can open it. A root-owned
 0600 file passes the mode check, the dashboard still starts (systemd reads
 EnvironmentFile as root), and every job crashes because the analyzer loads
