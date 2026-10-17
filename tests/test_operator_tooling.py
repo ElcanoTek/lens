@@ -438,18 +438,23 @@ case "$1" in
       live) echo 'cockpit.socket disabled disabled' ;;
       masked) echo 'cockpit.socket masked enabled' ;;
     esac ;;
+  is-active) [ "${STUB_ACTIVE:-0}" = 1 ] ;;
   is-enabled) [ "$STUB_COCKPIT" = masked ] && { echo masked; exit 1; }; echo disabled; exit 1 ;;
-  disable|mask) [ "${STUB_FAIL:-0}" != 1 ] ;;
+  disable|mask|stop) [ "${STUB_FAIL:-0}" != 1 ] ;;
 esac
 """
 
 FIREWALL_STUB = """printf 'firewall-cmd %s\\n' "$*" >> "$STUB_LOG"
+perm=0
+for a in "$@"; do [ "$a" = --permanent ] && perm=1; done
 for a in "$@"; do
   case "$a" in
     --state) [ "$STUB_FW" = running ] && { echo running; exit 0; }; echo 'not running'; exit 252 ;;
     --get-zones) echo "$STUB_ZONES"; exit 0 ;;
     --zone=*) zone="${a#--zone=}" ;;
-    --list-services) eval "echo \\"\\$STUB_SVC_$zone\\""; exit 0 ;;
+    --list-services)
+      if [ $perm = 1 ]; then eval "echo \\"\\$STUB_SVC_$zone\\""; else eval "echo \\"\\$STUB_RT_$zone\\""; fi
+      exit 0 ;;
   esac
 done
 """
@@ -459,10 +464,13 @@ COCKPIT_FW = {
     "STUB_ZONES": "public trusted",
     "STUB_SVC_public": "ssh dhcpv6-client cockpit",
     "STUB_SVC_trusted": "ssh",
+    "STUB_RT_public": "ssh cockpit",
+    "STUB_RT_trusted": "ssh",
 }
 MUTATIONS = (
     "systemctl disable",
     "systemctl mask",
+    "systemctl stop",
     "--remove-service",
     "--reload",
     "systemd-tmpfiles --create",
@@ -514,8 +522,10 @@ def test_cockpit_off_masks_a_live_socket_and_closes_the_firewall(tmp_path):
     assert mutations == [
         "systemctl disable --now cockpit.socket",
         "systemctl mask cockpit.socket",
+        # Permanent and runtime edited directly: no --reload, which would
+        # drop unrelated runtime-only rules.
         "firewall-cmd -q --permanent --zone=public --remove-service=cockpit",
-        "firewall-cmd -q --reload",
+        "firewall-cmd -q --zone=public --remove-service=cockpit",
     ]
     assert "OK cockpit.socket disabled, stopped and masked" in out
 
@@ -571,7 +581,13 @@ def test_installers_keep_cockpit_off(script):
 
 @pytest.mark.parametrize(
     "load,active,status",
-    [("masked", 3, "ok"), ("loaded", 0, "fail"), ("loaded", 3, "warn"), ("not-found", 3, None)],
+    [
+        ("masked", 3, "ok"),
+        ("masked", 0, "fail"),
+        ("loaded", 0, "fail"),
+        ("loaded", 3, "warn"),
+        ("not-found", 3, None),
+    ],
 )
 def test_doctor_reports_cockpit(tmp_path, monkeypatch, load, active, status):
     def probe(*args, **kwargs):
@@ -730,3 +746,10 @@ def test_set_hostname_force_renames_a_deliberate_name(tmp_path):
 def test_only_bootstrap_sets_the_hostname():
     assert "lens_set_hostname" in ((ROOT / "scripts") / "bootstrap.sh").read_text()
     assert "set_hostname" not in ((ROOT / "scripts") / "update.sh").read_text()
+
+
+def test_cockpit_off_stops_a_masked_socket_that_still_listens(tmp_path):
+    out, mutations, _ = cockpit_off(
+        tmp_path, firewall=False, STUB_COCKPIT="masked", STUB_ACTIVE="1"
+    )
+    assert mutations == ["systemctl stop cockpit.socket"], out

@@ -551,7 +551,8 @@ so bootstrap and every `lens update` run `lens_cockpit_off`
 - only when systemd has a `cockpit.socket` unit (otherwise one line, nothing
   else, the firewall included);
 - `systemctl disable --now cockpit.socket` and `systemctl mask cockpit.socket`,
-  unless it is already masked;
+  unless it is already masked (a masked socket that is still listening gets
+  `systemctl stop cockpit.socket`);
 - blank Cockpit's login-banner notice ("Activate the web console with: …"),
   which masking leaves in the MOTD: `/etc/motd.d/cockpit` links to
   `/run/cockpit/issue`, recreated at boot by the package's
@@ -561,13 +562,15 @@ so bootstrap and every `lens update` run `lens_cockpit_off`
   and survives cockpit-ws upgrades) and applied with `systemd-tmpfiles
   --create`; skipped when already identical;
 - when firewalld is running, `firewall-cmd --permanent --zone=<zone>
-  --remove-service=cockpit` for each zone that lists it, then `firewall-cmd
-  --reload`.
+  --remove-service=cockpit` for each zone whose permanent config lists it and
+  `firewall-cmd --zone=<zone> --remove-service=cockpit` for each whose runtime
+  config does. There's no `--reload`, because a reload would also discard any
+  unrelated runtime-only rule.
 
 It never installs or removes a package, never touches ufw or iptables, and never
 fails the install or update: a command that fails prints a warning with the
 commands to run by hand. `lens doctor` fails while `cockpit.socket` is
-listening and warns while it is installed but not masked. To use Cockpit
+listening (masked or not) and warns while it is installed but not masked. To use Cockpit
 deliberately, `systemctl unmask cockpit.socket`; the next update masks it again.
 
 ## Doctor and host maintenance
