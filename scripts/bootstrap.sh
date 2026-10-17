@@ -5,8 +5,8 @@
 #
 # What this does:
 #   1. Installs system deps via dnf (python3, uv, chromium runtime libs),
-#      then keeps the Cockpit web console off (cockpit.socket masked, cockpit
-#      dropped from firewalld; a no-op without cockpit)
+#      then removes Cockpit when cockpit-ws is installed
+#      (LENS_KEEP_COCKPIT=1 keeps it)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
@@ -118,10 +118,8 @@ dnf install -y "${PKGS[@]}" >/dev/null
 command -v uv >/dev/null 2>&1 || die "uv missing after dnf install"
 ok "installed: ${PKGS[*]}"
 
-# The Vultr Fedora image ships cockpit: a root-capable web login on :9090.
-# Lens is administered over ssh only (scripts/lib/deploy.sh).
-step "Keeping the Cockpit web console off"
-lens_cockpit_off
+# The Vultr Fedora image ships Cockpit's root-capable web login on :9090; our boxes are administered over ssh only.
+lens_cockpit_uninstall
 
 step "2/7  Preparing $APP_DIR + '$APP_USER' user"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
