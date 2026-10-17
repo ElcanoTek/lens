@@ -619,6 +619,140 @@ def test_cockpit_is_removed_by_bootstrap_only():
     assert "cockpit" not in (ROOT / "scripts/update.sh").read_text()
 
 
+KEY_ONLY_CONF = (
+    "# Key-only SSH: no passwords, root by key only. Sorts before cloud-init's\n"
+    "# 50-cloud-init.conf so it wins (sshd keeps the first value it reads).\n"
+    "PasswordAuthentication no\n"
+    "KbdInteractiveAuthentication no\n"
+    "PermitRootLogin prohibit-password\n"
+)
+
+
+def ssh_key_only(tmp_path, keys=1, **env):
+    """Run lens_ssh_key_only against a stub sshd/systemctl under a fake root."""
+    root = tmp_path / "root"
+    (root / "etc/ssh/sshd_config.d").mkdir(parents=True)
+    (root / "home/ops/.ssh").mkdir(parents=True)
+    (root / "home/ops/.ssh/authorized_keys").write_text("ssh-ed25519 AAAA ops\n" * keys)
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    log = tmp_path / "calls.log"
+    for name, body in (
+        (
+            "sshd",
+            'case "$1" in -t) [ "${STUB_T_FAIL:-0}" != 1 ];; '
+            '-T) echo "authorizedkeysfile .ssh/authorized_keys"; '
+            'echo "passwordauthentication ${STUB_PA:-no}";; esac',
+        ),
+        ("systemctl", "true"),
+    ):
+        (bindir / name).write_text(f'#!/bin/sh\necho "{name} $*" >> "$STUB_LOG"\n{body}\n')
+        (bindir / name).chmod(0o755)
+    result = subprocess.run(
+        [
+            shutil.which("bash"),
+            "-c",
+            'set -euo pipefail; . "$1"; info() { echo "INFO $*"; }; ok() { echo "OK $*"; }; '
+            'warn() { echo "WARN $*"; }; lens_ssh_key_only; echo "RC=$?"',
+            "test",
+            str(LIB),
+        ],
+        env={
+            "PATH": f"{bindir}:/usr/bin:/bin",
+            "STUB_LOG": str(log),
+            "SSH_KEY_ONLY_ROOT": str(root),
+            **env,
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode == 0 and "RC=0" in result.stdout, result.stdout + result.stderr
+    conf = root / "etc/ssh/sshd_config.d/01-no-password-login.conf"
+    return result.stdout, log.read_text() if log.exists() else "", conf
+
+
+def test_ssh_key_only_writes_validates_and_reloads(tmp_path):
+    out, calls, conf = ssh_key_only(tmp_path)
+    assert conf.read_text() == KEY_ONLY_CONF
+    assert conf.stat().st_mode & 0o777 == 0o600
+    assert "sshd -t" in calls and "systemctl reload sshd" in calls
+    assert "OK SSH is key-only" in out and "WARN" not in out
+
+
+def test_ssh_key_only_is_idempotent(tmp_path):
+    _, _, conf = ssh_key_only(tmp_path)
+    log = tmp_path / "calls.log"
+    log.write_text("")
+    result = subprocess.run(
+        [shutil.which("bash"), "-c", '. "$1"; lens_ssh_key_only; echo "RC=$?"', "t", str(LIB)],
+        env={
+            "PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin",
+            "STUB_LOG": str(log),
+            "SSH_KEY_ONLY_ROOT": str(tmp_path / "root"),
+        },
+        text=True,
+        capture_output=True,
+    )
+    assert result.stdout.strip() == "RC=0", result.stdout + result.stderr
+    assert log.read_text() == ""
+    assert conf.read_text() == KEY_ONLY_CONF
+
+
+@pytest.mark.parametrize(
+    "keys,env,expect",
+    [
+        (0, {}, "WARN no SSH authorized keys found"),
+        (1, {"LENS_KEEP_SSH_PASSWORDS": "1"}, "INFO LENS_KEEP_SSH_PASSWORDS=1"),
+        (1, {"DRY_RUN": "1"}, "INFO [dry-run] would write"),
+        (1, {"STUB_T_FAIL": "1"}, "WARN sshd -t rejected"),
+    ],
+)
+def test_ssh_key_only_leaves_sshd_alone(tmp_path, keys, env, expect):
+    out, calls, conf = ssh_key_only(tmp_path, keys=keys, **env)
+    assert expect in out
+    assert not conf.exists()
+    assert "reload" not in calls
+
+
+def test_ssh_key_only_warns_when_an_earlier_directive_wins(tmp_path):
+    out, _, conf = ssh_key_only(tmp_path, STUB_PA="yes")
+    assert conf.exists()
+    assert "WARN sshd still accepts passwords" in out
+
+
+def test_ssh_key_only_runs_from_bootstrap_only():
+    assert "\nlens_ssh_key_only\n" in (ROOT / "scripts/bootstrap.sh").read_text()
+    assert "ssh_key_only" not in (ROOT / "scripts/update.sh").read_text()
+
+
+@pytest.mark.parametrize(
+    "effective,status",
+    [
+        ("passwordauthentication no\npermitrootlogin prohibit-password", "ok"),
+        ("passwordauthentication yes\npermitrootlogin prohibit-password", "warn"),
+        ("passwordauthentication no\npermitrootlogin yes", "warn"),
+    ],
+)
+def test_doctor_warns_when_sshd_accepts_passwords(tmp_path, monkeypatch, effective, status):
+    monkeypatch.setattr(
+        doctor, "run", lambda *a, **k: (0, effective) if a[0] == "sshd" else (127, "")
+    )
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: name == "sshd")
+    monkeypatch.setattr(doctor.os, "geteuid", lambda: 0)
+    checks = {c["name"]: c for c in doctor.diagnose(tmp_path, tmp_path, "lens")}
+    assert checks["sshd-passwords"]["status"] == status
+    if status == "warn":
+        assert "production-support README, Access: SSH keys" in checks["sshd-passwords"]["detail"]
+
+
+def test_doctor_skips_sshd_check_when_not_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(doctor, "run", lambda *a, **k: (0, "passwordauthentication yes"))
+    monkeypatch.setattr(doctor.shutil, "which", lambda name: name == "sshd")
+    monkeypatch.setattr(doctor.os, "geteuid", lambda: 1000)
+    names = {c["name"] for c in doctor.diagnose(tmp_path, tmp_path, "lens")}
+    assert "sshd-passwords" not in names
+
+
 def test_set_hostname_keeps_other_loopback_aliases(tmp_path):
     _, name, hosts, _ = set_hostname(
         tmp_path,

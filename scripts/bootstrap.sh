@@ -6,7 +6,8 @@
 # What this does:
 #   1. Installs system deps via dnf (python3, uv, chromium runtime libs),
 #      then removes Cockpit when cockpit-ws is installed
-#      (LENS_KEEP_COCKPIT=1 keeps it)
+#      (LENS_KEEP_COCKPIT=1 keeps it), and makes SSH key-only when a key
+#      is installed (LENS_KEEP_SSH_PASSWORDS=1 keeps passwords)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
 #   4. Builds venv via uv and installs Python deps
@@ -120,6 +121,10 @@ ok "installed: ${PKGS[*]}"
 
 # The Vultr Fedora image ships Cockpit's root-capable web login on :9090; our boxes are administered over ssh only.
 lens_cockpit_uninstall
+
+# Vultr cloud-init leaves sshd taking root passwords; make it key-only unless no
+# key is installed yet (scripts/lib/deploy.sh; LENS_KEEP_SSH_PASSWORDS=1 skips).
+lens_ssh_key_only
 
 step "2/7  Preparing $APP_DIR + '$APP_USER' user"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then

@@ -123,6 +123,16 @@ Seven steps, in order:
    `dnf -y remove 'cockpit*'`: the Vultr Fedora image ships Cockpit's
    root-capable web login on :9090, and Lens hosts are administered over ssh
    only. `LENS_KEEP_COCKPIT=1` keeps it; a failed removal only warns.
+   Next it makes SSH key-only: Vultr's cloud-init leaves
+   `PasswordAuthentication yes` in `50-cloud-init.conf`, so bootstrap writes
+   `/etc/ssh/sshd_config.d/01-no-password-login.conf` (passwords off, root by
+   key only; it sorts first, and sshd keeps the first value it reads), checks
+   it with `sshd -t` and reloads sshd. It is the safety net for a box created
+   without the `elcano-key-only-ssh` startup script. It skips with a warning
+   when root and `/home/*` have no authorized key (that would lock everyone
+   out), does nothing when the file is already in place, removes the file
+   again if `sshd -t` rejects it, and never fails the install.
+   `LENS_KEEP_SSH_PASSWORDS=1` skips it.
 2. **User and directory** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
    prerequisites: subuid/subgid ranges `200000-265535` (system users get none
@@ -554,7 +564,9 @@ lens host upgrade --dry-run                     # current → latest stable Fedo
 Doctor is read-only: configuration presence/key shape (no secret values), Python
 minor, dependency consistency, running interpreter, service/readiness, deployed
 revision, source drift, disk space, OS support deadline, rootless Podman and
-a leftover `firecrawl.service` (run `lens update` to retire it).
+a leftover `firecrawl.service` (run `lens update` to retire it). Run as
+root, it also warns when `sshd -T` reports `passwordauthentication yes` or
+`permitrootlogin yes` (see the production-support README, Access: SSH keys).
 `env-permissions` only checks that `.env` is mode 0600 or 0640. `env-readable` checks that the service user can open it. A root-owned
 0600 file passes the mode check, the dashboard still starts (systemd reads
 EnvironmentFile as root), and every job crashes because the analyzer loads

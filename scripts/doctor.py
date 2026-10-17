@@ -273,6 +273,17 @@ def diagnose(app, src, user, public_url=None):
             "Firecrawl was removed from Lens; run `lens update` to retire the old stack",
             warning=True,
         )
+    if shutil.which("sshd") and os.geteuid() == 0:
+        code, effective = run("sshd", "-T")
+        if code == 0:
+            lines = {line.strip().lower() for line in effective.splitlines()}
+            add(
+                "sshd-passwords",
+                not lines & {"passwordauthentication yes", "permitrootlogin yes"},
+                "key-only",
+                "sshd accepts passwords — see production-support README, Access: SSH keys",
+                warning=True,
+            )
     if public_url:
         code, status = run(
             "curl",
