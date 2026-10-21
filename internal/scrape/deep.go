@@ -83,7 +83,8 @@ func (c *Client) podman(ctx context.Context, args ...string) (CommandResult, err
 }
 
 func freePort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
@@ -103,7 +104,7 @@ func processAlive(pid int) bool {
 		return false
 	}
 	err = p.Signal(syscall.Signal(0))
-	return err == nil || !(errors.Is(err, os.ErrProcessDone) || errors.Is(err, syscall.ESRCH))
+	return !errors.Is(err, os.ErrProcessDone) && !errors.Is(err, syscall.ESRCH)
 }
 
 // ContainerName is the Chrome container this client uses (after Start, the
@@ -205,7 +206,7 @@ func (c *Client) isContainerRunning(ctx context.Context) (bool, error) {
 	res, err := c.podman(ctx, "ps", "--format", "{{.Names}}")
 	if err != nil {
 		if isNotFound(err) {
-			return false, fmt.Errorf("Podman executable '%s' not found.", c.opts.PodmanBinary) //nolint:revive,staticcheck // message kept from the Python release
+			return false, fmt.Errorf("Podman executable '%s' not found.", c.opts.PodmanBinary) //nolint:staticcheck // message kept from the Python release
 		}
 		return false, err
 	}
@@ -268,14 +269,14 @@ func (c *Client) ensureChromeContainerLocked(ctx context.Context) error {
 	if res.ExitCode != 0 {
 		output := commandOutput(res)
 		if strings.Contains(strings.ToLower(output), "short-name resolution") {
-			return errors.New("Failed to start Chrome container: Podman short-name enforcement blocked " + //nolint:revive,staticcheck // message kept from the Python release
+			return errors.New("Failed to start Chrome container: Podman short-name enforcement blocked " + //nolint:staticcheck // message kept from the Python release
 				"pulling the Chrome image. Set `deep_scrape_image` to a fully qualified reference such as " +
 				"'docker.io/selenium/standalone-chrome:latest'.")
 		}
 		// A pre-seeded image should survive registry/userns pull failures:
 		// retry once against the local copy before giving up.
 		if c.opts.ChromePullPolicy == "never" || !c.localImageExists(ctx) {
-			return fmt.Errorf("Failed to start Chrome container: %s", output) //nolint:revive,staticcheck // message kept from the Python release
+			return fmt.Errorf("Failed to start Chrome container: %s", output) //nolint:staticcheck // message kept from the Python release
 		}
 		reason := "unknown error"
 		if lines := strings.Split(output, "\n"); output != "" {
@@ -287,7 +288,7 @@ func (c *Client) ensureChromeContainerLocked(ctx context.Context) error {
 			return err
 		}
 		if retry.ExitCode != 0 {
-			return fmt.Errorf("Failed to start Chrome container: %s", commandOutput(retry)) //nolint:revive,staticcheck // message kept from the Python release
+			return fmt.Errorf("Failed to start Chrome container: %s", commandOutput(retry)) //nolint:staticcheck // message kept from the Python release
 		}
 	}
 	c.containerStarted = true
@@ -341,7 +342,7 @@ func (c *Client) waitForContainerReady(ctx context.Context) error {
 			return err
 		}
 	}
-	return errors.New("Timed out waiting for Chrome container to become ready") //nolint:revive,staticcheck // message kept from the Python release
+	return errors.New("Timed out waiting for Chrome container to become ready") //nolint:staticcheck // message kept from the Python release
 }
 
 func pollStatus(ctx context.Context, statusURL string) (bool, error) {
@@ -470,7 +471,7 @@ func (c *Client) scrapeWithChrome(ctx context.Context, s *Session, target string
 		}
 		return page, err
 	}
-	return nil, fmt.Errorf("Chrome scraping failed: %w", err) //nolint:revive,staticcheck // message kept from the Python release
+	return nil, fmt.Errorf("Chrome scraping failed: %w", err) //nolint:staticcheck // message kept from the Python release
 }
 
 func (c *Client) chromeFetch(ctx context.Context, driver *webdriver.Session, target string, timeout time.Duration) (*fetched, error) {

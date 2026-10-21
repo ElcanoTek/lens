@@ -127,8 +127,8 @@ func matchValue(s string, p int) (start, end int, ok bool) {
 	}
 	for pos := m; pos >= after; pos-- {
 		if pos < len(s) && (s[pos] == '\'' || s[pos] == '"') {
-			if close := strings.IndexByte(s[pos+1:], s[pos]); close >= 0 {
-				return pos, pos + 1 + close + 1, true
+			if closing := strings.IndexByte(s[pos+1:], s[pos]); closing >= 0 {
+				return pos, pos + 1 + closing + 1, true
 			}
 			continue // the bare alternative refuses a leading quote
 		}
@@ -321,10 +321,10 @@ func (p *parser) goahead(end bool) {
 loop:
 	for i < n {
 		var j int
-		switch {
-		case p.cdataElem == "plaintext":
+		switch p.cdataElem {
+		case "plaintext":
 			j = n // interesting is \Z: everything left is text
-		case p.cdataElem == "":
+		case "":
 			k := strings.IndexAny(s[i:], "&<")
 			if k < 0 {
 				j = n

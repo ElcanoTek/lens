@@ -73,7 +73,7 @@ func (f *fakePodman) Run(_ context.Context, argv []string, _ []string) (CommandR
 func (f *fakePodman) commands() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	var out []string
+	out := make([]string, 0, len(f.calls))
 	for _, c := range f.calls {
 		out = append(out, strings.Join(c, " "))
 	}
@@ -327,8 +327,9 @@ func TestDeepPassThroughTheFakeEndpoint(t *testing.T) {
 		}
 	}
 	capsMap := body["capabilities"].(map[string]any)["alwaysMatch"].(map[string]any)
-	var args []string
-	for _, a := range capsMap["goog:chromeOptions"].(map[string]any)["args"].([]any) {
+	rawArgs := capsMap["goog:chromeOptions"].(map[string]any)["args"].([]any)
+	args := make([]string, 0, len(rawArgs))
+	for _, a := range rawArgs {
 		args = append(args, a.(string))
 	}
 	if !slices.Contains(args, "--headless=new") || !slices.Contains(args, "--disable-blink-features=AutomationControlled") ||

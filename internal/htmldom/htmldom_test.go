@@ -124,8 +124,9 @@ func TestFindAndFindAllFilters(t *testing.T) {
 	if got := doc.Find("a", AttrMatches("href", regexp.MustCompile(`/store/apps/dev`))).Find("span").Text(); got != "Dev" {
 		t.Errorf("dev link %q", got)
 	}
-	var labels []string
-	for _, d := range doc.FindAll("", AttrPresent("aria-label")) {
+	labelled := doc.FindAll("", AttrPresent("aria-label"))
+	labels := make([]string, 0, len(labelled))
+	for _, d := range labelled {
 		labels = append(labels, d.Text())
 	}
 	if !reflect.DeepEqual(labels, []string{"empty", "x"}) {

@@ -147,7 +147,10 @@ func (b *builder) endTag(tag string, checkAlreadyClosed bool) {
 	if b.open[tag] == 0 {
 		return
 	}
-	for b.pop().Name != tag {
+	for {
+		if b.pop().Name == tag {
+			return
+		}
 	}
 }
 
@@ -205,7 +208,7 @@ func numericReference(digits string, base int) string {
 	case n < 0:
 		return ""
 	}
-	return string(rune(n))
+	return string(rune(n)) //nolint:gosec // n is within the Unicode range (checked above)
 }
 
 // invalidCodepoints are dropped by html.unescape (control characters and
@@ -292,7 +295,7 @@ func unescapeAt(s string, i int) (next int, text string, ok bool) {
 	e := p
 	for count := 0; e < len(s) && count < 32; count++ {
 		r, size := utf8.DecodeRuneInString(s[e:])
-		if r < utf8.RuneSelf && in(byte(r), "\t\n\f <&#;") {
+		if strings.ContainsRune("\t\n\f <&#;", r) {
 			break
 		}
 		e += size

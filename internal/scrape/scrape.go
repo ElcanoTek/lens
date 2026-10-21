@@ -375,7 +375,7 @@ func (c *Client) Start(ctx context.Context) error {
 		}
 		return c.ensureChromeContainer(ctx)
 	default:
-		return fmt.Errorf("Unsupported scrape mode: %s", c.mode) //nolint:revive,staticcheck // message kept from the Python release
+		return fmt.Errorf("Unsupported scrape mode: %s", c.mode) //nolint:staticcheck // message kept from the Python release
 	}
 }
 
@@ -384,7 +384,7 @@ func (c *Client) Start(ctx context.Context) error {
 func (c *Client) CreateSessionPool(ctx context.Context, n int) error {
 	requested := n
 	if n <= 0 {
-		return errors.New("Number of sessions must be at least 1") //nolint:revive,staticcheck // message kept from the Python release
+		return errors.New("Number of sessions must be at least 1") //nolint:staticcheck // message kept from the Python release
 	}
 	if c.mode == ModeDeep && n > 1 {
 		log.Warn(fmt.Sprintf("Deep scrape mode supports only a single concurrent browser session. "+
@@ -421,7 +421,7 @@ func (c *Client) AcquireSession(ctx context.Context) (*Session, error) {
 	sem, closed := c.sem, c.closed
 	c.mu.Unlock()
 	if sem == nil {
-		return nil, errors.New("Session pool has not been initialised") //nolint:revive,staticcheck // message kept from the Python release
+		return nil, errors.New("Session pool has not been initialised") //nolint:staticcheck // message kept from the Python release
 	}
 	select {
 	case sem <- struct{}{}:
@@ -445,7 +445,7 @@ func (c *Client) AcquireSession(ctx context.Context) (*Session, error) {
 	// Never hold the permit on failure: a leaked permit would shrink the
 	// pool permanently and eventually deadlock every worker.
 	<-sem
-	return nil, errors.New("No available sessions in pool") //nolint:revive,staticcheck // message kept from the Python release
+	return nil, errors.New("No available sessions in pool") //nolint:staticcheck // message kept from the Python release
 }
 
 // ReleaseSession returns a session to the pool.
@@ -609,7 +609,7 @@ func (e *bodyError) Unwrap() error { return e.err }
 
 func (c *Client) scrapeDirect(ctx context.Context, target string, timeout time.Duration) (*fetched, error) {
 	if c.httpClient == nil {
-		return nil, errors.New("Web session is not initialised") //nolint:revive,staticcheck // message kept from the Python release
+		return nil, errors.New("Web session is not initialised") //nolint:staticcheck // message kept from the Python release
 	}
 	page, err := c.fetchWithRetries(ctx, target, timeout)
 	if err != nil {
@@ -827,7 +827,7 @@ func sameSite(a, b string) bool {
 	if len(labels) < 2 {
 		return false
 	}
-	return !(len(labels) == 2 && publicSecondLevel[labels[0]])
+	return len(labels) != 2 || !publicSecondLevel[labels[0]]
 }
 
 // ensureSameHost enforces the cross-host redirect policy every backend

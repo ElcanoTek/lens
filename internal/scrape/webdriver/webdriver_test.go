@@ -51,8 +51,9 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var methods []string
-	for _, r := range fake.Requests() {
+	requests := fake.Requests()
+	methods := make([]string, 0, len(requests))
+	for _, r := range requests {
 		methods = append(methods, r.Method+" "+r.Path)
 	}
 	want := []string{

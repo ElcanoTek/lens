@@ -174,8 +174,9 @@ func asciiDigits(s string) string {
 			}
 		}
 		for _, rng := range unicode.Nd.R32 {
-			if r >= rune(rng.Lo) && r <= rune(rng.Hi) {
-				return '0' + (r-rune(rng.Lo))%10
+			lo, hi := rune(rng.Lo), rune(rng.Hi) //nolint:gosec // Unicode code points fit in a rune
+			if r >= lo && r <= hi {
+				return '0' + (r-lo)%10
 			}
 		}
 		return r

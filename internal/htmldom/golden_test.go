@@ -93,11 +93,11 @@ func TestExtractorsMatchTheRecordedOutput(t *testing.T) {
 		t.Fatal(err)
 	}
 	paths, _ := filepath.Glob("testdata/*.html")
-	var names []string
+	names := make([]string, 0, len(paths))
 	for _, p := range paths {
 		names = append(names, filepath.Base(p))
 	}
-	var recorded []string
+	recorded := make([]string, 0, len(golden))
 	for name := range golden {
 		recorded = append(recorded, name)
 	}

@@ -52,6 +52,10 @@ type androidAdapter struct{ c *stores.AndroidClient }
 
 func defaultNewAndroid(_ context.Context, cfg *config.Config) (StoreClient, error) {
 	o := stores.AndroidOptionsFromConfig(cfg)
+	// orchestration.py passed user_agent=config.USER_AGENT to the scraper.
+	if cfg.UserAgent != "" {
+		o.UserAgent = cfg.UserAgent
+	}
 	return NewAndroidAdapter(stores.NewAndroidClient(o)), nil
 }
 
