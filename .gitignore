@@ -40,3 +40,7 @@ Lens Updates/
 .vscode/
 *.swp
 .DS_Store
+
+# Python reference tree (removed at the end of the Go rewrite)
+__pycache__/
+*.pyc
