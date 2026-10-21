@@ -116,36 +116,64 @@ trademark rights: a fork or derivative work must replace these assets with
 its own branding.
 
 
-6. Python dependencies — not bundled
-------------------------------------
-
-Runtime and development dependencies are declared in requirements.txt and
-installed from PyPI at build time. They are not redistributed here. Each
-carries its own licence, principally Apache-2.0, BSD and MIT:
-
-  aiohttp, cryptography, fastapi, itsdangerous, jinja2, openai, openpyxl,
-  pandas, python-multipart, uvicorn,
-  and for development: httpx, pytest, pytest-asyncio, ruff
-
-Review the licences of your resolved dependency tree before redistributing a
-built artifact.
-
-
-7. python-dotenv — bundled (vendored source)
+6. Go modules — compiled into the lens binary
 --------------------------------------------
 
-_vendor/dotenv/ is a trimmed copy of python-dotenv 1.2.3
-(https://github.com/theskumar/python-dotenv), used to read .env files:
+Lens is built from source (`make build`) into a single static binary. The
+module sources are fetched from the Go module proxy at build time and are not
+redistributed in this repository, but a built bin/lens contains the
+following, each under its own licence (go.mod / go.sum pin the versions;
+`go version -m bin/lens` lists exactly what a given binary links):
+
+  golang.org/x/net, golang.org/x/text, golang.org/x/sys      BSD-3-Clause
+                                              (Copyright The Go Authors)
+  modernc.org/sqlite, modernc.org/libc, modernc.org/mathutil,
+  modernc.org/memory                                          BSD-3-Clause
+  github.com/google/uuid, github.com/remyoudompheng/bigfft    BSD-3-Clause
+  github.com/dustin/go-humanize                               MIT
+
+modernc.org/sqlite is the SQLite C library (public domain) translated to Go,
+and modernc.org/libc carries code derived from musl libc (MIT) and the Go
+standard library (BSD-3-Clause); both modules ship a LICENSE-3RD-PARTY.md
+with the full notices. The Go standard library and runtime linked into every
+Go binary are BSD-3-Clause (Copyright The Go Authors).
+
+Anyone redistributing a built binary must carry these notices with it.
+
+
+7. python-dotenv — ported (internal/dotenv)
+-------------------------------------------
+
+internal/dotenv/ is a Go port of python-dotenv 1.2.3
+(https://github.com/theskumar/python-dotenv) — its parser, ${VAR}
+interpolation and the parts of main.py Lens uses — together with test cases
+ported from its test suite. It reads .env files with exactly the grammar the
+Python release used:
 
   Copyright (c) 2014, Saurabh Kumar (python-dotenv), 2013, Ted Tieken
   (django-dotenv-rw), 2013, Jacob Kaplan-Moss (django-dotenv)
-  BSD-3-Clause — full text in _vendor/dotenv/LICENSE
+  BSD-3-Clause — full text in internal/dotenv/LICENSE
 
-The ported upstream tests (tests/test_vendored_dotenv_*.py) are under the same
-licence.
+The ported files say so in their headers and remain under that licence as
+well.
 
 
-8. Sample data — synthetic
+8. CPython html.parser — ported (internal/htmldom)
+--------------------------------------------------
+
+internal/htmldom/parser.go is a port of the tokenizer in CPython 3.12's
+html.parser module, and internal/htmldom/entities.go is generated from
+CPython's html.entities.html5 table (the WHATWG named character references).
+
+  Copyright (c) 2001 Python Software Foundation; All Rights Reserved.
+  Python Software Foundation License Version 2
+  https://docs.python.org/3/license.html
+
+The tree it builds reproduces the behaviour of Beautiful Soup 4.15.0's
+html.parser tree builder (MIT); no Beautiful Soup code is included.
+
+
+9. Sample data — synthetic
 --------------------------
 
 The fixtures in test-input/ are synthetic. App names, publisher names, SSP

@@ -131,10 +131,12 @@ terms as the rest of the file you are editing. Opening a pull request means you
 have the right to contribute the code and agree to it being released this way.
 New source files get:
 
-```python
-# SPDX-License-Identifier: BUSL-1.1
-# Copyright (c) 2026 ElcanoTek, Inc.
+```go
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 ElcanoTek, Inc.
 ```
+
+(`#` comments in shell scripts and the Makefile.)
 
 See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
@@ -142,8 +144,9 @@ See [`CONTRIBUTING.md`](../CONTRIBUTING.md).
 
 Lens ships reference data from IAB Tech Lab and IANA, and bundles Nebula Sans
 (SIL OFL 1.1) as its interface typeface and Hack (MIT) as its monospace face.
-It also vendors a trimmed copy of python-dotenv (BSD-3-Clause) under
-`_vendor/dotenv/`. None of that is covered by this licence — see [`NOTICE`](../NOTICE).
+Its `.env` parser, `internal/dotenv/`, is a Go port of python-dotenv
+(BSD-3-Clause), and the compiled binary links a few Go modules under BSD and
+MIT terms. None of that is covered by this licence — see [`NOTICE`](../NOTICE).
 
 The bundled IAB Tech Lab Content Taxonomy 3.1 is licensed under CC BY 3.0,
 which is permissive and **not copyleft** — it imposes no share-alike
