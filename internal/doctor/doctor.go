@@ -224,7 +224,7 @@ type envReport struct {
 // booleans; values never leave this function except the two database paths,
 // which are locations, not secrets.
 func inspectEnv(path string) (*envReport, error) {
-	pairs, err := dotenv.ReadFile(path)
+	pairs, err := dotenv.ValuesFile(path, false)
 	if err != nil {
 		return nil, err
 	}

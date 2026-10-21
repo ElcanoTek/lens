@@ -141,7 +141,7 @@ func (c *CLI) envEdit() int {
 }
 
 func (c *CLI) envDump0(path string) int {
-	pairs, err := dotenv.ReadFile(path)
+	pairs, err := dotenv.ValuesFile(path, false)
 	if err != nil {
 		fmt.Fprintf(c.Stderr, "lens env dump0: %v\n", err)
 		return 1
