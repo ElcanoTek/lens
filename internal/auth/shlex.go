@@ -89,9 +89,9 @@ func shlexSplit(s string) ([]string, error) {
 	}
 	switch state {
 	case stateSingle, stateDouble:
-		return nil, errors.New("No closing quotation") //nolint:staticcheck,revive // Python's shlex message
+		return nil, errors.New("No closing quotation") //nolint:staticcheck // Python's shlex message
 	case stateEscape:
-		return nil, errors.New("No escaped character") //nolint:staticcheck,revive // Python's shlex message
+		return nil, errors.New("No escaped character") //nolint:staticcheck // Python's shlex message
 	}
 	flush()
 	return tokens, nil

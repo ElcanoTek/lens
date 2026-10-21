@@ -87,8 +87,20 @@ func hasLoneSurrogateEscape(doc []byte) bool {
 		if len(b) < 4 {
 			return 0, false
 		}
-		v, err := strconv.ParseUint(string(b[:4]), 16, 32)
-		return rune(v), err == nil
+		var v rune
+		for _, c := range b[:4] {
+			switch {
+			case c >= '0' && c <= '9':
+				v = v<<4 | rune(c-'0')
+			case c >= 'a' && c <= 'f':
+				v = v<<4 | rune(c-'a'+10)
+			case c >= 'A' && c <= 'F':
+				v = v<<4 | rune(c-'A'+10)
+			default:
+				return 0, false
+			}
+		}
+		return v, true
 	}
 	for i := 0; i < len(doc); i++ {
 		if doc[i] != '\\' {

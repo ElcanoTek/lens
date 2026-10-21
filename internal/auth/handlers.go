@@ -136,7 +136,7 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Referrer-Policy", "no-referrer")
 	central.SetSessionCookie(w, token)
-	http.Redirect(w, r, destination, http.StatusSeeOther)
+	http.Redirect(w, r, destination, http.StatusSeeOther) //nolint:gosec // G710: destination went through SafeLocalPath (same-origin path only)
 }
 
 // CheckBackchannelBody applies the back-channel size rules before anything
@@ -186,6 +186,7 @@ func (h *Handlers) BackchannelLogout(w http.ResponseWriter, r *http.Request) {
 		h.fail(w, r, http.StatusNotFound, "Not Found")
 		return
 	}
+	//nolint:gosec // G120: CheckBackchannelBody wrapped the body in http.MaxBytesReader above
 	if err := r.ParseMultipartForm(MaxBackchannelBodyBytes); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 		var tooLarge *http.MaxBytesError
 		if errors.As(err, &tooLarge) {
@@ -243,9 +244,10 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	switch prov := p.(type) {
 	case *ElcanoProvider:
-		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther)
+		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther) //nolint:gosec // G710: the configured AUTH_LOGIN_URL, not request input
 	case *CentralProvider:
 		r.Body = http.MaxBytesReader(w, r.Body, maxLogoutFormBytes)
+		//nolint:gosec // G120: the body is wrapped in http.MaxBytesReader on the line above
 		if err := r.ParseMultipartForm(maxLogoutFormBytes); err != nil && !errors.Is(err, http.ErrNotMultipart) {
 			h.fail(w, r, http.StatusForbidden, "Forbidden")
 			return
@@ -263,7 +265,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 			prov.Transactions.Clear(w)
 		}
 		prov.ClearSessionCookie(w)
-		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther)
+		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
 	default:
 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
 	}

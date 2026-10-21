@@ -353,3 +353,14 @@ func TestEmptyListAndDefaultFleetHost(t *testing.T) {
 		t.Fatal(out.String())
 	}
 }
+
+func TestDBPathDefaultsToTheStateDirectory(t *testing.T) {
+	t.Setenv("LENS_API_TOKEN_DB", "/srv/tokens.db")
+	if DBPath() != "/srv/tokens.db" {
+		t.Fatal(DBPath())
+	}
+	_ = os.Unsetenv("LENS_API_TOKEN_DB")
+	if DBPath() != DefaultDBPath || DefaultDBPath != "/var/lib/lens/api_tokens.db" {
+		t.Fatal(DBPath())
+	}
+}

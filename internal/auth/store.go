@@ -114,14 +114,14 @@ type Store struct {
 // OpenStore opens (creating and migrating if needed) the access database.
 func OpenStore(ctx context.Context, path string, idleSeconds, absoluteSeconds int64) (*Store, error) {
 	if idleSeconds <= 0 || absoluteSeconds <= 0 || idleSeconds > absoluteSeconds {
-		return nil, errors.New("Invalid session timeouts") //nolint:staticcheck,revive // message kept verbatim from the Python release
+		return nil, errors.New("Invalid session timeouts") //nolint:staticcheck // message kept verbatim from the Python release
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, err
 	}
 	// Create the file owner-only before SQLite opens it: no window in which
 	// the session database is world-readable.
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600) //nolint:gosec // G304: operator-configured LENS_ACCESS_DB
 	if err != nil {
 		return nil, err
 	}

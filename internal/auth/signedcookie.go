@@ -57,6 +57,7 @@ func (c *SignedCookie) Set(w http.ResponseWriter, value any) error {
 		return err
 	}
 	body := base64.RawURLEncoding.EncodeToString(data) + "." + strconv.FormatInt(c.now().Unix(), 10)
+	//nolint:gosec // G124: Secure follows LENS_AUTH_COOKIE_SECURE (off only for plain-HTTP development)
 	http.SetCookie(w, &http.Cookie{
 		Name:     c.Name,
 		Value:    body + "." + c.sign(body),
@@ -112,6 +113,7 @@ func (c *SignedCookie) Present(r *http.Request) bool {
 
 // Clear expires the cookie in the browser.
 func (c *SignedCookie) Clear(w http.ResponseWriter) {
+	//nolint:gosec // G124: see Set
 	http.SetCookie(w, &http.Cookie{
 		Name:     c.Name,
 		Value:    "",

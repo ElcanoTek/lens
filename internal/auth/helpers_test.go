@@ -8,9 +8,19 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"io"
+	"log/slog"
+	"os"
 	"strings"
 	"testing"
+
+	"github.com/ElcanoTek/lens/internal/logx"
 )
+
+func TestMain(m *testing.M) {
+	logx.SetOutput(io.Discard, slog.LevelError)
+	os.Exit(m.Run())
+}
 
 type signer struct {
 	priv ed25519.PrivateKey

@@ -47,6 +47,7 @@ func StaticSigningKeys(getenv func(string) (string, bool)) []string {
 func RequireStaticSigningKeys(getenv func(string) (string, bool)) ([]string, error) {
 	keys := StaticSigningKeys(getenv)
 	if len(keys) == 0 {
+		//nolint:staticcheck // operator-facing sentence, kept verbatim from the Python release
 		return nil, errors.New("AUTH_SIGNING_PUBKEY is required in central mode: run `auth pubkey` on the auth host. " +
 			"Rotation keys are fetched from Auth's /jwks.json at runtime, but one static key " +
 			"is needed so verification works even when Auth is unreachable at startup.")
@@ -75,12 +76,13 @@ func HTTPJWKSFetcher(client *http.Client) JWKSFetcher {
 	return func(ctx context.Context, url string) ([]byte, error) {
 		ctx, cancel := context.WithTimeout(ctx, jwksTimeout)
 		defer cancel()
+		//nolint:gosec // G704: url is the operator-configured Auth origin's /jwks.json, never request input
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Accept", "application/json")
-		resp, err := client.Do(req)
+		resp, err := client.Do(req) //nolint:gosec // G704: see above; redirects are never followed
 		if err != nil {
 			return nil, err
 		}

@@ -370,7 +370,7 @@ func staticResolver(keys ...string) *KeyResolver {
 
 func jwksFor(t *testing.T, publicKeysB64 ...string) []byte {
 	t.Helper()
-	keys := []map[string]string{}
+	keys := make([]map[string]string, 0, len(publicKeysB64))
 	for _, encoded := range publicKeysB64 {
 		raw, _ := base64.StdEncoding.DecodeString(encoded)
 		keys = append(keys, map[string]string{
@@ -380,13 +380,9 @@ func jwksFor(t *testing.T, publicKeysB64 ...string) []byte {
 	return mustJSON(t, map[string]any{"keys": keys})
 }
 
-func liveIDToken(t *testing.T, s signer, issuer string, overrides map[string]any) string {
+func liveIDToken(t *testing.T, s signer, issuer string) string {
 	now := time.Now().Unix()
-	claims := map[string]any{"iss": issuer, "iat": now, "exp": now + 300}
-	for k, v := range overrides {
-		claims[k] = v
-	}
-	return s.idToken(t, nil, claims)
+	return s.idToken(t, nil, map[string]any{"iss": issuer, "iat": now, "exp": now + 300})
 }
 
 func TestCodeExchangeUsesBasicPKCEAndValidatesIdentity(t *testing.T) {
@@ -394,7 +390,7 @@ func TestCodeExchangeUsesBasicPKCEAndValidatesIdentity(t *testing.T) {
 	key := newSigner(t)
 	issuer.answer(map[string]any{
 		"sub": "account-123", "email": "Alice@Example.com", "nonce": "expected-nonce",
-		"id_token": liveIDToken(t, key, issuer.server.URL, nil),
+		"id_token": liveIDToken(t, key, issuer.server.URL),
 	})
 	principal, err := issuer.client(t).Exchange(context.Background(), "single-use-code", "pkce-verifier", "expected-nonce", staticResolver(key.pubB64()))
 	if err != nil || principal.Email != "alice@example.com" {
@@ -822,7 +818,7 @@ func TestCodeExchangeTrustsOnlyTheSignedClaims(t *testing.T) {
 	key := newSigner(t)
 	unsigned := map[string]any{"sub": "account-999", "email": "mallory@example.com", "nonce": "expected-nonce",
 		"iss": issuer.server.URL, "aud": "lens", "exp": time.Now().Unix() + 300}
-	withToken := map[string]any{"id_token": liveIDToken(t, key, issuer.server.URL, nil)}
+	withToken := map[string]any{"id_token": liveIDToken(t, key, issuer.server.URL)}
 	for k, v := range unsigned {
 		withToken[k] = v
 	}
@@ -844,7 +840,7 @@ func TestCodeExchangeTrustsOnlyTheSignedClaims(t *testing.T) {
 func TestCodeExchangeRefusesAnIDTokenSignedByAnotherKey(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	configured := newSigner(t)
-	issuer.answer(map[string]any{"id_token": liveIDToken(t, newSigner(t), issuer.server.URL, nil)})
+	issuer.answer(map[string]any{"id_token": liveIDToken(t, newSigner(t), issuer.server.URL)})
 	if _, err := issuer.client(t).Exchange(context.Background(), "c", "v", "expected-nonce", staticResolver(configured.pubB64())); !isCentral(err) {
 		t.Fatalf("forged: %v", err)
 	}
@@ -853,7 +849,7 @@ func TestCodeExchangeRefusesAnIDTokenSignedByAnotherKey(t *testing.T) {
 func TestCodeExchangeAcceptsAKeyOnlyPublishedInJWKS(t *testing.T) {
 	issuer := newFakeIssuer(t)
 	static, rotated := newSigner(t), newSigner(t)
-	issuer.answer(map[string]any{"id_token": liveIDToken(t, rotated, issuer.server.URL, nil)})
+	issuer.answer(map[string]any{"id_token": liveIDToken(t, rotated, issuer.server.URL)})
 	issuer.jwks = func() ([]byte, int) { return jwksFor(t, static.pubB64(), rotated.pubB64()), http.StatusOK }
 	client := issuer.client(t)
 	resolver := NewKeyResolver(client.IssuerURL, []string{static.pubB64()}, nil, nil)
@@ -1025,7 +1021,7 @@ func TestNormalizeEmail(t *testing.T) {
 			t.Errorf("NormalizeEmail(%q) = %v", bad, err)
 		}
 	}
-	for _, bad := range []string{"al​ice@example.com", "a\x01@example.com", "a@exa͸mple.com"} {
+	for _, bad := range []string{"al\u200bice@example.com", "a\x01@example.com", "a@exa\u0378mple.com"} {
 		if _, err := NormalizeEmail(bad); !errors.Is(err, ErrEmailControlChars) {
 			t.Errorf("NormalizeEmail(%q) = %v", bad, err)
 		}
@@ -1040,5 +1036,14 @@ func TestCSRFTokenIsDerivedFromTheSession(t *testing.T) {
 	}
 	if CSRFTokenForSession("") != "" || CSRFTokenForSession("é") != "" {
 		t.Fatal("csrf for unusable tokens")
+	}
+}
+
+func TestRuntimeDefaultsToTheExternalStateDirectory(t *testing.T) {
+	if got := AccessDBPath(envMap(map[string]string{})); got != "/var/lib/lens/access.db" {
+		t.Fatalf("default %q", got)
+	}
+	if got := AccessDBPath(envMap(map[string]string{"LENS_ACCESS_DB": "/srv/x.db"})); got != "/srv/x.db" {
+		t.Fatalf("override %q", got)
 	}
 }

@@ -121,7 +121,13 @@ func newLensApp(t *testing.T, mode string) *lensApp {
 	return app
 }
 
-func (a *lensApp) do(req *http.Request) (*http.Response, string) {
+// reply is a response whose body has been read and closed.
+type reply struct {
+	StatusCode int
+	Header     http.Header
+}
+
+func (a *lensApp) do(req *http.Request) (reply, string) {
 	a.t.Helper()
 	resp, err := a.client.Do(req)
 	if err != nil {
@@ -129,15 +135,15 @@ func (a *lensApp) do(req *http.Request) (*http.Response, string) {
 	}
 	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
-	return resp, string(body)
+	return reply{StatusCode: resp.StatusCode, Header: resp.Header}, string(body)
 }
 
-func (a *lensApp) get(path string) (*http.Response, string) {
+func (a *lensApp) get(path string) (reply, string) {
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, a.server.URL+path, nil)
 	return a.do(req)
 }
 
-func (a *lensApp) postForm(path string, form url.Values) (*http.Response, string) {
+func (a *lensApp) postForm(path string, form url.Values) (reply, string) {
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodPost, a.server.URL+path, strings.NewReader(form.Encode()))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	return a.do(req)
@@ -159,7 +165,7 @@ func (a *lensApp) clearCookies() {
 }
 
 // signIn runs /auth/login then /auth/callback for code.
-func (a *lensApp) signIn(code string) (*http.Response, string, *http.Response) {
+func (a *lensApp) signIn(code string) (reply, string, reply) {
 	start, _ := a.get("/auth/login")
 	if start.StatusCode != http.StatusSeeOther {
 		a.t.Fatalf("login status %d", start.StatusCode)

@@ -13,11 +13,11 @@ import (
 // ErrInvalidEmail is returned by NormalizeEmail for anything that is not a
 // plausible single address. Its message is what operators see from
 // `lens access`.
-var ErrInvalidEmail = errors.New("A valid email address is required") //nolint:staticcheck,revive // operator-facing sentence, kept verbatim from the Python release
+var ErrInvalidEmail = errors.New("A valid email address is required") //nolint:staticcheck // operator-facing sentence, kept verbatim from the Python release
 
 // ErrEmailControlChars rejects addresses carrying control, format, private
 // use or unassigned code points.
-var ErrEmailControlChars = errors.New("Email contains unsupported control characters") //nolint:staticcheck,revive // operator-facing sentence, kept verbatim from the Python release
+var ErrEmailControlChars = errors.New("Email contains unsupported control characters") //nolint:staticcheck // operator-facing sentence, kept verbatim from the Python release
 
 type runeRange struct {
 	lo, hi rune
@@ -125,7 +125,7 @@ func compose(a, b rune) (rune, bool) {
 		b > hangulTBase && b < hangulTBase+hangulTCount {
 		return a + (b - hangulTBase), true
 	}
-	c, ok := nfcPairs[uint64(a)<<21|uint64(b)]
+	c, ok := nfcPairs[uint64(a)<<21|uint64(b)] //nolint:gosec // G115: runes decoded from a string are in [0, 0x10FFFF]
 	return c, ok
 }
 

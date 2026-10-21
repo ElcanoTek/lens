@@ -172,7 +172,7 @@ func (p *CentralProvider) BeginLogin(w http.ResponseWriter, r *http.Request, nex
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, p.Client.AuthorizationURL(state, challenge, nonce), http.StatusSeeOther)
+	http.Redirect(w, r, p.Client.AuthorizationURL(state, challenge, nonce), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
 }
 
 // CompleteLogin consumes the login transaction (the lens_ui cookie is cleared
@@ -212,6 +212,7 @@ func (p *CentralProvider) CompleteLogin(ctx context.Context, w http.ResponseWrit
 // SetSessionCookie sets the Lens session cookie (a browser-session cookie:
 // no Max-Age; the server enforces the timeouts).
 func (p *CentralProvider) SetSessionCookie(w http.ResponseWriter, token string) {
+	//nolint:gosec // G124: Secure follows LENS_AUTH_COOKIE_SECURE, which central mode only lets go with AUTH_ALLOW_INSECURE_HTTP
 	http.SetCookie(w, &http.Cookie{
 		Name: p.CookieName, Value: token, Path: "/",
 		Secure: p.CookieSecure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
@@ -220,6 +221,7 @@ func (p *CentralProvider) SetSessionCookie(w http.ResponseWriter, token string) 
 
 // ClearSessionCookie expires the Lens session cookie.
 func (p *CentralProvider) ClearSessionCookie(w http.ResponseWriter) {
+	//nolint:gosec // G124: see SetSessionCookie
 	http.SetCookie(w, &http.Cookie{
 		Name: p.CookieName, Value: "", Path: "/", MaxAge: -1, Expires: time.Unix(0, 0),
 		Secure: p.CookieSecure, HttpOnly: true, SameSite: http.SameSiteLaxMode,
@@ -303,7 +305,7 @@ func NewCentralProviderFromEnv(ctx context.Context, getenv func(string) (string,
 	secure := CookieSecure(getenv)
 	insecure, _ := getenv("AUTH_ALLOW_INSECURE_HTTP")
 	if !secure && !truthy(insecure) {
-		return nil, errors.New("Central auth requires a Secure Lens cookie") //nolint:staticcheck,revive // message kept verbatim from the Python release
+		return nil, errors.New("Central auth requires a Secure Lens cookie") //nolint:staticcheck // message kept verbatim from the Python release
 	}
 	secret, _ := getenv("LENS_SESSION_SECRET")
 	if len(secret) < 32 {

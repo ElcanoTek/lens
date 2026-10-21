@@ -263,7 +263,7 @@ func parseScopes(stored string) []string {
 	return out
 }
 
-const tokenColumns = "id, label, prefix, scopes, created_at, last_used_at, revoked_at"
+const selectColumns = "id, label, prefix, scopes, created_at, last_used_at, revoked_at"
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -312,7 +312,7 @@ func (s *Store) Create(ctx context.Context, label string, scopes []string) (*Tok
 	if err != nil {
 		return nil, "", err
 	}
-	token, err := scanToken(db.QueryRowContext(ctx, "SELECT "+tokenColumns+" FROM api_tokens WHERE id = ?", id))
+	token, err := scanToken(db.QueryRowContext(ctx, "SELECT "+selectColumns+" FROM api_tokens WHERE id = ?", id))
 	if err != nil {
 		return nil, "", err
 	}
@@ -325,7 +325,7 @@ func (s *Store) List(ctx context.Context) ([]*Token, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, "SELECT "+tokenColumns+" FROM api_tokens ORDER BY id")
+	rows, err := db.QueryContext(ctx, "SELECT "+selectColumns+" FROM api_tokens ORDER BY id")
 	if err != nil {
 		return nil, err
 	}
@@ -362,7 +362,7 @@ func (s *Store) activeByID(ctx context.Context, id int64) (*Token, error) {
 		return nil, err
 	}
 	token, err := scanToken(db.QueryRowContext(ctx,
-		"SELECT "+tokenColumns+" FROM api_tokens WHERE id = ? AND revoked_at IS NULL", id))
+		"SELECT "+selectColumns+" FROM api_tokens WHERE id = ? AND revoked_at IS NULL", id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
@@ -389,7 +389,7 @@ func (s *Store) Verify(ctx context.Context, raw string) (*Token, error) {
 		return nil, err
 	}
 	token, err := scanToken(db.QueryRowContext(ctx,
-		"SELECT "+tokenColumns+" FROM api_tokens WHERE token_hash = ?", hashToken(raw)))
+		"SELECT "+selectColumns+" FROM api_tokens WHERE token_hash = ?", hashToken(raw)))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, tokenError("Invalid API token")
 	}

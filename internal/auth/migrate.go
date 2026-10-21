@@ -398,24 +398,25 @@ func MigrateAccessDBMain(args []string) int {
 func migrateMain(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	const usage = "usage: lens migrate-access-db [-h] --legacy LEGACY --target TARGET --env-file ENV_FILE --owner OWNER\n"
 	values := map[string]string{}
-	for i := 0; i < len(args); i++ {
-		name, value, hasValue := strings.Cut(args[i], "=")
+	for rest := args; len(rest) > 0; {
+		arg := rest[0]
+		rest = rest[1:]
+		name, value, hasValue := strings.Cut(arg, "=")
 		switch name {
 		case "-h", "--help":
 			_, _ = fmt.Fprint(stdout, usage+"\nSafely move Lens's persistent access database out of the release tree.\n")
 			return 0
 		case "--legacy", "--target", "--env-file", "--owner":
 			if !hasValue {
-				if i+1 >= len(args) {
+				if len(rest) == 0 {
 					_, _ = fmt.Fprintf(stderr, "%slens migrate-access-db: error: argument %s: expected one argument\n", usage, name)
 					return 2
 				}
-				i++
-				value = args[i]
+				value, rest = rest[0], rest[1:]
 			}
 			values[name] = value
 		default:
-			_, _ = fmt.Fprintf(stderr, "%slens migrate-access-db: error: unrecognized arguments: %s\n", usage, args[i])
+			_, _ = fmt.Fprintf(stderr, "%slens migrate-access-db: error: unrecognized arguments: %s\n", usage, arg)
 			return 2
 		}
 	}

@@ -49,8 +49,9 @@ type createArgs struct {
 
 func parseCreate(args []string) (createArgs, string, bool) {
 	var out createArgs
-	for i := 0; i < len(args); i++ {
-		arg := args[i]
+	for len(args) > 0 {
+		arg := args[0]
+		args = args[1:]
 		name, value, hasValue := strings.Cut(arg, "=")
 		switch name {
 		case "-h", "--help":
@@ -62,11 +63,10 @@ func parseCreate(args []string) (createArgs, string, bool) {
 			out.json = true
 		case "--label", "--scope":
 			if !hasValue {
-				if i+1 >= len(args) {
+				if len(args) == 0 {
 					return out, "argument " + name + ": expected one argument", false
 				}
-				i++
-				value = args[i]
+				value, args = args[0], args[1:]
 			}
 			if name == "--label" {
 				out.label, out.hasLabel = value, true

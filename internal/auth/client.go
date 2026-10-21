@@ -139,6 +139,7 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, expectedNonce str
 	)
 	ctx, cancel := context.WithTimeout(ctx, tokenExchangeTimeout)
 	defer cancel()
+	//nolint:gosec // G704: IssuerURL is the validated, operator-configured Auth origin
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.IssuerURL+"/token", strings.NewReader(body))
 	if err != nil {
 		return AuthenticatedPrincipal{}, rejected
@@ -152,7 +153,7 @@ func (c *Client) Exchange(ctx context.Context, code, verifier, expectedNonce str
 	if httpClient == nil {
 		httpClient = noRedirectClient()
 	}
-	resp, err := httpClient.Do(req)
+	resp, err := httpClient.Do(req) //nolint:gosec // G704: see above; redirects are never followed
 	if err != nil {
 		// The transport error names only the /token URL, never the secret,
 		// but it stays out of the message anyway.
