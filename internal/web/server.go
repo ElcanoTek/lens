@@ -32,12 +32,16 @@ import (
 	"time"
 
 	lens "github.com/ElcanoTek/lens"
+	"github.com/ElcanoTek/lens/internal/api"
+	"github.com/ElcanoTek/lens/internal/apitoken"
 	"github.com/ElcanoTek/lens/internal/catalog"
 	"github.com/ElcanoTek/lens/internal/categories"
 	"github.com/ElcanoTek/lens/internal/config"
+	"github.com/ElcanoTek/lens/internal/detect"
 	"github.com/ElcanoTek/lens/internal/dotenv"
 	"github.com/ElcanoTek/lens/internal/jobs"
 	"github.com/ElcanoTek/lens/internal/logx"
+	"github.com/ElcanoTek/lens/internal/mcp"
 )
 
 var logger = logx.New("lens.web")
@@ -63,9 +67,19 @@ type Mount struct {
 // and Dirs), e.g. the /api/v1 and /mcp handlers.
 type MountFunc func(s *Server) ([]Mount, error)
 
-// DefaultMounts are applied by Main; the binary registers the API and MCP
-// handlers here (they live in packages that must not import this one).
-var DefaultMounts []MountFunc
+// APIMounts serves the programmatic surfaces next to the dashboard:
+// /api/v1/... (full paths, no prefix stripping) and POST /mcp. They use
+// scoped bearer tokens, never the browser session, and cap their own
+// bodies, so only the header policy applies to them. src must be the same
+// catalog source the dashboard uses, so both validate picks alike.
+func APIMounts(src *catalog.Source, cfg *config.Config) MountFunc {
+	return func(s *Server) ([]Mount, error) {
+		a := api.New(api.Deps{
+			Manager: s.Manager(), Tokens: apitoken.NewStore(apitoken.DBPath()), Catalog: src, Config: cfg,
+		})
+		return []Mount{{Pattern: "/api/v1/", Handler: a.Routes()}, {Pattern: "/mcp", Handler: mcp.New(a)}}, nil
+	}
+}
 
 // Options configure New. Zero values mean "from the environment".
 type Options struct {
@@ -166,7 +180,7 @@ func New(opts Options) (*Server, error) {
 	}
 	provider := opts.Auth
 	if provider == nil {
-		p, err := ProviderFromEnv(getenv)
+		p, err := ProviderFromEnv(context.Background(), getenv)
 		if err != nil {
 			return nil, err
 		}
@@ -176,6 +190,9 @@ func New(opts Options) (*Server, error) {
 	if cat == nil {
 		key, _ := getenv("OPENROUTER_API_KEY")
 		cat = catalog.NewSource(strings.TrimSpace(key))
+	}
+	if jobs.ComputeBreakdown == nil {
+		jobs.ComputeBreakdown = detect.Breakdown
 	}
 	manager := opts.Manager
 	if manager == nil {
@@ -266,10 +283,11 @@ func (s *Server) routes(staticFS fs.FS) {
 	post := func(h http.HandlerFunc) methods { return methods{http.MethodPost: h} }
 
 	mux.Handle("/{$}", get(s.handleIndex))
-	mux.Handle("/logout", post(s.handleLogout))
+	mux.Handle("/logout", post(func(w http.ResponseWriter, r *http.Request) { s.auth.Logout(w, r) }))
 	mux.Handle("/signed-out", get(s.handleSignedOut))
-	mux.Handle("/login", get(s.handleLogin))
-	mux.Handle("/auth/login", get(s.handleLogin))
+	login := get(func(w http.ResponseWriter, r *http.Request) { s.auth.Login(w, r) })
+	mux.Handle("/login", login)
+	mux.Handle("/auth/login", login)
 	mux.Handle("/auth/callback", get(func(w http.ResponseWriter, r *http.Request) { s.auth.Callback(w, r) }))
 	mux.Handle("/auth/backchannel-logout", post(func(w http.ResponseWriter, r *http.Request) { s.auth.BackchannelLogout(w, r) }))
 	mux.Handle("/jobs", post(s.handleEnqueue))
@@ -335,7 +353,18 @@ func serve(args []string, stderr io.Writer, ready func(addr string)) int {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 
-	s, err := New(Options{Mounts: DefaultMounts})
+	home, err := HomeFromEnv(os.LookupEnv)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "lens serve: %v\n", err)
+		return 1
+	}
+	key, _ := os.LookupEnv("OPENROUTER_API_KEY")
+	src := catalog.NewSource(strings.TrimSpace(key))
+	cfg := config.Load(filepath.Join(home, "config.json"))
+	for _, w := range cfg.Warnings {
+		logger.Warn(w)
+	}
+	s, err := New(Options{Home: home, Catalog: src, Mounts: []MountFunc{APIMounts(src, cfg)}})
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "lens serve: %v\n", err)
 		return 1

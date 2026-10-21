@@ -832,14 +832,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 
 // ---- sign-in --------------------------------------------------------------
 
-func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
-	if _, err := parseForm(w, r); err != nil {
-		writeDetail(w, http.StatusBadRequest, "")
-		return
-	}
-	s.auth.Logout(w, r)
-}
-
 // handleSignedOut is deliberately public and identity-free. Redirecting
 // back to / would start central SSO immediately while the Auth cookie is
 // still valid, making the local logout appear ineffective, so the page also
@@ -849,18 +841,6 @@ func (s *Server) handleSignedOut(w http.ResponseWriter, r *http.Request) {
 		Nonce      string
 		AccountURL string
 	}{Nonce(r), s.auth.AccountURL()})
-}
-
-func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
-	if s.auth.Authenticated(r) {
-		seeOther(w, "/")
-		return
-	}
-	next := queryLast(r, "next")
-	if next == "" {
-		next = "/"
-	}
-	s.auth.BeginLogin(w, r, next)
 }
 
 // ---- helpers shared with the spool ----------------------------------------

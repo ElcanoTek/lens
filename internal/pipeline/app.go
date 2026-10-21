@@ -41,7 +41,7 @@ func (p *AppProcessor) ProcessApp(ctx context.Context, it item.WorkItem) error {
 	case item.AndroidApp:
 		p.ProcessAndroidApp(ctx, it.Identifier)
 	default:
-		return fmt.Errorf("Invalid content type for app processing: %s", it.Type) //nolint:revive,staticcheck // message kept from the Python release
+		return fmt.Errorf("Invalid content type for app processing: %s", it.Type) //nolint:staticcheck // message kept from the Python release
 	}
 	return nil
 }

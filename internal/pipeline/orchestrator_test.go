@@ -342,7 +342,7 @@ func TestOrchestratorResearchPassProcessesFailedWebsites(t *testing.T) {
 }
 
 func TestResearchPassConcurrencyIsIndependentOfCrawlPool(t *testing.T) {
-	var domains []string
+	domains := make([]string, 0, 10)
 	for n := range 10 {
 		domains = append(domains, "site"+string(rune('a'+n))+".com")
 	}
@@ -500,7 +500,7 @@ func TestCSVResumeDefinitionsAndDisabledRunAreIsolated(t *testing.T) {
 		}
 		for _, s := range []*categories.Spec{changed, nil} {
 			err := newRun(s).prepareCustomCategories()
-			if err == nil || !(strings.Contains(err.Error(), "changed") || strings.Contains(err.Error(), "different")) {
+			if err == nil || (!strings.Contains(err.Error(), "changed") && !strings.Contains(err.Error(), "different")) {
 				t.Fatalf("spec %v: err = %v", s, err)
 			}
 		}
@@ -669,7 +669,7 @@ func TestAutoRunLadderDedupesAndFinalizes(t *testing.T) {
 		t.Fatalf("header = %v", header)
 	}
 	byID := map[string]map[string]string{}
-	var order []string
+	order := make([]string, 0, len(rows))
 	for _, r := range rows {
 		byID[r["Domain"]] = r
 		order = append(order, r["Domain"])
@@ -851,7 +851,7 @@ func (c costingFullLLM) ClassifySite(ctx context.Context, in SiteInput) (Classif
 func TestCancelStopsDispatchAndKeepsBookkeeping(t *testing.T) {
 	cfg := testConfig(t)
 	cfg.ConcurrentSessions = 1
-	var domains []string
+	domains := make([]string, 0, 20)
 	for n := range 20 {
 		domains = append(domains, "site"+string(rune('a'+n))+".com")
 	}

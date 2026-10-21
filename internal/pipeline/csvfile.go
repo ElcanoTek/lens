@@ -86,7 +86,7 @@ func (rw *ResultsWriter) WriteRow(rec *Record) error {
 	rw.mu.Lock()
 	defer rw.mu.Unlock()
 	if rw.w == nil {
-		return errors.New("Results writer has not been initialised") //nolint:revive,staticcheck // message kept from the Python release
+		return errors.New("Results writer has not been initialised") //nolint:staticcheck // message kept from the Python release
 	}
 	_, err := rw.w.Write(b.Bytes())
 	return err

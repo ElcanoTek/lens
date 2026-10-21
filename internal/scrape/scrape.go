@@ -421,7 +421,7 @@ func (c *Client) AcquireSession(ctx context.Context) (*Session, error) {
 	sem, closed := c.sem, c.closed
 	c.mu.Unlock()
 	if sem == nil {
-		return nil, errors.New("Session pool has not been initialised") //nolint:staticcheck // message kept from the Python release
+		return nil, errors.New("Session pool has not been initialised")
 	}
 	select {
 	case sem <- struct{}{}:

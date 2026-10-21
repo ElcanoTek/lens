@@ -105,7 +105,7 @@ func copyIfMissing(dst, src string, perm os.FileMode, fallback func() ([]byte, e
 	default:
 		return err
 	}
-	return os.WriteFile(dst, data, perm)
+	return os.WriteFile(dst, data, perm) //nolint:gosec // dst is one of two fixed names in the Lens home
 }
 
 // setupEnvironment scaffolds .env and config.json from their examples (or

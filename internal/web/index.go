@@ -450,8 +450,8 @@ func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time) []runView {
 		runs = append(runs, runView{
 			ID: job.ID, Title: firstNonEmpty(job.Name, job.ID), HasName: job.Name != "",
 			InputFile: job.InputFile, Status: job.Status,
-			IsActive: job.Status == jobs.StatusQueued || job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling,
-			Progress: progressViewFor(dirs, job, now),
+			IsActive:   job.Status == jobs.StatusQueued || job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling,
+			Progress:   progressViewFor(dirs, job, now),
 			OutputFile: firstNonEmpty(job.OutputFile, g.output), ProgressFile: firstNonEmpty(job.ProgressFile, g.progress),
 			LogFile: firstNonEmpty(job.LogFile, g.log), CategoryFile: g.category,
 			CreatedAtISO: job.CreatedAt, CreatedAtDisplay: formatCreatedAt(job.CreatedAt),

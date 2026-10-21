@@ -29,10 +29,11 @@ import (
 
 var logger = logx.New("orchestration")
 
-// Deps builds the external clients. Production code uses [DefaultDeps];
-// tests pass fakes. Every factory is called at most once per pass, with the
-// run's context; a returned value that implements io.Closer is closed when
-// the pass's work is done (the Python AsyncExitStack).
+// Deps builds the external clients. A nil field means the real client
+// built from config.Config (adapters.go); tests pass fakes. Every factory is
+// called at most once per pass, with the run's context; a returned value
+// that implements io.Closer is closed when the run's work is done (the
+// Python AsyncExitStack).
 type Deps struct {
 	NewLLM        func(ctx context.Context, opts LLMOptions) (LLM, error)
 	NewScraper    func(ctx context.Context, opts ScraperOptions) (ScraperBackend, error)
@@ -116,7 +117,7 @@ func New(opts Options) (*Orchestrator, error) {
 		mode = strings.ToLower(cfg.ScrapeMode)
 	}
 	if mode != "auto" && mode != "direct" && mode != "deep" {
-		return nil, fmt.Errorf("Unsupported scrape mode: %s", mode) //nolint:revive,staticcheck // message kept from the Python release
+		return nil, fmt.Errorf("Unsupported scrape mode: %s", mode) //nolint:staticcheck // message kept from the Python release
 	}
 	o := &Orchestrator{
 		cfg:             cfg,
@@ -450,7 +451,7 @@ func (o *Orchestrator) initializeClients(ctx context.Context, stack *closers) er
 
 	logger.Info("Testing OpenRouter API connection...")
 	if !llm.TestConnection(ctx) {
-		return errors.New("Failed to initialise OpenRouter client after retry attempts. " + //nolint:revive,staticcheck // message kept from the Python release
+		return errors.New("Failed to initialise OpenRouter client after retry attempts. " + //nolint:staticcheck // message kept from the Python release
 			"Check network connectivity and OPENROUTER_API_KEY configuration.")
 	}
 
@@ -811,7 +812,7 @@ func (o *Orchestrator) processAllCTV(ctx context.Context, toProcess []item.CTVWo
 	o.llm = llm
 	logger.Info("Testing OpenRouter API connection...")
 	if !llm.TestConnection(ctx) {
-		return errors.New("Failed to initialise OpenRouter client. " + //nolint:revive,staticcheck // message kept from the Python release
+		return errors.New("Failed to initialise OpenRouter client. " + //nolint:staticcheck // message kept from the Python release
 			"Check network connectivity and OPENROUTER_API_KEY configuration.")
 	}
 	logger.Info("CTV clients initialised successfully")

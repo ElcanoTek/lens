@@ -75,7 +75,7 @@ func (a *testAuth) cookie(email string) string {
 }
 
 func (a *testAuth) provider() AuthProvider {
-	return NewElcanoProvider(auth.NewCookieVerifier(a.pub, "elcano_auth", "https://auth.elcanotek.com"))
+	return NewAuthProvider(&auth.ElcanoProvider{Verifier: auth.NewCookieVerifier(a.pub, "elcano_auth", "https://auth.elcanotek.com")})
 }
 
 type harness struct {
@@ -201,3 +201,14 @@ func (h *harness) oldestFirst() []jobs.Job {
 }
 
 func location(resp *http.Response) string { return resp.Header.Get("Location") }
+
+func waitShort() { time.Sleep(20 * time.Millisecond) }
+
+func mustTime(t *testing.T, path string) time.Time {
+	t.Helper()
+	st, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.ModTime()
+}

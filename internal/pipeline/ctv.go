@@ -108,7 +108,7 @@ func (p *CTVProcessor) ProcessCTVApp(ctx context.Context, it item.CTVWorkItem) {
 		}
 		evidence := strings.TrimSpace(r.ResearchContent)
 		if evidence == "" || strings.ToUpper(evidence) == "INSUFFICIENT INFORMATION" {
-			return r, errors.New("No meaningful research evidence available")
+			return r, errors.New("No meaningful research evidence available") //nolint:staticcheck // message kept from the Python release
 		}
 		return r, nil
 	}()

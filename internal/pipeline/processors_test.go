@@ -448,7 +448,7 @@ func TestCTVRateLimitSpacesRequests(t *testing.T) {
 	p.ProcessCTVApp(context.Background(), item.CTVWorkItem{AppName: "A"})
 	p.ProcessCTVApp(context.Background(), item.CTVWorkItem{AppName: "B"})
 	// Four requests; three gaps.
-	if elapsed := time.Now().Sub(start); elapsed < 60e6 {
+	if elapsed := time.Since(start); elapsed < 60e6 {
 		t.Fatalf("requests not spaced: %v", elapsed)
 	}
 }

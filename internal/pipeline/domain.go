@@ -416,7 +416,7 @@ func failedClassification(rec *Record) {
 // OpenRouter spend, then appends the row.
 func writeResult(ctx context.Context, w *ResultsWriter, rec *Record, customCategories bool) error {
 	if w == nil {
-		return errors.New("Results writer has not been initialised") //nolint:revive,staticcheck // message kept from the Python release
+		return errors.New("Results writer has not been initialised") //nolint:staticcheck // message kept from the Python release
 	}
 	if customCategories {
 		rec.SetDefault("Decision_Status", "skipped")

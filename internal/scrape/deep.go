@@ -58,6 +58,14 @@ func (ExecRunner) Run(ctx context.Context, argv []string, env []string) (Command
 	return res, nil
 }
 
+// PodmanAvailable reports whether the podman binary can be found, which is
+// all the deep rung needs from the host (the WebDriver client is in-tree).
+// The auto ladder skips the deep pass when it cannot.
+func PodmanAvailable(binary string) bool {
+	_, err := exec.LookPath(binary)
+	return err == nil
+}
+
 func isNotFound(err error) bool {
 	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
 }
@@ -206,7 +214,7 @@ func (c *Client) isContainerRunning(ctx context.Context) (bool, error) {
 	res, err := c.podman(ctx, "ps", "--format", "{{.Names}}")
 	if err != nil {
 		if isNotFound(err) {
-			return false, fmt.Errorf("Podman executable '%s' not found.", c.opts.PodmanBinary) //nolint:staticcheck // message kept from the Python release
+			return false, fmt.Errorf("Podman executable '%s' not found.", c.opts.PodmanBinary) //nolint:revive,staticcheck // message kept from the Python release
 		}
 		return false, err
 	}

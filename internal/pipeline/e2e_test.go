@@ -130,8 +130,9 @@ func TestEndToEndRunWithRealClients(t *testing.T) {
 	t.Chdir(dir) // no config.json or .env from the developer's tree
 	input := filepath.Join(dir, "url_master.csv")
 	writeFile(t, input, string(sample))
-	var domains []string
-	for _, line := range strings.Split(strings.TrimSpace(strings.ReplaceAll(string(sample), "\r\n", "\n")), "\n")[1:] {
+	lines := strings.Split(strings.TrimSpace(strings.ReplaceAll(string(sample), "\r\n", "\n")), "\n")[1:]
+	domains := make([]string, 0, len(lines))
+	for _, line := range lines {
 		domains = append(domains, strings.SplitN(line, ",", 2)[0])
 	}
 

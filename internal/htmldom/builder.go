@@ -208,7 +208,7 @@ func numericReference(digits string, base int) string {
 	case n < 0:
 		return ""
 	}
-	return string(rune(n)) //nolint:gosec // n is within the Unicode range (checked above)
+	return string(rune(n))
 }
 
 // invalidCodepoints are dropped by html.unescape (control characters and
@@ -236,7 +236,7 @@ func unescapeNumeric(n int64) string {
 	case invalidCodepoint(n):
 		return ""
 	}
-	return string(rune(n))
+	return string(rune(n)) //nolint:gosec // n is within the Unicode range (checked above)
 }
 
 // unescape is Python's html.unescape, which html.parser applies to attribute

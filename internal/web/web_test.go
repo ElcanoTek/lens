@@ -556,12 +556,6 @@ func TestIndexRendersAdvancedModelPicker(t *testing.T) {
 
 func TestIndexRequiresSignIn(t *testing.T) {
 	h := newHarness(t, false)
-	resp, err := http.Get(h.ts.URL + "/?x=1") //nolint:noctx // test
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
-	_ = resp
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	req, _ := http.NewRequest(http.MethodGet, h.ts.URL+"/?x=1", nil) //nolint:noctx // test
 	r, err := anon.Do(req)

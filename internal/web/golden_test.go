@@ -57,13 +57,13 @@ sleep 60
 	}
 	inputs := filepath.Join(home, "managed-files", "inputs")
 	files := map[string]string{
-		"mixed list.csv":      "identifier\nexample.com\nanother-site.org\nhttps://third.io\n284882215\ncom.example.app\n",
-		"quick (2).csv":       "Domain\nexample.com\n",
-		"fail.csv":            "Domain\nexample.com\n",
-		"long.csv":            "example.com\nfoo.com\nbar.com\n",
-		"ctv.csv":             "App Name,Bundle ID\nPlex,com.plexapp.ctv\nRoku,12345\n",
-		"empty-ish.csv":       "notes\nhello world\n",
-		"AT_T ünïcode x.csv":  "Domain\nexample.com\n",
+		"mixed list.csv":     "identifier\nexample.com\nanother-site.org\nhttps://third.io\n284882215\ncom.example.app\n",
+		"quick (2).csv":      "Domain\nexample.com\n",
+		"fail.csv":           "Domain\nexample.com\n",
+		"long.csv":           "example.com\nfoo.com\nbar.com\n",
+		"ctv.csv":            "App Name,Bundle ID\nPlex,com.plexapp.ctv\nRoku,12345\n",
+		"empty-ish.csv":      "notes\nhello world\n",
+		"AT_T ünïcode x.csv": "Domain\nexample.com\n",
 	}
 	ages := []time.Duration{0, 30 * time.Hour, 72 * time.Hour, 10 * time.Minute, 400 * 24 * time.Hour, 50 * time.Hour, 5 * time.Minute}
 	i := 0
@@ -218,8 +218,8 @@ sleep 60
 		return s
 	}
 	for name := range pages {
-		goHTML, _ := os.ReadFile(filepath.Join(state, "go_"+name+".html"))  //nolint:gosec // test output
-		pyHTML, _ := os.ReadFile(filepath.Join(state, "py_"+name+".html"))  //nolint:gosec // test output
+		goHTML, _ := os.ReadFile(filepath.Join(state, "go_"+name+".html")) //nolint:gosec // test output
+		pyHTML, _ := os.ReadFile(filepath.Join(state, "py_"+name+".html")) //nolint:gosec // test output
 		g, p := normalize(string(goHTML)), normalize(string(pyHTML))
 		if g == p {
 			t.Logf("%s: identical (%d bytes)", name, len(g))
