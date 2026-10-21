@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ElcanoTek/lens/internal/cost"
+	"github.com/ElcanoTek/lens/internal/detect"
 	"github.com/ElcanoTek/lens/internal/item"
 	"github.com/ElcanoTek/lens/internal/logx"
 	"github.com/ElcanoTek/lens/internal/progress"
@@ -104,7 +105,7 @@ func (p *CTVProcessor) ProcessCTVApp(ctx context.Context, it item.CTVWorkItem) {
 			return r, err
 		}
 		if !r.Success {
-			return r, errors.New("Research failed: " + orDefault(r.Error, "Unknown error"))
+			return r, errors.New(orDefault(r.Error, "Unknown error"))
 		}
 		evidence := strings.TrimSpace(r.ResearchContent)
 		if evidence == "" || strings.ToUpper(evidence) == "INSUFFICIENT INFORMATION" {
@@ -343,59 +344,6 @@ func TruncateResearch(content string, maxLength int) string {
 	return strings.TrimSpace(string(truncated)) + "..."
 }
 
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
-func isAlnum(s string) bool {
-	if s == "" {
-		return false
-	}
-	for _, r := range s {
-		if !unicode.IsLetter(r) && !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
-}
-
-// DetectCTVPlatform guesses the CTV platform from a bundle ID's shape, or
-// returns "Unknown".
-func DetectCTVPlatform(bundleID string) string {
-	id := strings.TrimSpace(bundleID)
-	if id == "" {
-		return "Unknown"
-	}
-	upper, lower := strings.ToUpper(id), strings.ToLower(id)
-	switch {
-	case isDigits(id): // "54092"
-		return "Roku"
-	case strings.HasPrefix(upper, "B0"): // "B091RFCS5V"
-		return "Fire TV"
-	case strings.HasPrefix(lower, "com."): // "com.foxsports.videogo"
-		return "Android TV"
-	case strings.HasPrefix(lower, "vizio."):
-		return "Vizio"
-	case strings.HasPrefix(lower, "tv."):
-		return "Apple TV"
-	case strings.HasPrefix(upper, "G") && len(id) > 1 && isDigits(id[1:]): // "G00009197740"
-		return "Samsung TV"
-	case strings.HasPrefix(id, "9") && isAlnum(id): // "9wzdncrfjv7w"
-		return "Xbox"
-	case strings.HasSuffix(lower, ".roku"):
-		return "Roku"
-	case strings.HasPrefix(lower, "xbox."):
-		return "Xbox"
-	case strings.HasPrefix(lower, "playstation."):
-		return "PlayStation"
-	}
-	return "Unknown"
-}
+// DetectCTVPlatform guesses the CTV platform from a bundle ID's shape
+// (detect.CTVPlatform), or returns "Unknown".
+func DetectCTVPlatform(bundleID string) string { return detect.CTVPlatform(bundleID) }

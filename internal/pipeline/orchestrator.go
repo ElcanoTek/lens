@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -25,6 +24,7 @@ import (
 	"github.com/ElcanoTek/lens/internal/logx"
 	"github.com/ElcanoTek/lens/internal/progress"
 	"github.com/ElcanoTek/lens/internal/report"
+	"github.com/ElcanoTek/lens/internal/scrape"
 )
 
 var logger = logx.New("orchestration")
@@ -650,8 +650,7 @@ func (o *Orchestrator) deepCrawlAvailable() bool {
 	}
 	// The WebDriver client is in-tree, so podman is the only thing this
 	// host can be missing.
-	_, err := exec.LookPath(orDefault(o.cfg.DeepScrapePodmanBinary, "podman"))
-	return err == nil
+	return scrape.PodmanAvailable(orDefault(o.cfg.DeepScrapePodmanBinary, "podman"))
 }
 
 // isAntibotFailure: a second headless-Chrome pass from the same datacenter

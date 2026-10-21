@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -24,6 +25,7 @@ import (
 	"github.com/ElcanoTek/lens/internal/auth"
 	"github.com/ElcanoTek/lens/internal/catalog"
 	"github.com/ElcanoTek/lens/internal/jobs"
+	"github.com/ElcanoTek/lens/internal/logx"
 )
 
 // fakeCatalog is a pre-seeded model catalog (the Python tests patched
@@ -211,4 +213,9 @@ func mustTime(t *testing.T, path string) time.Time {
 		t.Fatal(err)
 	}
 	return st.ModTime()
+}
+
+func TestMain(m *testing.M) {
+	logx.SetOutput(io.Discard, slog.LevelDebug)
+	os.Exit(m.Run())
 }

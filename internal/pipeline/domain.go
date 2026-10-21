@@ -7,82 +7,30 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/cost"
-	"github.com/ElcanoTek/lens/internal/item"
 	"github.com/ElcanoTek/lens/internal/logx"
 	"github.com/ElcanoTek/lens/internal/progress"
 	"github.com/ElcanoTek/lens/internal/report"
+	"github.com/ElcanoTek/lens/internal/scrape"
 )
 
 var domainLog = logx.New("domain_processing")
 
-// Bot_Protection levels.
-const (
-	BotProtectionNone       = "None Detected"
-	BotProtectionModerate   = "Moderate"
-	BotProtectionAggressive = "Aggressive"
-	BotProtectionUnknown    = "Unknown"
-)
-
-// browserScrapeModes are the crawler rungs that drive a real rendering
-// browser. A block at one of these means the site rejects even browser-like
-// automation, not just plain HTTP clients.
-var browserScrapeModes = map[string]bool{"deep": true}
-
-// DeriveBotProtection classifies a site's observed bot protection from how
-// scraping went.
-//
-// Sites with bot mitigation tend to carry less invalid ad traffic, so this
-// is a useful buying signal. Levels are strictly evidence-based — derived
-// from which crawler rungs the site blocked during this run, never guessed
-// by the LLM:
-//
-//   - None Detected — no crawler rung was ever blocked.
-//   - Moderate — the plain-HTTP crawler was blocked (403/401/429 or a
-//     challenge page), but no rendering browser was proven blocked: the site
-//     filters basic bots.
-//   - Aggressive — the rendering-browser rung (headless Chrome) was also
-//     blocked: the site rejects automated traffic from this host outright.
-//   - Unknown — the site could not be scraped but for reasons that are not
-//     block signatures (timeouts, DNS failures, dead site).
-//
-// scrapeMode is the rung that produced the row; failed/currentError describe
-// a Failed row; priorError/priorErrorMode are the last failure an earlier
-// pass recorded (mode "" on state files from before modes were tracked,
-// treated as plain-HTTP, the conservative reading).
+// DeriveBotProtection is scrape.DeriveBotProtection with positional
+// arguments: the Bot_Protection level (None Detected / Moderate / Aggressive
+// / Unknown) from which crawler rungs the site blocked during this run.
 func DeriveBotProtection(scrapeMode string, failed bool, currentError, priorError, priorErrorMode string) string {
-	currentBlocked := failed && currentError != "" && item.IsAntibotError(currentError)
-	var blockedRung string
-	switch {
-	case currentBlocked && scrapeMode != "research":
-		blockedRung = scrapeMode
-	case item.IsAntibotError(priorError) || currentBlocked:
-		// Research-rung records only echo earlier scrape errors, so block
-		// markers there are attributed to the rung that actually hit them.
-		blockedRung = priorErrorMode
-		if blockedRung == "" {
-			blockedRung = "direct"
-		}
-	default:
-		if failed {
-			return BotProtectionUnknown
-		}
-		// Scraped successfully without ever being blocked; a research-rung
-		// success means the site was never fetched, so nothing was observed.
-		if scrapeMode == "research" {
-			return BotProtectionUnknown
-		}
-		return BotProtectionNone
-	}
-	if browserScrapeModes[blockedRung] {
-		return BotProtectionAggressive
-	}
-	return BotProtectionModerate
+	return scrape.DeriveBotProtection(scrape.BotEvidence{
+		ScrapeMode:     scrapeMode,
+		Failed:         failed,
+		CurrentError:   currentError,
+		PriorError:     priorError,
+		PriorErrorMode: priorErrorMode,
+	})
 }
 
 // DomainProcessor runs one website through scrape -> validate -> classify ->
@@ -285,48 +233,17 @@ func (p *DomainProcessor) ProcessDomainResearch(ctx context.Context, domain stri
 	})
 }
 
-// blockPhrases in the first 512 characters mark a challenge/denial page
-// served with a 200.
-var blockPhrases = []string{
-	"access denied",
-	"attention required",
-	"captcha",
-	"forbidden",
-	"just a moment",
-	"service unavailable",
-	"temporarily unavailable",
-}
-
 // validateScrapeResult checks that the scraper returned meaningful page
-// content; it returns the problem, or "".
+// content (scrape.ValidateResult: status, emptiness, min_content_length,
+// challenge-page phrases); it returns the problem, or "".
 func (p *DomainProcessor) validateScrapeResult(r ScrapeResult) string {
-	if !r.Success {
-		return orDefault(r.Error, "Scraper reported failure")
-	}
-	if r.StatusCode != 0 && (r.StatusCode < 200 || r.StatusCode >= 400) {
-		return fmt.Sprintf("Received HTTP status %d", r.StatusCode)
-	}
-	if strings.TrimSpace(r.Content) == "" {
-		return "Scraper returned empty content"
-	}
-	length := r.ContentLength
-	if length == 0 {
-		length = utf8.RuneCountInString(r.Content)
-	}
-	if length < p.Config.MinContentLength {
-		return fmt.Sprintf("Scraped content too short (%d chars < %d)", length, p.Config.MinContentLength)
-	}
-	snippet := []rune(strings.ToLower(r.Content))
-	if len(snippet) > 512 {
-		snippet = snippet[:512]
-	}
-	lower := string(snippet)
-	for _, phrase := range blockPhrases {
-		if strings.Contains(lower, phrase) {
-			return fmt.Sprintf("Potential block page detected ('%s')", phrase)
-		}
-	}
-	return ""
+	return scrape.ValidateResult(&scrape.Result{
+		Success:       r.Success,
+		Error:         r.Error,
+		Content:       r.Content,
+		ContentLength: r.ContentLength,
+		StatusCode:    r.StatusCode,
+	}, p.Config.MinContentLength)
 }
 
 // websiteRecord starts a WEBSITE row with the app-only columns blank.

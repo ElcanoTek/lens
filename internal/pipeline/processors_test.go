@@ -396,7 +396,7 @@ func TestProcessCTVAppResearchFailure(t *testing.T) {
 		t.Fatal("classified after a research failure")
 	}
 	row := s.rows(t)[0]
-	if row["Quality"] != "Failed" || row["Justification"] != "Research failed: Research failed: API rate limit exceeded" ||
+	if row["Quality"] != "Failed" || row["Justification"] != "Research failed: API rate limit exceeded" ||
 		row["Target_Audience"] != "N/A" || row["Platform"] != "Roku" {
 		t.Fatalf("row = %v", row)
 	}

@@ -91,7 +91,12 @@ sleep 60
 		}
 		t.Logf("python %s: %s", mode, out)
 	}
-	run("breakdowns")
+	// LENS_GOLDEN_GO_BREAKDOWNS=1 lets each side compute its own (a check
+	// of internal/detect against input_detector.py as well).
+	goBreakdowns := os.Getenv("LENS_GOLDEN_GO_BREAKDOWNS") == "1"
+	if !goBreakdowns {
+		run("breakdowns")
+	}
 
 	outputs := filepath.Join(home, "managed-files", "outputs")
 	_ = os.MkdirAll(outputs, 0o750)
@@ -195,6 +200,9 @@ sleep 60
 			data, _ := os.ReadFile(filepath.Join(outputs, e.Name())) //nolint:gosec // test copy
 			_ = os.WriteFile(filepath.Join(pyOut, e.Name()), data, 0o600)
 		}
+	}
+	if goBreakdowns {
+		_ = os.RemoveAll(filepath.Join(inputs, jobs.BreakdownCacheDirname))
 	}
 	run("render")
 	if out := os.Getenv("LENS_GOLDEN_OUT"); out != "" {
