@@ -322,7 +322,11 @@ func (s *Source) Allowed(kind, id string) bool {
 }
 
 func (s *Source) fetch(ctx context.Context) (Catalog, error) {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	// The fetch serves every waiting request and the cache, not only the
+	// request that triggered it: a browser that navigates away must not
+	// abort it and mark the catalog failed (no dropdowns, non-default
+	// models refused) for the retry window.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, s.URL, nil)
 	if err != nil {

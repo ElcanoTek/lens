@@ -464,9 +464,13 @@ func (m *Manager) Cancel(id string) error {
 		m.save()
 		return nil
 	}
-	if cmd := m.running[id]; job.Status == StatusRunning && cmd != nil && cmd.Process != nil {
+	if cmd, slot := m.running[id]; job.Status == StatusRunning && slot {
 		job.Status = StatusCancelling
-		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+		if cmd != nil && cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+		}
+		// Otherwise the process is still being started: runJob sees
+		// "cancelling" and either never starts it or signals it right after.
 		m.save()
 		return nil
 	}
@@ -601,7 +605,9 @@ func (m *Manager) Command(job *Job) []string {
 func (m *Manager) runJob(id string) {
 	m.mu.Lock()
 	job := m.jobs[id]
-	if job == nil {
+	// Cancelled (or deleted) between leaving the queue and starting here:
+	// Run pops the id before this goroutine takes the lock.
+	if job == nil || job.Status != StatusQueued {
 		m.mu.Unlock()
 		return
 	}
@@ -637,6 +643,17 @@ func (m *Manager) runJob(id string) {
 		}
 	}
 
+	m.mu.Lock()
+	if job.Status == StatusCancelling {
+		// Cancelled while the categories file was being written.
+		job.Status = StatusCancelled
+		job.FinishedAt = m.now()
+		m.save()
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+
 	cmd := exec.Command(m.Executable, args...) //nolint:gosec,noctx // argv only (no shell); the job outlives request contexts and is cancelled via its process group
 	cmd.Dir = m.Home
 	cmd.Stdout, cmd.Stderr = nil, nil
@@ -647,6 +664,10 @@ func (m *Manager) runJob(id string) {
 	}
 	m.mu.Lock()
 	m.running[id] = cmd
+	if job.Status == StatusCancelling {
+		// Cancel arrived while the process was starting.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+	}
 	job.OutputFile = snapshot.ID + "_output.csv"
 	job.ProgressFile = snapshot.ID + "_progress.json"
 	job.LogFile = snapshot.ID + ".log"

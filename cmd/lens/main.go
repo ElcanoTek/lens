@@ -8,10 +8,13 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/ElcanoTek/lens/internal/apitoken"
 	"github.com/ElcanoTek/lens/internal/auth"
 	"github.com/ElcanoTek/lens/internal/config"
+	"github.com/ElcanoTek/lens/internal/dotenv"
 	"github.com/ElcanoTek/lens/internal/opscli"
 	"github.com/ElcanoTek/lens/internal/pipeline"
 	"github.com/ElcanoTek/lens/internal/submit"
@@ -54,7 +57,7 @@ func run(args []string) int {
 		if done, code := opscli.AsServiceUser(args); done {
 			return code
 		}
-		config.LoadDotenv()
+		loadInstanceEnv()
 		if cmd == "token" {
 			return apitoken.Main(rest)
 		}
@@ -70,4 +73,24 @@ func run(args []string) int {
 	}
 	fmt.Fprintf(os.Stderr, "unknown command: %s (try lens --help)\n", cmd)
 	return 2
+}
+
+// loadInstanceEnv loads the instance's .env for the service-user commands:
+// LENS_HOME's (the re-exec sets it to the app dir), else the app dir's
+// (LENS_APP_DIR, default /opt/lens), as the bash CLI read $APP_DIR/.env.
+// Only when neither has one does it fall back to the nearest .env above the
+// working directory, which for an operator who is already the service user
+// (or whose sudo kept a cwd outside the app dir) is the wrong file or none.
+func loadInstanceEnv() {
+	for _, dir := range []string{os.Getenv("LENS_HOME"), opscli.AppDir()} {
+		if dir = strings.TrimSpace(dir); dir == "" {
+			continue
+		}
+		path := filepath.Join(dir, ".env")
+		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() { //nolint:gosec // G703: the operator-configured Lens home, not request input
+			_ = dotenv.Load(path, false)
+			return
+		}
+	}
+	config.LoadDotenv()
 }

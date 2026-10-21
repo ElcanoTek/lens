@@ -11,6 +11,7 @@
 package progress
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,9 +57,13 @@ type Entry struct {
 type Tracker struct {
 	path string
 
-	mu         sync.Mutex
-	saveMu     sync.Mutex
-	processed  map[string]*Entry
+	mu        sync.Mutex
+	saveMu    sync.Mutex
+	processed map[string]*Entry
+	// order is processed's keys in first-recorded order: the Python dict
+	// kept it, the file is written in it, and `lens manage progress` lists
+	// "recent activity" by it.
+	order      []string
 	lastIndex  int
 	total      int
 	successful int
@@ -108,8 +113,11 @@ func (t *Tracker) load() {
 		case "processed_domains":
 			var entries map[string]*Entry
 			if json.Unmarshal(value, &entries) == nil && entries != nil {
-				for k, e := range entries {
-					if e != nil {
+				for _, k := range objectKeys(value) {
+					if e := entries[k]; e != nil {
+						if _, dup := t.processed[k]; !dup {
+							t.order = append(t.order, k)
+						}
 						t.processed[k] = e
 					}
 				}
@@ -131,6 +139,57 @@ func (t *Tracker) load() {
 		}
 	}
 	logger.Info(fmt.Sprintf("Loaded progress: %s", t.Summary().String()))
+}
+
+// objectKeys returns a JSON object's keys in document order.
+func objectKeys(raw json.RawMessage) []string {
+	dec := json.NewDecoder(bytes.NewReader(raw))
+	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
+		return nil
+	}
+	var keys []string
+	for dec.More() {
+		tok, err := dec.Token()
+		if err != nil {
+			break
+		}
+		key, _ := tok.(string)
+		var skip json.RawMessage
+		if dec.Decode(&skip) != nil {
+			break
+		}
+		keys = append(keys, key)
+	}
+	return keys
+}
+
+// orderedEntries marshals processed_domains in first-recorded order.
+type orderedEntries struct {
+	order   []string
+	entries map[string]*Entry
+}
+
+func (o orderedEntries) MarshalJSON() ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteByte('{')
+	for i, id := range o.order {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		key, err := json.Marshal(id)
+		if err != nil {
+			return nil, err
+		}
+		val, err := json.Marshal(o.entries[id])
+		if err != nil {
+			return nil, err
+		}
+		b.Write(key)
+		b.WriteByte(':')
+		b.Write(val)
+	}
+	b.WriteByte('}')
+	return b.Bytes(), nil
 }
 
 func jsonInt(raw json.RawMessage) int {
@@ -181,7 +240,7 @@ func (t *Tracker) Save() error {
 		}
 	}
 	doc := map[string]any{
-		"processed_domains":    t.processed,
+		"processed_domains":    orderedEntries{t.order, t.processed},
 		"last_processed_index": t.lastIndex,
 		"total_domains":        t.total,
 		"successful_count":     t.successful,
@@ -220,7 +279,10 @@ func nullable(s string) any {
 // Mark records an item's outcome and saves immediately (crash recovery).
 func (t *Tracker) Mark(id, status string, result any, errorMessage string, processingTime *float64, scrapeMode string) error {
 	t.mu.Lock()
-	if previous, ok := t.processed[id]; ok {
+	previous, ok := t.processed[id]
+	if !ok {
+		t.order = append(t.order, id)
+	} else {
 		switch {
 		case previous.Status == StatusSuccess && t.successful > 0:
 			t.successful--
@@ -345,13 +407,17 @@ func (t *Tracker) SetTotal(total int) {
 func (t *Tracker) ResetFailed() (int, error) {
 	t.mu.Lock()
 	n := 0
-	for id, e := range t.processed {
-		if e.Status == StatusError {
+	kept := t.order[:0]
+	for _, id := range t.order {
+		if t.processed[id].Status == StatusError {
 			delete(t.processed, id)
 			t.errors--
 			n++
+			continue
 		}
+		kept = append(kept, id)
 	}
+	t.order = kept
 	t.mu.Unlock()
 	if err := t.Save(); err != nil {
 		return n, err

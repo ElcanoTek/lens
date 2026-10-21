@@ -95,7 +95,7 @@ func (b updateBox) run(t *testing.T, kv ...string) result {
 		// What the Python-era update.sh passes when it re-execs this one,
 		// inside the deploy lock it holds.
 		"LENS_UPDATE_NO_PULL=1", "LENS_UPDATE_YES=1", "LENS_UPDATE_BASE_SHA=0123456789ab", "LENS_DEPLOY_LOCKED=1",
-		"SRC_DIR=" + b.src, "APP_DIR=" + b.app, "APP_USER=" + u.Username,
+		"SRC_DIR=" + b.src, "APP_DIR=" + b.app, "APP_USER=" + u.Username, "LENS_BIN_OWNER=" + u.Username,
 		"LENS_UNIT_DIR=" + b.unit, "LENS_CLI_TARGET=" + b.cli, "LENS_STATE_DIR=" + filepath.Join(b.dir, "state"),
 		"LENS_MOTD_FILE=" + filepath.Join(b.dir, "motd"), "LENS_BUILD_CACHE=" + filepath.Join(b.dir, "cache"),
 		"LENS_UPDATE_SKIP_DEEP=1", "LENS_UPDATE_TEST_NONROOT=1", "LENS_HEALTH_ATTEMPTS=1",

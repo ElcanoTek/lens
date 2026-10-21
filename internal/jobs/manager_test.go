@@ -162,3 +162,59 @@ func TestReadProgress(t *testing.T) {
 		t.Fatal("FormatCost")
 	}
 }
+
+// Run pops a job off the queue before runJob takes the lock; a Cancel in
+// that window used to mark the job cancelled and runJob then ran it anyway.
+func TestCancelBetweenDequeueAndStartDoesNotRun(t *testing.T) {
+	home, exe := fakeRunner(t, `touch "$(dirname "$0")/ran"; exit 0`)
+	m := NewManager(home)
+	m.Executable = exe
+	_ = m.Dirs.Ensure()
+	job, _ := m.Create(NewJob{InputFile: "a.csv", Mode: "auto"})
+	m.mu.Lock() // what Run does
+	m.queue = m.queue[1:]
+	m.running[job.ID] = nil
+	m.mu.Unlock()
+	if err := m.Cancel(job.ID); err != nil {
+		t.Fatal(err)
+	}
+	m.runJob(job.ID)
+	if j, _ := m.Get(job.ID); j.Status != StatusCancelled {
+		t.Fatalf("status = %q, want cancelled", j.Status)
+	}
+	if _, err := os.Stat(filepath.Join(home, "ran")); err == nil {
+		t.Fatal("a cancelled job was started")
+	}
+}
+
+// A Cancel while the job is marked running but its process is not started
+// yet is accepted (it used to be refused as "not cancellable") and the
+// process is never started.
+func TestCancelWhileStartingIsHonoured(t *testing.T) {
+	home, exe := fakeRunner(t, `touch "$(dirname "$0")/ran"; exit 0`)
+	m := NewManager(home)
+	m.Executable = exe
+	_ = m.Dirs.Ensure()
+	job, _ := m.Create(NewJob{InputFile: "a.csv", Mode: "auto", CustomCategories: json.RawMessage(`{"a":1}`)})
+	var cancelErr error
+	// FormatCategories runs in runJob after the job is marked running and
+	// before the process starts.
+	m.FormatCategories = func(raw json.RawMessage) ([]byte, error) {
+		cancelErr = m.Cancel(job.ID)
+		return raw, nil
+	}
+	m.mu.Lock()
+	m.queue = m.queue[1:]
+	m.running[job.ID] = nil
+	m.mu.Unlock()
+	m.runJob(job.ID)
+	if cancelErr != nil {
+		t.Fatalf("cancel while starting: %v", cancelErr)
+	}
+	if j, _ := m.Get(job.ID); j.Status != StatusCancelled || j.FinishedAt == "" {
+		t.Fatalf("job = %+v, want cancelled", j)
+	}
+	if _, err := os.Stat(filepath.Join(home, "ran")); err == nil {
+		t.Fatal("a cancelled job was started")
+	}
+}

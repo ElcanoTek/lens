@@ -196,7 +196,10 @@ step "3/7  Building bin/lens"
 deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
 deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
 lens_build "$APP_DIR" "$deploy_sha" "$deploy_describe" || die "build failed"
-chown -R "$APP_USER:$APP_USER" "$APP_DIR/bin"
+# root:root, never the service user: /usr/local/bin/lens links here and root
+# runs it for every operator command, so a binary the service account could
+# rewrite would hand a compromised service root.
+chown -R root:root "$APP_DIR/bin"
 if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi

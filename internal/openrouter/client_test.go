@@ -14,8 +14,10 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -101,6 +103,7 @@ func newTestClient(t *testing.T, f *fakeAPI, opts Options) (*Client, *sleeps) {
 	}
 	s := &sleeps{}
 	c.sleep = s.sleep
+	c.jitter = func() float64 { return 1 }
 	return c, s
 }
 
@@ -305,10 +308,14 @@ func TestRetryBackoffAndNonRetryableDelay(t *testing.T) {
 	f := newFakeAPI(t, reply{status: 429, body: `{"error": {"message": "Rate limit exceeded"}}`})
 	c, s := newTestClient(t, f, Options{MaxRetries: 3})
 	result := c.ClassifySite(context.Background(), SiteInput{Domain: "example.com"})
-	if result.Success || !strings.Contains(result.Error, "Error code: 429") || f.calls() != 3 {
+	// Each of the three attempts is itself retried three times on a 429,
+	// as the OpenAI SDK (max_retries=llm_request_max_retries) did.
+	if result.Success || !strings.Contains(result.Error, "Error code: 429") || f.calls() != 12 {
 		t.Fatalf("result = %+v calls = %d", result, f.calls())
 	}
-	if !reflect.DeepEqual(s.d, []time.Duration{2 * time.Second, 4 * time.Second}) {
+	sdk := []time.Duration{500 * time.Millisecond, time.Second, 2 * time.Second}
+	want := slices.Concat(sdk, []time.Duration{2 * time.Second}, sdk, []time.Duration{4 * time.Second}, sdk)
+	if !reflect.DeepEqual(s.d, want) {
 		t.Fatalf("sleeps = %v", s.d)
 	}
 	// HTTP errors are not billed responses.
@@ -317,6 +324,49 @@ func TestRetryBackoffAndNonRetryableDelay(t *testing.T) {
 	c2.ClassifySite(context.Background(), SiteInput{Domain: "example.com"})
 	if !reflect.DeepEqual(s2.d, []time.Duration{2 * time.Second, 2 * time.Second}) || f2.calls() != 3 {
 		t.Fatalf("non-retryable sleeps = %v", s2.d)
+	}
+}
+
+// The SDK layer honours Retry-After (up to 60s) and x-should-retry, and
+// does not retry other 4xx replies.
+func TestSDKRetryHonoursServerHints(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		switch calls.Add(1) {
+		case 1:
+			w.Header().Set("Retry-After", "7")
+			w.WriteHeader(http.StatusTooManyRequests)
+		case 2:
+			w.Header().Set("Retry-After-Ms", "1500")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		case 3:
+			w.Header().Set("X-Should-Retry", "true")
+			w.WriteHeader(http.StatusBadRequest)
+		case 4:
+			w.Header().Set("X-Should-Retry", "false")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	c, err := New(Options{APIKey: "k", BaseURL: srv.URL, MaxRetries: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &sleeps{}
+	c.sleep = s.sleep
+	c.jitter = func() float64 { return 0.8 }
+	if _, err := c.post(context.Background(), pyjson.Object{}); err == nil || calls.Load() != 4 {
+		t.Fatalf("err = %v calls = %d", err, calls.Load())
+	}
+	want := []time.Duration{7 * time.Second, 1500 * time.Millisecond, time.Second * 8 / 10 * 2}
+	if !reflect.DeepEqual(s.d, want) {
+		t.Fatalf("sleeps = %v, want %v", s.d, want)
+	}
+	if got := sdkRetryDelay(9, 0, 1); got != 8*time.Second {
+		t.Fatalf("capped delay = %v", got)
+	}
+	if got := sdkRetryDelay(0, 2*time.Minute, 1); got != 500*time.Millisecond {
+		t.Fatalf("over-long Retry-After = %v", got)
 	}
 }
 

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/ElcanoTek/lens/internal/cost"
@@ -108,5 +109,50 @@ func TestCorruptFileStartsFresh(t *testing.T) {
 	}
 	if s := Open(path).Summary(); s.Total != 0 || s.Processed != 0 {
 		t.Fatalf("summary = %+v", s)
+	}
+}
+
+// processed_domains keeps first-recorded order, like the Python dict: a save
+// must not re-sort it (`lens manage progress` lists the last ten entries as
+// recent activity), a re-marked item keeps its place, and ResetFailed keeps
+// the survivors' order.
+func TestProcessedDomainsKeepRecordedOrder(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "progress.json")
+	legacy := `{"processed_domains": {"zeta.com": {"status": "success", "timestamp": "t", "processing_time": null},
+	 "alpha.com": {"status": "error", "timestamp": "t", "processing_time": null, "error_message": "boom"}},
+	 "total_domains": 4, "successful_count": 1, "error_count": 1}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	tr := Open(path)
+	for _, id := range []string{"mid.com", "beta.com"} {
+		if err := tr.Mark(id, StatusSuccess, nil, "", nil, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := tr.Mark("zeta.com", StatusError, nil, "later failure", nil, "deep"); err != nil {
+		t.Fatal(err)
+	}
+	order := func() []string {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var doc map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &doc); err != nil {
+			t.Fatal(err)
+		}
+		return objectKeys(doc["processed_domains"])
+	}
+	want := []string{"zeta.com", "alpha.com", "mid.com", "beta.com"}
+	if got := order(); !slices.Equal(got, want) {
+		t.Fatalf("file order = %v, want %v", got, want)
+	}
+	re := Open(path)
+	if n, err := re.ResetFailed(); err != nil || n != 2 {
+		t.Fatalf("reset = %d, %v", n, err)
+	}
+	if got := order(); !slices.Equal(got, []string{"mid.com", "beta.com"}) {
+		t.Fatalf("after reset = %v", got)
 	}
 }

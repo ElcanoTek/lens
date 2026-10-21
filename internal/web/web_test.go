@@ -402,6 +402,32 @@ func TestUploadRejectsOversizeFileWhileReading(t *testing.T) {
 	}
 }
 
+// Files sent ahead of the destination field are held until it arrives; a
+// crafted form must not be able to pile unbounded uploads up in memory.
+func TestUploadCapsFilesHeldBeforeDestination(t *testing.T) {
+	h := newHarness(t, false)
+	h.srv.maxUpload = 1024 * 1024
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part := bytes.Repeat([]byte("x"), 700*1024)
+	for _, name := range []string{"a.csv", "b.csv"} {
+		pw, _ := mw.CreateFormFile("file", name)
+		_, _ = pw.Write(part)
+	}
+	_ = mw.WriteField("destination", "inputs")
+	_ = mw.Close()
+	resp, _ := h.send(http.MethodPost, "/files/upload", &buf, mw.FormDataContentType())
+	if resp.StatusCode != 303 {
+		t.Fatal(resp.StatusCode)
+	}
+	if !exists(filepath.Join(h.dirs.Inputs, "a.csv")) || exists(filepath.Join(h.dirs.Inputs, "b.csv")) {
+		t.Fatal("held-file cap not enforced")
+	}
+	if loc := location(resp); !strings.Contains(loc, "destination+field+must+precede") {
+		t.Fatal(loc)
+	}
+}
+
 func TestJobsStateFileIsNeverExposed(t *testing.T) {
 	h := newHarness(t, false)
 	state := h.writeOutput(jobs.JobsStateFilename, "{}")

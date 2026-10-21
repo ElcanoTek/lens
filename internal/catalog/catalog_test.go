@@ -102,3 +102,19 @@ func TestSourceCachesAndBacksOff(t *testing.T) {
 		t.Fatal("failed fetch retried within a minute")
 	}
 }
+
+// A fetch triggered by a request whose client went away still completes and
+// fills the cache.
+func TestSourceFetchSurvivesCancelledRequest(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(payload))
+	}))
+	defer srv.Close()
+	s := NewSource("")
+	s.URL = srv.URL
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if len(s.Get(ctx).Classify) != 3 || len(s.Cached().Classify) != 3 {
+		t.Fatal("a cancelled request context aborted the shared catalog fetch")
+	}
+}

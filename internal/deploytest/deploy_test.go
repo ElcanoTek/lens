@@ -56,6 +56,26 @@ func TestServiceUserCommandsNeverRunFromTheCallersCwd(t *testing.T) {
 	}
 }
 
+// /usr/local/bin/lens links to bin/lens and root runs it for every operator
+// command, so bin/ must never belong to the service account (a compromised
+// service could otherwise rewrite the binary root runs next).
+func TestReleaseBinaryIsNeverOwnedByTheServiceUser(t *testing.T) {
+	for _, script := range []string{"scripts/bootstrap.sh", "scripts/update.sh"} {
+		src := read(t, script)
+		for _, line := range strings.Split(src, "\n") {
+			if strings.Contains(line, "chown") && strings.Contains(line, "/bin") && strings.Contains(line, "APP_USER") {
+				t.Errorf("%s hands bin/ to the service user: %s", script, strings.TrimSpace(line))
+			}
+		}
+		if !strings.Contains(src, `chown -R root:root "$APP_DIR/bin"`) && !strings.Contains(src, `chown -R "$BIN_OWNER" "$APP_DIR/bin"`) {
+			t.Errorf("%s does not give bin/ to root", script)
+		}
+	}
+	if !strings.Contains(read(t, "scripts/update.sh"), `BIN_OWNER="${LENS_BIN_OWNER:-root:root}"`) {
+		t.Error("update.sh's bin/ owner no longer defaults to root:root")
+	}
+}
+
 // tree populates dir with files (name → content).
 func tree(t *testing.T, dir string, files map[string]string) {
 	t.Helper()

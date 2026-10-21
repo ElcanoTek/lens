@@ -185,8 +185,10 @@ func TestManageCommands(t *testing.T) {
 	if !strings.Contains(out, "Total domains: 3") || !strings.Contains(out, "📋 Recent activity (last 10 domains):") {
 		t.Fatalf("progress: %s", out)
 	}
-	// File order, which is sorted keys for files Go wrote.
-	if strings.Index(out, "   a.com - success (") > strings.Index(out, "   b.com - error (") {
+	// Recorded order (b, a, c), as the Python dict kept it: "recent
+	// activity" must not be alphabetical.
+	if b, a, c := strings.Index(out, "   b.com - error ("), strings.Index(out, "   a.com - success ("),
+		strings.Index(out, "   c.com - error ("); b < 0 || a < b || c < a {
 		t.Fatalf("progress order: %s", out)
 	}
 	_, out = run("", "stats")

@@ -22,7 +22,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math/rand/v2"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -88,6 +90,9 @@ type Client struct {
 
 	// sleep waits between retries; replaced in tests.
 	sleep func(context.Context, time.Duration) error
+	// jitter returns the SDK backoff's random multiplier, in (0.75, 1];
+	// replaced in tests.
+	jitter func() float64
 	// baseDelay is the backoff base (2s, doubling per attempt).
 	baseDelay time.Duration
 }
@@ -108,6 +113,7 @@ func New(opts Options) (*Client, error) {
 		maxRetries:    opts.MaxRetries,
 		timeout:       opts.Timeout,
 		sleep:         sleepCtx,
+		jitter:        func() float64 { return 1 - 0.25*rand.Float64() }, //nolint:gosec // backoff jitter, not security
 		baseDelay:     2 * time.Second,
 	}
 	if c.primaryModel == "" {
@@ -199,18 +205,92 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("Error code: %d - %s", e.StatusCode, e.Body)
 }
 
-// post sends one chat-completions request and decodes the reply. A 2xx reply
-// is recorded with the cost meters before it is inspected further.
+// SDK-level retry policy. The Python release called OpenRouter through the
+// OpenAI SDK built with max_retries=llm_request_max_retries, so every
+// attempt of callWithRetry was itself retried by the SDK on transport
+// failures, timeouts and 408/409/429/5xx replies (honouring Retry-After and
+// x-should-retry). post keeps that inner layer; dropping it made rate-limit
+// bursts fail items after a few seconds instead of riding them out.
+const (
+	sdkInitialRetryDelay = 500 * time.Millisecond
+	sdkMaxRetryDelay     = 8 * time.Second
+	sdkMaxRetryAfter     = 60 * time.Second
+)
+
+// post sends one chat-completions request and decodes the reply, retrying
+// it up to maxRetries more times the way the OpenAI SDK did. A 2xx reply is
+// recorded with the cost meters before it is inspected further.
 func (c *Client) post(ctx context.Context, body pyjson.Object) (pyjson.Object, error) {
+	payload := []byte(pyjson.DumpsUnicode(body))
+	for retry := 0; ; retry++ {
+		obj, retryAfter, retryable, err := c.postOnce(ctx, payload)
+		if err == nil || !retryable || retry >= c.maxRetries || ctx.Err() != nil {
+			return obj, err
+		}
+		delay := sdkRetryDelay(retry, retryAfter, c.jitter())
+		log.Info(fmt.Sprintf("Retrying request to /chat/completions in %f seconds", delay.Seconds()))
+		if err := c.sleep(ctx, delay); err != nil {
+			return nil, err
+		}
+	}
+}
+
+// sdkRetryDelay is the OpenAI SDK's wait before retry number retry+1: the
+// server's Retry-After when it asks for 0-60s, else 0.5s doubling up to 8s,
+// shortened by up to 25% of jitter (jitter is the multiplier, in (0.75, 1]).
+func sdkRetryDelay(retry int, retryAfter time.Duration, jitter float64) time.Duration {
+	if retryAfter > 0 && retryAfter <= sdkMaxRetryAfter {
+		return retryAfter
+	}
+	d := sdkInitialRetryDelay << min(retry, 16)
+	if d > sdkMaxRetryDelay || d <= 0 {
+		d = sdkMaxRetryDelay
+	}
+	return time.Duration(float64(d) * jitter)
+}
+
+// parseRetryAfter reads retry-after-ms, then retry-after (seconds or an
+// HTTP date), as the SDK did; 0 when absent or unparseable.
+func parseRetryAfter(h http.Header, now time.Time) time.Duration {
+	if ms, err := strconv.ParseFloat(h.Get("Retry-After-Ms"), 64); err == nil {
+		return time.Duration(ms * float64(time.Millisecond))
+	}
+	value := h.Get("Retry-After")
+	if secs, err := strconv.ParseFloat(value, 64); err == nil {
+		return time.Duration(secs * float64(time.Second))
+	}
+	if when, err := http.ParseTime(value); err == nil {
+		return when.Sub(now)
+	}
+	return 0
+}
+
+// shouldRetryStatus is the SDK's rule for an error reply: x-should-retry
+// wins, else 408, 409, 429 and 5xx are retried.
+func shouldRetryStatus(resp *http.Response) bool {
+	switch resp.Header.Get("X-Should-Retry") {
+	case "true":
+		return true
+	case "false":
+		return false
+	}
+	code := resp.StatusCode
+	return code == http.StatusRequestTimeout || code == http.StatusConflict ||
+		code == http.StatusTooManyRequests || code >= 500
+}
+
+// postOnce makes one HTTP request. retryable reports whether the SDK would
+// have retried the failure; retryAfter is the server's requested wait.
+func (c *Client) postOnce(ctx context.Context, payload []byte) (obj pyjson.Object, retryAfter time.Duration, retryable bool, err error) {
+	parent := ctx
 	if c.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, c.timeout)
 		defer cancel()
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions",
-		bytes.NewReader([]byte(pyjson.DumpsUnicode(body))))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return nil, err
+		return nil, 0, false, err
 	}
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	for k, v := range config.OpenRouterHeaders {
@@ -219,33 +299,39 @@ func (c *Client) post(ctx context.Context, body pyjson.Object) (pyjson.Object, e
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.http.Do(req)
 	if err != nil {
-		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil {
-			return nil, errors.New("Request timed out.") //nolint:revive,staticcheck // the OpenAI SDK's wording, which the retry classifier sees
+		if parent.Err() != nil {
+			return nil, 0, false, fmt.Errorf("Connection error: %w", err) //nolint:staticcheck // "connection" marks the error retryable
 		}
-		return nil, fmt.Errorf("Connection error: %w", err) //nolint:staticcheck // "connection" marks the error retryable
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil {
+			return nil, 0, true, errors.New("Request timed out.") //nolint:revive,staticcheck // the OpenAI SDK's wording, which the retry classifier sees
+		}
+		return nil, 0, true, fmt.Errorf("Connection error: %w", err) //nolint:staticcheck // "connection" marks the error retryable
 	}
 	defer func() { _ = resp.Body.Close() }()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return nil, fmt.Errorf("Connection error: reading response: %w", err) //nolint:staticcheck // "connection" marks the error retryable
+		if errors.Is(err, context.DeadlineExceeded) && ctx.Err() != nil && parent.Err() == nil {
+			return nil, 0, true, errors.New("Request timed out.") //nolint:revive,staticcheck // the OpenAI SDK's wording, which the retry classifier sees
+		}
+		return nil, 0, parent.Err() == nil, fmt.Errorf("Connection error: reading response: %w", err) //nolint:staticcheck // "connection" marks the error retryable
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		text, _ := truncateRunes(strings.TrimSpace(string(raw)), 500)
-		return nil, &APIError{StatusCode: resp.StatusCode, Body: text}
+		return nil, parseRetryAfter(resp.Header, time.Now()), shouldRetryStatus(resp), &APIError{StatusCode: resp.StatusCode, Body: text}
 	}
 	decoded, err := pyjson.Decode(raw)
 	if err != nil {
-		return nil, fmt.Errorf("invalid JSON in OpenRouter response: %w", err)
+		return nil, 0, false, fmt.Errorf("invalid JSON in OpenRouter response: %w", err)
 	}
-	obj, ok := decoded.(pyjson.Object)
+	o, ok := decoded.(pyjson.Object)
 	if !ok {
-		return nil, errors.New("invalid OpenRouter response: not a JSON object")
+		return nil, 0, false, errors.New("invalid OpenRouter response: not a JSON object")
 	}
-	usage, _ := obj.Get("usage")
-	modelValue, _ := obj.Get("model")
+	usage, _ := o.Get("usage")
+	modelValue, _ := o.Get("model")
 	model, _ := modelValue.(string)
 	cost.Record(ctx, cost.FromUsage(pyjson.Plain(usage)), model)
-	return obj, nil
+	return o, 0, false, nil
 }
 
 // bodyError digs out the upstream provider failure OpenRouter sometimes

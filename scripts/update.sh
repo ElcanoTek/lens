@@ -24,6 +24,11 @@ CLI_TARGET="${LENS_CLI_TARGET:-/usr/local/bin/lens}"
 UNIT_DIR="${LENS_UNIT_DIR:-/etc/systemd/system}"
 STATE_DIR="${LENS_STATE_DIR:-/var/lib/lens}"
 MOTD_FILE="${LENS_MOTD_FILE:-/etc/motd}"
+# Owner of bin/: root, never the service user. /usr/local/bin/lens links to
+# bin/lens and root runs it for every operator command (lens update, doctor,
+# env edit, ...), so a binary the service account can rewrite would hand a
+# compromised service root. The service only needs to execute it.
+BIN_OWNER="${LENS_BIN_OWNER:-root:root}"
 SERVICE="lens.service"
 for arg in "$@"; do
   case "$arg" in
@@ -224,6 +229,9 @@ lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live ins
 built="$("$STAGING/bin/lens" --version 2>/dev/null || true)"
 [[ "$built" == *"$after_sha"* ]] || die "staged bin/lens does not report ${after_sha:0:12} (got: ${built:-nothing}) — live install untouched"
 chown -R "$APP_USER:$APP_USER" "$STAGING"
+# Root runs this binary (migrate-access-db below); keep it out of the service
+# user's reach.
+chown -R "$BIN_OWNER" "$STAGING/bin"
 ok "staging release ready: $built"
 
 step "3/4  Swapping + restarting"
@@ -281,7 +289,7 @@ fi
 # .venv, which stays until the new release is healthy.
 rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$STAGING/" "$APP_DIR/"
-chown -R "$APP_USER:$APP_USER" "$APP_DIR/bin"
+chown -R "$BIN_OWNER" "$APP_DIR/bin"
 if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi

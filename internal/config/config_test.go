@@ -95,3 +95,19 @@ func TestExampleConfigMatchesDefaults(t *testing.T) {
 		t.Fatalf("config.json.example drifted from Default():\nexample:\n%s\ndefault:\n%s", a.String(), b.String())
 	}
 }
+
+// A JSON null switches off the optional fallback models and the VNC port, as
+// None did in the Python release; elsewhere it keeps the default.
+func TestNullDisablesOptionalSettings(t *testing.T) {
+	cfg := Load(write(t, `{"llm_fallback_model": null, "ctv_classification_fallback_model": null,
+		"deep_scrape_vnc_port": null, "concurrent_sessions": null, "llm_model": null}`))
+	if len(cfg.Warnings) != 0 {
+		t.Fatalf("warnings: %v", cfg.Warnings)
+	}
+	if cfg.LLMFallbackModel != "" || cfg.CTVClassificationFallback != "" || cfg.DeepScrapeVNCPort != 0 {
+		t.Fatalf("null did not disable: %q %q %d", cfg.LLMFallbackModel, cfg.CTVClassificationFallback, cfg.DeepScrapeVNCPort)
+	}
+	if cfg.ConcurrentSessions != 5 || cfg.LLMModel != DefaultLLMModel {
+		t.Fatalf("null replaced a default: %d %q", cfg.ConcurrentSessions, cfg.LLMModel)
+	}
+}

@@ -292,7 +292,16 @@ func (c *Config) apply(raw []byte) error {
 			continue
 		}
 		value, ok := doc[name]
-		if !ok || value == nil {
+		if !ok {
+			continue
+		}
+		if value == nil {
+			// null means "off" for the optional settings the Python release
+			// read as None (no fallback model, no VNC port); for every other
+			// key it keeps the default.
+			if nullDisables[name] {
+				v.Field(i).SetZero()
+			}
 			continue
 		}
 		if err := assign(v.Field(i), value); err != nil {
@@ -318,6 +327,15 @@ func (c *Config) apply(raw []byte) error {
 		}
 	}
 	return nil
+}
+
+// nullDisables are the keys whose JSON null turns the feature off, as None
+// did in the Python release: the classification fallback models and the
+// deep crawler's VNC port.
+var nullDisables = map[string]bool{
+	"llm_fallback_model":                true,
+	"ctv_classification_fallback_model": true,
+	"deep_scrape_vnc_port":              true,
 }
 
 func assign(dst reflect.Value, value any) error {

@@ -304,6 +304,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	var outcomes []uploadOutcome
 	var stored []string
 	seenFile := false
+	pending := 0 // bytes of files read before the destination field
 	store := func(o uploadOutcome) uploadOutcome {
 		if err := os.WriteFile(filepath.Join(s.dirs.Inputs, o.filename), o.payload, 0o644); err != nil { //nolint:gosec // the library is operator-readable
 			o.failure = err.Error()
@@ -337,8 +338,18 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		case field == "file" && isFile:
 			seenFile = true
 			o := s.readUpload(part, rawName, limitMB)
-			if o.failure == "" && haveDestination && destination == "inputs" {
+			switch {
+			case o.failure != "":
+			case haveDestination:
 				o = store(o)
+			case pending+len(o.payload) > s.maxUpload:
+				// Files ahead of the destination field are held until it
+				// arrives; cap what is held so a crafted form cannot pile
+				// up unbounded uploads in memory (browsers send the
+				// destination first, and then nothing is held at all).
+				o = uploadOutcome{filename: rawName, failure: "the destination field must precede the files"}
+			default:
+				pending += len(o.payload)
 			}
 			outcomes = append(outcomes, o)
 		}
