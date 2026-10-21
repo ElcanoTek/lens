@@ -186,6 +186,29 @@ func (c *closers) closeAll() {
 // recording a result, and the progress/CSV bookkeeping still completes, so
 // Run then returns nil.
 func (o *Orchestrator) Run(ctx context.Context) (err error) {
+	// A progress checkpoint that cannot be written stops the run, like a
+	// SIGINT: items in flight record nothing, and the run fails. Carrying on
+	// would leave outcomes that a resume cannot see, so it would process,
+	// bill and write those items a second time.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var (
+		checkpointOnce sync.Once
+		checkpointErr  error
+	)
+	o.progress.OnSaveError = func(err error) {
+		checkpointOnce.Do(func() {
+			checkpointErr = err
+			logger.Error(fmt.Sprintf("Could not save progress to %s (%v); stopping the run so no item is processed twice on resume", o.progress.Path(), err))
+			cancel()
+		})
+	}
+	defer func() {
+		if checkpointErr != nil {
+			err = fmt.Errorf("progress checkpoint failed: %w", checkpointErr)
+		}
+	}()
+
 	// Resumed runs keep counting from the spend already recorded.
 	var saved any
 	if raw := o.progress.Extra("cost"); raw != nil {

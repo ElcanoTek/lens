@@ -76,6 +76,11 @@ type Tracker struct {
 
 	// Cost, when set, is snapshotted into the "cost" key on every save.
 	Cost *cost.Meter
+	// OnSaveError, when set, is called (outside the tracker's locks) with
+	// every failed save. The orchestrator uses it to stop the run: an item
+	// whose outcome is not on disk would be processed and billed again on
+	// resume, with a second result row.
+	OnSaveError func(error)
 }
 
 // Open loads path if it exists; a missing or unreadable file starts fresh.
@@ -229,6 +234,14 @@ func (t *Tracker) HasProcessedEntries() bool {
 
 // Save writes the file atomically (temp file + rename).
 func (t *Tracker) Save() error {
+	err := t.save()
+	if err != nil && t.OnSaveError != nil {
+		t.OnSaveError(err)
+	}
+	return err
+}
+
+func (t *Tracker) save() error {
 	t.saveMu.Lock()
 	defer t.saveMu.Unlock()
 

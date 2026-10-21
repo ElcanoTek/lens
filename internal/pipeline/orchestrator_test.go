@@ -890,3 +890,46 @@ func TestCancelStopsDispatchAndKeepsBookkeeping(t *testing.T) {
 		t.Fatal("scraper not closed on shutdown")
 	}
 }
+
+// A checkpoint that cannot be written stops the run instead of carrying on
+// with outcomes a resume cannot see (they would be re-processed, re-billed
+// and written twice).
+func TestFailedCheckpointStopsTheRun(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ConcurrentSessions = 1
+	writeFile(t, cfg.InputCSVPath, "Domain\na.com\nb.com\nc.com\nd.com\ne.com\n")
+	var (
+		mu      sync.Mutex
+		scraped []string
+	)
+	d := newRunDeps()
+	d.scrapers.make = func(o ScraperOptions) *fakeScraper {
+		return &fakeScraper{mode: o.Mode, scrape: func(domain string) ScrapeResult {
+			mu.Lock()
+			scraped = append(scraped, domain)
+			n := len(scraped)
+			mu.Unlock()
+			if n == 2 {
+				// From here on every save fails, even as root: the temp
+				// file's path is a non-empty directory.
+				if err := os.MkdirAll(filepath.Join(cfg.ProgressFilePath+".tmp", "blocker"), 0o755); err != nil {
+					t.Error(err)
+				}
+			}
+			return goodPage(o.Mode)
+		}}
+	}
+	o, err := New(Options{Config: cfg, Quiet: true, ScrapeMode: "direct", Deps: d.deps(), Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = o.Run(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "progress checkpoint failed") {
+		t.Fatalf("Run = %v, want a checkpoint failure", err)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(scraped) > 2 {
+		t.Fatalf("run kept going after the failed checkpoint: scraped %v", scraped)
+	}
+}
