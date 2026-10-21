@@ -35,7 +35,11 @@ func (rt rewriteTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	out := r.Clone(r.Context())
 	out.URL.Scheme = rt.target.Scheme
 	out.URL.Host = rt.target.Host
-	return http.DefaultTransport.RoundTrip(out)
+	resp, err := http.DefaultTransport.RoundTrip(out)
+	if resp != nil {
+		resp.Request = r // the scraper checks where it ended up
+	}
+	return resp, err
 }
 
 // fakeWeb serves a readable page per host, a 403 for blocked hosts and a
