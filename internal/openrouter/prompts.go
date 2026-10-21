@@ -409,4 +409,3 @@ APPENDIX: APPROVED CATEGORY LIST
 
 Analyze the CTV app and provide your classification using the classify_ctv_app function.`
 }
-

@@ -332,7 +332,7 @@ func TestInvalidSpecsRejected(t *testing.T) {
 		}
 	}
 	// Thirteen categories.
-	var many []string
+	many := make([]string, 0, 13)
 	for _, n := range "ABCDEFGHIJKLM" {
 		many = append(many, `{"name": "`+string(n)+`", "type": "boolean", "question": "Q?"}`)
 	}
@@ -431,9 +431,8 @@ func TestJSONLimitsAndKeyRequirement(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 	// The serialized size limit counts json.dumps's ASCII escapes.
-	var cats []string
-	for i, n := range "ABCDEFGHIJKL" {
-		_ = i
+	cats := make([]string, 0, 12)
+	for _, n := range "ABCDEFGHIJKL" {
 		cats = append(cats, `{"name": "`+string(n)+`", "type": "boolean", "question": "`+strings.Repeat("é", 1000)+`"}`)
 	}
 	text := `{"categories": [` + strings.Join(cats, ",") + `]}`
@@ -551,7 +550,7 @@ func TestFallbackRunsOnlyAfterOpenRouterRetriesAreExhausted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var urls []string
+	urls := make([]string, 0, len(s.calls))
 	for _, c := range s.calls {
 		urls = append(urls, c.url)
 	}
