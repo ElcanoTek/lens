@@ -3,15 +3,23 @@
 # Copyright (c) 2026 ElcanoTek, Inc.
 
 # Same exclusions for staging, deployment and rollback. These are instance data,
-# never release files. The venv is copied separately for snapshots.
+# never release files. A Python-era .venv is excluded too, so --delete never
+# removes the interpreter a first Go migration may still have to roll back to;
+# update.sh snapshots it separately and retires it only after a healthy start.
 LENS_STATE_EXCLUDES=(
   --exclude='/.git' --exclude='/.venv' --exclude='/.venv.old'
   --exclude='/.env*' --exclude='/config.json'
   --exclude='/managed-files' --exclude='/data'
   --exclude='/.local' --exclude='/.config' --exclude='/.cache'
   --exclude='/input.csv' --exclude='/output.csv' --exclude='/progress.json'
-  --exclude='/*.log' --exclude='/__pycache__' --exclude='/.pytest_cache'
+  --exclude='/*.log'
 )
+
+# Root-owned Go caches for every deploy build: GOPATH, the module cache, the
+# build cache and any toolchain GOTOOLCHAIN=auto downloads. Keeping them out
+# of $HOME means builds neither litter /root nor depend on HOME being set
+# (systemd and sudo -i differ), and reruns reuse the downloaded modules.
+LENS_BUILD_CACHE="${LENS_BUILD_CACHE:-/var/cache/lens-build}"
 
 lens_git() {
   local source="$1"; shift
@@ -39,34 +47,71 @@ lens_health() {
   return 1
 }
 
-lens_venv() {
-  local tree="$1" version
-  version="$(cat "$tree/.python-version")"
-  # `install --upgrade` is unavailable in distro uv 0.7.22. The separate
-  # upgrade subcommand works there and on current uv; install also covers a
-  # fresh host. Patch availability comes from the installed uv's catalogue.
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python install "$version" || return
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv python upgrade "$version" || return
-  # A bootstrap re-run rebuilds over the existing venv. uv 0.7 replaced it
-  # silently; current uv refuses without --clear, which 0.7 does not accept.
-  # The environment variable works on both.
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" UV_VENV_CLEAR=1 uv venv --managed-python --python "$version" --relocatable "$tree/.venv" || return
-  runuser -u "$APP_USER" -- env "HOME=$APP_DIR" uv pip install \
-    --python "$tree/.venv/bin/python" -r "$tree/requirements.txt"
+# lens_build TREE [COMMIT] [VERSION] — `make build` in TREE, emitting
+# TREE/bin/lens. Staging trees carry no .git, so the caller passes the
+# revision and describe string the Makefile would otherwise ask git for.
+# GOTOOLCHAIN=auto (also the Makefile default) lets a lagging distro golang
+# fetch go.mod's pinned toolchain; GOENV=off ignores any per-user go env file
+# and the module proxy/sumdb are the upstream defaults unless the caller set
+# them (Fedora's go.env says GOPROXY=direct, which is slower and needs every
+# origin reachable).
+lens_build() {
+  local tree="$1" commit="${2:-}" version="${3:-}" cache="$LENS_BUILD_CACHE"
+  local -a vars=()
+  [[ -n "$commit" ]] && vars+=("COMMIT=$commit")
+  [[ -n "$version" ]] && vars+=("VERSION=$version")
+  install -d -m 0700 "$cache" || return
+  env GOTOOLCHAIN="${GOTOOLCHAIN:-auto}" GOENV=off \
+    GOPATH="$cache/gopath" GOMODCACHE="$cache/gomod" GOCACHE="$cache/gocache" \
+    GOPROXY="${GOPROXY:-https://proxy.golang.org,direct}" GOSUMDB="${GOSUMDB:-sum.golang.org}" \
+    HOME="$cache" make -C "$tree" --no-print-directory build "${vars[@]}" || return
+  [[ -x "$tree/bin/lens" ]] || { echo "make build did not emit $tree/bin/lens" >&2; return 1; }
 }
 
+# lens_ensure_go — install the distro Go toolchain (plus make) when missing.
+# Any Go >= 1.21 is enough: GOTOOLCHAIN=auto downloads the pinned release.
+lens_ensure_go() {
+  local -a missing=()
+  command -v go >/dev/null 2>&1 || missing+=(golang)
+  command -v make >/dev/null 2>&1 || missing+=(make)
+  (( ${#missing[@]} )) || return 0
+  dnf install -y "${missing[@]}" >/dev/null || return
+  command -v go >/dev/null 2>&1 && command -v make >/dev/null 2>&1
+}
+
+# lens_restore_release APP BACKUP UNIT CLI — put a snapshot taken by
+# update.sh back in place: code, the Python venv when the snapshot has one (a
+# failed first Go migration restores the Python release), the systemd unit and
+# the operator CLI. The CLI is a copy of deploy/lens-cli on Python releases and
+# a symlink to bin/lens on Go releases; lens-cli.previous holds whichever it
+# was. Snapshots written by the Python-era update.sh have no lens-cli.previous,
+# so fall back to what the restored tree ships.
 lens_restore_release() {
   local app="$1" backup="$2" unit="$3" cli="$4"
   rsync -a --checksum --delete "${LENS_STATE_EXCLUDES[@]}" \
-    --exclude='/lens.service.previous' "$backup/" "$app/" || return
+    --exclude='/lens.service.previous' --exclude='/lens-cli.previous' \
+    "$backup/" "$app/" || return
   rm -rf "$app/.venv" || return
-  cp -a "$backup/.venv" "$app/.venv" || return
+  if [[ -d "$backup/.venv" ]]; then
+    cp -a "$backup/.venv" "$app/.venv" || return
+  fi
   install -m 0644 "$backup/lens.service.previous" "$unit" || return
-  install -m 0755 "$app/deploy/lens-cli" "$cli"
+  # rm first: install/cp onto a symlink would write through it into bin/lens.
+  rm -f "$cli" || return
+  if [[ -e "$backup/lens-cli.previous" || -L "$backup/lens-cli.previous" ]]; then
+    cp -a "$backup/lens-cli.previous" "$cli"
+  elif [[ -x "$app/bin/lens" ]]; then
+    ln -s "$app/bin/lens" "$cli"
+  else
+    install -m 0755 "$app/deploy/lens-cli" "$cli"
+  fi
 }
 
+# lens_latest_fedora — read Fedora's releases.json on stdin and print the
+# newest stable release number. Betas ("45 Beta") and rawhide are not
+# numbers, so they never qualify; no numeric release at all fails closed.
 lens_latest_fedora() {
-  python3 -c 'import json,sys; print(max(int(r["version"]) for r in json.load(sys.stdin) if r.get("version", "").isascii() and r.get("version", "").isdigit()))'
+  jq -er '[.[]? | .version? | strings | select(test("^[0-9]+$")) | tonumber] | max'
 }
 
 # Keep the newest KEEP (default 2, minimum 1) <app_dir>.rollback.* snapshots

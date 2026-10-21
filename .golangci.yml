@@ -1,0 +1,67 @@
+# golangci-lint v2 configuration
+# https://golangci-lint.run/docs/configuration/
+#
+# CI pins golangci-lint to v2.14.0 (.github/workflows/tests.yml,
+# golangci/golangci-lint-action `version: v2.14.0`). Keep a local install on
+# the same release so `make lint` matches CI exactly.
+#
+# The pin is coupled to go.mod's Go version: golangci-lint refuses to run when
+# the Go release it was BUILT with is older than the one go.mod targets, and
+# go1.27.2 raised the compiler's export-data version, which v2.13.x cannot
+# read. Bumping go.mod can therefore mean bumping this too (Fleet hit both).
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - noctx
+    - nolintlint
+    - prealloc
+    - revive
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    nolintlint:
+      # Every //nolint must name the linter it silences and say why, and a
+      # suppression that no longer suppresses anything is itself a finding.
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
+  exclusions:
+    generated: lax
+    warn-unused: true
+    presets:
+      - comments
+      - std-error-handling
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
+          - errcheck
+          # httptest.NewRequest is idiomatic in tests; there is no
+          # cancellation to thread through a synthetic request.
+          - noctx
+      - text: 'shadow: declaration of "err"'
+        linters:
+          - govet
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: strict
+
+issues:
+  # A full gate: show every finding instead of truncating the log.
+  max-issues-per-linter: 0
+  max-same-issues: 0
+
+run:
+  timeout: 5m

@@ -4,15 +4,17 @@
 # scripts/bootstrap.sh — interactive installer for Elcano Lens.
 #
 # What this does:
-#   1. Installs system deps via dnf (python3, uv, chromium runtime libs),
-#      then removes Cockpit when cockpit-ws is installed
+#   1. Installs system deps via dnf (golang + make, git, rsync, podman,
+#      chromium runtime libs), then removes Cockpit when cockpit-ws is installed
 #      (LENS_KEEP_COCKPIT=1 keeps it), and makes SSH key-only when a key
 #      is installed (LENS_KEEP_SSH_PASSWORDS=1 keeps passwords)
 #   2. Creates 'lens' system user + /opt/lens
 #   3. Syncs source to /opt/lens-src and /opt/lens
-#   4. Builds venv via uv and installs Python deps
+#   4. Builds bin/lens with `make build` (GOTOOLCHAIN=auto, root-owned
+#      caches in /var/cache/lens-build)
 #   5. Writes /opt/lens/.env and migrates persistent auth state to /var/lib/lens
-#   6. Installs the lens systemd unit + operator CLI
+#   6. Installs the lens systemd unit + operator CLI (/usr/local/bin/lens
+#      → /opt/lens/bin/lens)
 #   7. Enables and starts the service; health-checks /health
 #
 # Given a public hostname, it also names the box after it when the current
@@ -38,9 +40,10 @@ INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 # shellcheck source=lib/hostname.sh
 . "$SRC_DIR/scripts/lib/hostname.sh"
 # runuser keeps the caller's working directory. Started from /root, the service
-# user's uv and podman fail on the unreadable cwd (uv: "failed to open file
-# /root/uv.toml: Permission denied"). update.sh does the same. Resolve paths
-# first so an environment override keeps its meaning after the cd.
+# user's podman fails on the unreadable cwd (and so did uv on the Python
+# release: "failed to open file /root/uv.toml: Permission denied"). update.sh
+# does the same. Resolve paths first so an environment override keeps its
+# meaning after the cd.
 SRC_DIR="$(cd "$SRC_DIR" && pwd)"
 for dir in "$APP_DIR" "$INSTALL_SRC_DIR"; do
   [[ "$dir" == /* ]] || { echo "APP_DIR and LENS_SRC_DIR must be absolute paths: $dir" >&2; exit 1; }
@@ -94,12 +97,12 @@ genbase64() { openssl rand -base64 "$1" | tr -d '=\n' | tr '/+' '_-'; }
 genhex()    { openssl rand -hex "$1"; }
 
 [[ $EUID -eq 0 ]] || die "run as root: sudo bash scripts/bootstrap.sh"
-[[ -f "$SRC_DIR/web_service.py" ]] || die "not a Lens checkout at $SRC_DIR"
+[[ -f "$SRC_DIR/go.mod" && -d "$SRC_DIR/cmd/lens" ]] || die "not a Lens checkout at $SRC_DIR"
 lens_lock "$@"
 
 cat <<EOF
 ${c_bold}Elcano Lens — bootstrap${c_reset}
-${c_dim}Fedora / RHEL 9+  •  systemd  •  FastAPI scraper UI${c_reset}
+${c_dim}Fedora / RHEL 9+  •  systemd  •  single Go binary${c_reset}
 
 Safe to re-run: existing .env is preserved; only missing values are prompted.
 
@@ -110,13 +113,15 @@ step "1/7  Installing system dependencies via dnf"
 # the containerised Chrome over WebDriver.
 # If the operator runs scrapers headless-only, they can skip those
 # packages by exporting LENS_BOOTSTRAP_SKIP_CHROME=1.
-PKGS=(git curl jq python3 python3-devel gcc uv rsync openssl util-linux ca-certificates)
+# golang + make build bin/lens; any Go >= 1.21 will do because the Makefile
+# sets GOTOOLCHAIN=auto and Go fetches go.mod's pinned release itself.
+PKGS=(git curl jq golang make rsync openssl util-linux ca-certificates)
 [[ "${LENS_BOOTSTRAP_SKIP_CHROME:-0}" == "1" ]] || PKGS+=(chromium chromedriver)
 # podman drives the deep-scrape headless-Chrome container (auto mode's
 # fallback for sites that block the fast crawler).
 [[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" ]] || PKGS+=(podman)
 dnf install -y "${PKGS[@]}" >/dev/null
-command -v uv >/dev/null 2>&1 || die "uv missing after dnf install"
+command -v go >/dev/null 2>&1 || die "go missing after dnf install"
 ok "installed: ${PKGS[*]}"
 
 # The Vultr Fedora image ships Cockpit's root-capable web login on :9090; our boxes are administered over ssh only.
@@ -172,7 +177,7 @@ fi
 
 if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
   # Seed WITH /.git so `lens update` can git fetch/merge later.
-  # /.venv stays excluded — we rebuild it into APP_DIR below.
+  # bin/ is rebuilt into APP_DIR below.
   [[ -d "$SRC_DIR/.git" ]] || die "bootstrap must run from a git checkout (no .git at $SRC_DIR)"
   mkdir -p "$INSTALL_SRC_DIR"
   rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$INSTALL_SRC_DIR/"
@@ -187,9 +192,16 @@ rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$INSTALL_SRC_DIR/" "$APP_DIR/"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
-step "3/7  Building venv via uv"
-lens_venv "$APP_DIR" || die "venv build failed"
-ok "venv ready"
+step "3/7  Building bin/lens"
+deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
+deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
+lens_build "$APP_DIR" "$deploy_sha" "$deploy_describe" || die "build failed"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR/bin"
+if command -v restorecon >/dev/null 2>&1; then
+  restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
+fi
+LENS_BIN="$APP_DIR/bin/lens"
+ok "built: $("$LENS_BIN" --version 2>/dev/null || echo "$LENS_BIN")"
 
 step "4/7  Configuring the instance"
 if [[ -f "$ENV_FILE" ]]; then
@@ -198,15 +210,7 @@ if [[ -f "$ENV_FILE" ]]; then
     [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
     # Load known configuration only, never execute .env as a root shell script.
     case "$key" in AUTH_*|LENS_*|OPENROUTER_API_KEY|TYPESAFE_API_KEY) export "$key=$value" ;; esac
-  done < <("$APP_DIR/.venv/bin/python" -I - "$ENV_FILE" "$APP_DIR" <<'PY'
-import sys
-sys.path.insert(0, sys.argv[2])  # the release tree; -I keeps the cwd off sys.path
-from _vendor.dotenv import dotenv_values
-for key, value in dotenv_values(sys.argv[1], interpolate=False).items():
-    if value is not None:
-        sys.stdout.write(key + '\0' + value + '\0')
-PY
-  )
+  done < <("$LENS_BIN" env dump0 "$ENV_FILE")
 fi
 
 # Unified auth: Lens verifies the elcano_auth cookie minted by the auth
@@ -260,15 +264,11 @@ export TYPESAFE_API_KEY
 export AUTH_ISSUER_URL="${AUTH_ISSUER_URL:-}" LENS_PUBLIC_URL="${LENS_PUBLIC_URL:-}"
 export AUTH_CLIENT_ID="${AUTH_CLIENT_ID:-}" AUTH_CLIENT_SECRET="${AUTH_CLIENT_SECRET:-}"
 # Merge only the configured keys; retain custom settings and comments on rerun.
-"$APP_DIR/.venv/bin/python" -I - "$ENV_FILE" "$APP_DIR" <<'PY'
-import os, sys
-sys.path.insert(0, sys.argv[2])
-from _vendor.dotenv import set_key
-for key in ('AUTH_SIGNING_PUBKEY', 'LENS_AUTH_MODE', 'LENS_SESSION_SECRET',
-            'LENS_ACCESS_DB', 'OPENROUTER_API_KEY', 'TYPESAFE_API_KEY', 'AUTH_ISSUER_URL',
-            'LENS_PUBLIC_URL', 'AUTH_CLIENT_ID', 'AUTH_CLIENT_SECRET'):
-    set_key(sys.argv[1], key, os.environ[key])
-PY
+# Values travel through the environment, never argv (ps would show them).
+"$LENS_BIN" env set "$ENV_FILE" AUTH_SIGNING_PUBKEY LENS_AUTH_MODE LENS_SESSION_SECRET \
+  LENS_ACCESS_DB OPENROUTER_API_KEY TYPESAFE_API_KEY AUTH_ISSUER_URL \
+  LENS_PUBLIC_URL AUTH_CLIENT_ID AUTH_CLIENT_SECRET \
+  || die "could not write $ENV_FILE"
 chown "$APP_USER:$APP_USER" "$ENV_FILE"
 # Owner-only: the file carries the session secret, the central-auth client
 # secret, and the OpenRouter key.
@@ -279,7 +279,7 @@ ok "env seeded"
 # that tree. Stop an existing service so no session or allowlist write can land
 # between SQLite's online backup and the restart on the new database.
 systemctl stop lens.service 2>/dev/null || true
-"$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/migrate_access_db.py" \
+"$LENS_BIN" migrate-access-db \
   --legacy "$APP_DIR/data/access.db" \
   --target /var/lib/lens/access.db \
   --env-file "$ENV_FILE" \
@@ -288,7 +288,10 @@ systemctl stop lens.service 2>/dev/null || true
 
 step "5/7  Installing systemd units + CLI"
 install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
-install -m 0755 "$APP_DIR/deploy/lens-cli" "$CLI_TARGET"
+# The operator CLI is the binary itself. rm first: a Python-era box has a
+# copied bash script here, and writing onto a symlink would go through it.
+rm -f "$CLI_TARGET"
+ln -s "$LENS_BIN" "$CLI_TARGET"
 systemctl daemon-reload
 ok "units + CLI installed"
 
@@ -303,6 +306,12 @@ for _ in $(seq 1 15); do
 done
 if [[ "$healthy" == "1" ]]; then
   ok "health check /health → 200"
+  # A re-run over a Python-era install leaves its interpreter behind; the Go
+  # release is serving, so it is dead weight now.
+  if [[ -d "$APP_DIR/.venv" || -d "$APP_DIR/.venv.old" ]]; then
+    rm -rf "$APP_DIR/.venv" "$APP_DIR/.venv.old"
+    ok "retired the Python virtualenv"
+  fi
 else
   systemctl stop lens.service 2>/dev/null || true
   die "lens did not become ready within 15s — check: lens logs"
@@ -402,7 +411,7 @@ fi
 # Single source of truth is deploy/motd; update.sh keeps it in sync on
 # existing boxes.
 install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
-lens_git "$INSTALL_SRC_DIR" rev-parse HEAD > "$APP_DIR/.deployed-revision"
+printf '%s\n' "$deploy_sha" > "$APP_DIR/.deployed-revision"
 
 say
 printf '%s═══════════════════════════════════════════════%s\n' "$c_green" "$c_reset"
