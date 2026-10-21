@@ -96,7 +96,7 @@ func isFile(path string) bool {
 	if path == "" {
 		return false
 	}
-	st, err := os.Stat(path)
+	st, err := os.Stat(path) //nolint:gosec // paths are built from validated job and library filenames
 	return err == nil && st.Mode().IsRegular()
 }
 

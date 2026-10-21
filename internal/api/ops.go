@@ -90,7 +90,7 @@ func (a *API) GetJob(r *http.Request, jobID any) (Body, error) {
 var unsafeNameChars = regexp.MustCompile(`[^A-Za-z0-9._ ()-]`)
 
 // inputName names the library file an inline items list is stored as.
-func (a *API) inputName(name, suffix string) string {
+func (a *API) inputName(name string) string {
 	stamp := a.now().UTC().Format("20060102-150405")
 	if name == "" {
 		name = "api-list"
@@ -103,7 +103,7 @@ func (a *API) inputName(name, suffix string) string {
 	if stem == "" {
 		stem = "api-list"
 	}
-	return stem + " " + stamp + suffix
+	return stem + " " + stamp + ".csv"
 }
 
 // itemsCSV turns an inline identifier list into a one-column CSV: trimmed,
@@ -390,7 +390,7 @@ func (a *API) CreateJob(r *http.Request, token *apitoken.Token, args map[string]
 		if ctv {
 			return nil, invalidArg("CTV jobs need a file with app names and bundle IDs; send content_base64 instead of items.")
 		}
-		filename := a.inputName(name, ".csv")
+		filename := a.inputName(name)
 		payload, err := itemsCSV(args["items"])
 		if err != nil {
 			return nil, err
@@ -535,8 +535,9 @@ func (a *API) ListInputFiles() (Body, error) {
 func (a *API) GetOptions(ctx context.Context) (Body, error) {
 	cat := a.modelCatalog(ctx)
 	ids := func(kind string) []Body {
-		out := []Body{}
-		for _, o := range cat.Options(kind) {
+		options := cat.Options(kind)
+		out := make([]Body, 0, len(options))
+		for _, o := range options {
 			out = append(out, Body{"id": o.ID, "label": o.Label})
 		}
 		return out

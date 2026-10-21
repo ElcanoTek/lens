@@ -160,13 +160,13 @@ func (h *harness) do(method, path, token string, body io.Reader, headers ...stri
 	return response{rec}
 }
 
-func (h *harness) postJSON(path, token string, payload any) response {
+func (h *harness) postJob(token string, payload any) response {
 	h.t.Helper()
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	return h.do(http.MethodPost, path, token, bytes.NewReader(raw), "Content-Type", "application/json")
+	return h.do(http.MethodPost, "/api/v1/jobs", token, bytes.NewReader(raw), "Content-Type", "application/json")
 }
 
 func (h *harness) jobCount() int { return len(h.manager.List()) }
@@ -253,7 +253,7 @@ func domains(t *testing.T, text string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out []string
+	out := make([]string, 0, len(records)-1)
 	for _, r := range records[1:] {
 		out = append(out, r[0])
 	}

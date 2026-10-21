@@ -125,13 +125,13 @@ func TestArgumentHelpers(t *testing.T) {
 func TestInputNamesAreSanitised(t *testing.T) {
 	now := time.Date(2026, 10, 15, 14, 30, 0, 0, time.UTC)
 	a := New(Deps{Manager: jobs.NewManager(t.TempDir()), Now: func() time.Time { return now }})
-	if got := a.inputName("", ".csv"); got != "api-list 20261015-143000.csv" {
+	if got := a.inputName(""); got != "api-list 20261015-143000.csv" {
 		t.Fatal(got)
 	}
-	if got := a.inputName("Q4/review: ünï", ".csv"); got != "Q4_review_ _n 20261015-143000.csv" {
+	if got := a.inputName("Q4/review: ünï"); got != "Q4_review_ _n 20261015-143000.csv" {
 		t.Fatal(got)
 	}
-	if got := a.inputName("...", ".csv"); got != "api-list 20261015-143000.csv" {
+	if got := a.inputName("..."); got != "api-list 20261015-143000.csv" {
 		t.Fatal(got)
 	}
 }

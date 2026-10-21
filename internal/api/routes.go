@@ -374,14 +374,14 @@ func (a *API) handleFile(w http.ResponseWriter, r *http.Request) {
 // ticket is the credential, scoped to one file of one job.
 func (a *API) handleSignedDownload(w http.ResponseWriter, r *http.Request) {
 	_, jobID, kind, err := a.tokens.VerifyDownload(r.Context(), r.PathValue("ticket"))
-	if err != nil {
-		var te *apitoken.TokenError
-		if errors.As(err, &te) {
-			err = apiErr(http.StatusForbidden, "invalid_link", "%s", te.Error())
-		}
-	} else if !slices.Contains(FileKinds, kind) {
+	var te *apitoken.TokenError
+	switch {
+	case errors.As(err, &te):
+		err = apiErr(http.StatusForbidden, "invalid_link", "%s", te.Error())
+	case err != nil:
+	case !slices.Contains(FileKinds, kind):
 		err = apiErr(http.StatusForbidden, "invalid_link", "Invalid download link")
-	} else {
+	default:
 		err = a.serveFile(w, r, jobID, kind)
 	}
 	if err != nil {

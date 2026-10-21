@@ -49,7 +49,7 @@ func TestRESTRejectsMissingAndBadCredentials(t *testing.T) {
 func TestRESTScopeIsEnforced(t *testing.T) {
 	h := newHarness(t)
 	reader := h.token("jobs:read")
-	resp := h.postJSON("/api/v1/jobs", reader, map[string]any{"items": []string{"example.com"}})
+	resp := h.postJob(reader, map[string]any{"items": []string{"example.com"}})
 	if resp.Code != http.StatusForbidden || !strings.Contains(resp.json(t)["error"].(string), "jobs:run") {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
@@ -64,7 +64,7 @@ func TestRESTScopeIsEnforced(t *testing.T) {
 
 func TestRESTCreateFromItemsQueuesATaggedJob(t *testing.T) {
 	h := newHarness(t)
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{
+	resp := h.postJob(h.token(), map[string]any{
 		"name":       "Q4 review",
 		"items":      []string{"example.com", "Example.com", " example.org "},
 		"deep_retry": false,
@@ -162,7 +162,7 @@ func TestRESTCreateFailsFastWithDescriptiveErrors(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newHarness(t)
-			resp := h.postJSON("/api/v1/jobs", h.token(), tc.payload)
+			resp := h.postJob(h.token(), tc.payload)
 			if resp.Code != 400 && resp.Code != 404 && resp.Code != 413 {
 				t.Fatalf("status %d: %s", resp.Code, resp.Body)
 			}
@@ -179,7 +179,7 @@ func TestRESTCreateFailsFastWithDescriptiveErrors(t *testing.T) {
 
 func TestRESTRefusesAFileWithNothingToClassify(t *testing.T) {
 	h := newHarness(t)
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{
+	resp := h.postJob(h.token(), map[string]any{
 		"content_base64": base64.StdEncoding.EncodeToString([]byte("Notes\n\n")), "filename": "empty.csv",
 	})
 	body := resp.json(t)
@@ -381,7 +381,7 @@ func TestLibraryFileWithoutIdentifiersIsRefusedBeforeQueueing(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.manager.Dirs.Inputs, "notes.csv"), []byte("Notes\nhello\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"input_file": "notes.csv"})
+	resp := h.postJob(h.token(), map[string]any{"input_file": "notes.csv"})
 	if resp.Code != 400 || resp.json(t)["code"] != "no_identifiers" || h.jobCount() != 0 {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
@@ -392,7 +392,7 @@ func TestLibraryFileJob(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.manager.Dirs.Inputs, "lib.csv"), []byte("Domain\na.com\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"input_file": " lib.csv "})
+	resp := h.postJob(h.token(), map[string]any{"input_file": " lib.csv "})
 	if resp.Code != 201 || resp.json(t)["input_file"] != "lib.csv" {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
@@ -452,14 +452,14 @@ func TestSettingsReportWhatTheRunUsesOnThisInstance(t *testing.T) {
 	h.cfg.LLMModel = "vendor/configured-classifier"
 	h.cfg.DeepRetryEnabled = false
 	raw := h.token()
-	created := h.postJSON("/api/v1/jobs", raw, map[string]any{"items": []string{"a.com"}}).json(t)
+	created := h.postJob(raw, map[string]any{"items": []string{"a.com"}}).json(t)
 	settings := created["settings"].(map[string]any)
 	if settings["llm_model"] != "vendor/configured-classifier" || settings["deep_retry"] != false ||
 		settings["research_model"] != h.cfg.ResearchModel || settings["content"] != "websites/apps" || settings["decision_model"] != nil {
 		t.Fatalf("settings = %v", settings)
 	}
 	// An explicit request for the recommended model is kept and passed on.
-	explicit := h.postJSON("/api/v1/jobs", raw, map[string]any{"items": []string{"b.com"}, "llm_model": catalog.RecommendedModel}).json(t)
+	explicit := h.postJob(raw, map[string]any{"items": []string{"b.com"}, "llm_model": catalog.RecommendedModel}).json(t)
 	if job, _ := h.manager.Get(explicit["id"].(string)); job.LLMModel != catalog.RecommendedModel {
 		t.Fatalf("job = %+v", job)
 	}
@@ -467,7 +467,7 @@ func TestSettingsReportWhatTheRunUsesOnThisInstance(t *testing.T) {
 		t.Fatalf("settings = %v", explicit["settings"])
 	}
 	// An explicit true this instance would ignore is refused, not misreported.
-	refused := h.postJSON("/api/v1/jobs", raw, map[string]any{"items": []string{"c.com"}, "deep_retry": true})
+	refused := h.postJob(raw, map[string]any{"items": []string{"c.com"}, "deep_retry": true})
 	if refused.Code != 400 || !strings.Contains(refused.json(t)["error"].(string), "deep_retry") {
 		t.Fatalf("%d %s", refused.Code, refused.Body)
 	}
@@ -482,7 +482,7 @@ func TestCTVJobSettingsUseTheCTVModels(t *testing.T) {
 	h := newHarness(t)
 	h.cfg.CTVClassificationModel = "vendor/ctv-classifier"
 	content := base64.StdEncoding.EncodeToString([]byte("App Name,Bundle ID\nNews,com.news\n"))
-	created := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"content_base64": content, "filename": "ctv.csv"}).json(t)
+	created := h.postJob(h.token(), map[string]any{"content_base64": content, "filename": "ctv.csv"}).json(t)
 	settings := created["settings"].(map[string]any)
 	if settings["content"] != "ctv" || settings["llm_model"] != "vendor/ctv-classifier" || created["breakdown"].(map[string]any)["ctv"] != 1.0 {
 		t.Fatalf("created = %v", created)
@@ -500,12 +500,12 @@ func TestListedModelsAreAccepted(t *testing.T) {
 		d.Catalog.URL = models.URL
 	})
 	raw := h.token()
-	resp := h.postJSON("/api/v1/jobs", raw, map[string]any{"items": []string{"a.com"}, "llm_model": "vendor/listed"})
+	resp := h.postJob(raw, map[string]any{"items": []string{"a.com"}, "llm_model": "vendor/listed"})
 	if resp.Code != 201 {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
 	// Listed as a classifier, not as a research model.
-	if got := h.postJSON("/api/v1/jobs", raw, map[string]any{"items": []string{"a.com"}, "research_model": "vendor/listed"}).json(t); got["code"] != "invalid_model" {
+	if got := h.postJob(raw, map[string]any{"items": []string{"a.com"}, "research_model": "vendor/listed"}).json(t); got["code"] != "invalid_model" {
 		t.Fatalf("got %v", got)
 	}
 	classify := h.do(http.MethodGet, "/api/v1/options", raw, nil).json(t)["models"].(map[string]any)["classify"].([]any)
@@ -519,7 +519,7 @@ func TestPagingWalksTheRows(t *testing.T) {
 	raw := h.token()
 	job := h.queued()
 	h.finish(job.ID, rows)
-	var got []string
+	got := make([]string, 0, 3)
 	for i := range 3 {
 		page := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID+"/results?offset="+string(rune('0'+i))+"&limit=1", raw, nil).json(t)
 		got = append(got, page["rows"].([]any)[0].(map[string]any)["Domain"].(string))
@@ -603,7 +603,7 @@ func TestOmittedDecisionModelInheritsThisInstancesDefault(t *testing.T) {
 	h := newHarness(t)
 	h.cfg.DecisionModel = "vendor/configured-decisions"
 	spec := map[string]any{"categories": []any{map[string]any{"name": "Kids", "type": "boolean", "question": "For kids?"}}}
-	created := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"items": []string{"a.com"}, "custom_categories": spec}).json(t)
+	created := h.postJob(h.token(), map[string]any{"items": []string{"a.com"}, "custom_categories": spec}).json(t)
 	job, _ := h.manager.Get(created["id"].(string))
 	if job.DecisionModel != "" || !job.HasCategories() {
 		t.Fatalf("job = %+v", job)
@@ -614,14 +614,14 @@ func TestOmittedDecisionModelInheritsThisInstancesDefault(t *testing.T) {
 	}
 	// Categories as a JSON string are accepted too.
 	text, _ := json.Marshal(spec)
-	if resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"items": []string{"b.com"}, "custom_categories": string(text)}); resp.Code != 201 {
+	if resp := h.postJob(h.token(), map[string]any{"items": []string{"b.com"}, "custom_categories": string(text)}); resp.Code != 201 {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
 }
 
 func TestUnknownCreateOptionsAreRefused(t *testing.T) {
 	h := newHarness(t)
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{"items": []string{"a.com"}, "deep_rety": false})
+	resp := h.postJob(h.token(), map[string]any{"items": []string{"a.com"}, "deep_rety": false})
 	if resp.Code != 400 || !strings.Contains(resp.json(t)["error"].(string), "deep_rety") || h.jobCount() != 0 {
 		t.Fatalf("%d %s", resp.Code, resp.Body)
 	}
@@ -638,7 +638,7 @@ func TestUnknownCreateOptionsAreRefused(t *testing.T) {
 
 func TestOverlongUploadNamesAreInvalidFiles(t *testing.T) {
 	h := newHarness(t)
-	resp := h.postJSON("/api/v1/jobs", h.token(), map[string]any{
+	resp := h.postJob(h.token(), map[string]any{
 		"content_base64": base64.StdEncoding.EncodeToString([]byte("Domain\na.com\n")),
 		"filename":       strings.Repeat("x", 300) + ".csv",
 	})

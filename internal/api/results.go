@@ -208,7 +208,7 @@ func (a *API) readOutput(path string, offset, limit int, columns []string, quali
 	if quality != "" {
 		matching = 0
 		for _, q := range s.quality.keys {
-			if strings.ToLower(q) == strings.ToLower(quality) {
+			if strings.EqualFold(q, quality) {
 				matching += s.quality.n[q]
 			}
 		}
@@ -221,7 +221,7 @@ func (a *API) readOutput(path string, offset, limit int, columns []string, quali
 	if limit > 0 && offset < matching {
 		seen := 0
 		err := csvRows(path, func([]string) {}, func(row map[string]string) bool {
-			if quality != "" && strings.ToLower(strings.TrimSpace(row["Quality"])) != strings.ToLower(quality) {
+			if quality != "" && !strings.EqualFold(strings.TrimSpace(row["Quality"]), quality) {
 				return true
 			}
 			seen++

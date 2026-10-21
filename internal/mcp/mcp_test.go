@@ -230,8 +230,9 @@ func TestRejectsForeignBrowserOrigins(t *testing.T) {
 func TestToolsAreFilteredByScopeAndRecheckedOnCall(t *testing.T) {
 	h := newHarness(t)
 	reader := h.token("jobs:read")
-	var names []string
-	for _, tool := range h.rpc(reader, "tools/list", nil)["result"].(map[string]any)["tools"].([]any) {
+	tools := h.rpc(reader, "tools/list", nil)["result"].(map[string]any)["tools"].([]any)
+	names := make([]string, 0, len(tools))
+	for _, tool := range tools {
 		names = append(names, tool.(map[string]any)["name"].(string))
 	}
 	sort.Strings(names)
@@ -459,7 +460,7 @@ func TestSchemaLimitsMatchTheAPI(t *testing.T) {
 	if items["maxItems"] != float64(api.MaxInlineItems) || items["items"].(map[string]any)["maxLength"] != float64(api.MaxItemChars) {
 		t.Fatalf("items = %v", items)
 	}
-	var props []string
+	props := make([]string, 0, len(schema.Properties))
 	for name := range schema.Properties {
 		props = append(props, name)
 	}
