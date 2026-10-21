@@ -303,7 +303,9 @@ systemctl stop lens.service 2>/dev/null || true
   || die "could not prepare persistent Lens access database"
 
 step "5/7  Installing systemd units + CLI"
-install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
+# From the root-only build tree: $APP_DIR is service-owned, and a unit's
+# directives run as root.
+install -m 0644 "$PRIV_DIR/tree/deploy/lens.service" /etc/systemd/system/
 # The operator CLI is the binary itself, as a root-owned copy outside the
 # service-owned tree (see lens_install_cli in scripts/lib/deploy.sh).
 lens_install_cli "$LENS_BIN" "$CLI_TARGET" root:root
@@ -363,7 +365,7 @@ if [[ "$SETUP_CADDY" == "y" ]]; then
   fi
 
   tmp=$(mktemp)
-  sed "s/{{HOSTNAME}}/$HOSTNAME_FOR_TLS/g" "$APP_DIR/deploy/lens.caddy" > "$tmp"
+  sed "s/{{HOSTNAME}}/$HOSTNAME_FOR_TLS/g" "$PRIV_DIR/tree/deploy/lens.caddy" > "$tmp"
   if [[ "$USE_LETSENCRYPT" != "y" ]]; then
     awk -v host="$HOSTNAME_FOR_TLS" '$0 == host " {" { print; print "\ttls internal"; next } { print }' "$tmp" > "$tmp.2" && mv "$tmp.2" "$tmp"
   fi
@@ -425,7 +427,7 @@ fi
 # ── motd ─────────────────────────────────────────────────────────────────
 # Single source of truth is deploy/motd; update.sh keeps it in sync on
 # existing boxes.
-install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
+install -m 0644 "$PRIV_DIR/tree/deploy/motd" /etc/motd
 printf '%s\n' "$deploy_sha" > "$APP_DIR/.deployed-revision"
 
 say

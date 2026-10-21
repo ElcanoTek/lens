@@ -453,14 +453,17 @@ func excelTime(serial float64, date1904 bool) time.Time {
 }
 
 // formatDate renders a date cell as str() of the datetime openpyxl/pandas
-// produced: "2024-01-02 03:04:05", a bare time for serials below one day.
+// produced: "2024-01-02 03:04:05", a bare time for serials below one day
+// (in 1900 and 1904 workbooks alike).
 func formatDate(serial float64, date1904 bool) string {
 	if serial < 0 || serial > 2958465 { // past 9999-12-31: not a real date
 		return FormatNumber(serial)
 	}
 	t := excelTime(serial, date1904)
 	layout := "2006-01-02 15:04:05"
-	if serial < 1 && !date1904 {
+	// openpyxl's from_excel: any serial in [0, 1) is a bare time, whatever
+	// the workbook's epoch, unless its fraction rounds up to a whole day.
+	if serial < 1 && math.Round(serial*86400e3) < 86400e3 {
 		layout = "15:04:05"
 	}
 	s := t.Format(layout)

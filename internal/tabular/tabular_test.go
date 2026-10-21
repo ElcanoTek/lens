@@ -352,13 +352,14 @@ func TestXLSXFirstSheetByWorkbookOrderAndAbsoluteTargets(t *testing.T) {
 			`<Relationship Id="rIdX" Type="http://x/hyperlink" Target="https://example.com" TargetMode="External"/></Relationships>`,
 		"xl/theStyles.xml":         `<styleSheet><cellXfs><xf numFmtId="0"/><xf numFmtId="15"/></cellXfs></styleSheet>`,
 		"xl/worksheets/sheet1.xml": sheetXML(`<row><c t="inlineStr"><is><t>wrong sheet</t></is></c></row>`),
-		"xl/worksheets/data.xml":   sheetXML(`<row><c t="inlineStr"><is><t>When</t></is></c></row><row><c s="1"><v>0</v></c></row>`),
+		"xl/worksheets/data.xml":   sheetXML(`<row><c t="inlineStr"><is><t>When</t></is></c></row><row><c s="1"><v>1</v></c></row>`),
 	})
 	f := mustParseXLSX(t, data)
 	if want := []string{"When"}; !reflect.DeepEqual(f.Columns(), want) {
 		t.Fatalf("columns = %q", f.Columns())
 	}
-	if got := f.Cell(0, 0); got != "1904-01-01 00:00:00" {
+	// Serial 1 is a whole day after the 1904 epoch (str(from_excel(1, MAC_EPOCH))).
+	if got := f.Cell(0, 0); got != "1904-01-02 00:00:00" {
 		t.Errorf("1904 date = %q", got)
 	}
 }
@@ -510,5 +511,25 @@ func TestXLSXPartNamesAreCaseInsensitive(t *testing.T) {
 	f := mustParseXLSX(t, data)
 	if !reflect.DeepEqual(f.Columns(), []string{"Domain"}) || f.Cell(0, 0) != "a.com" {
 		t.Errorf("got %q %q", f.Columns(), grid(f))
+	}
+}
+
+// Expected strings are str(openpyxl.utils.datetime.from_excel(v, epoch)).
+func TestFormatDateMatchesOpenpyxlInBothEpochs(t *testing.T) {
+	cases := []struct {
+		serial   float64
+		date1904 bool
+		want     string
+	}{
+		{0, false, "00:00:00"}, {0, true, "00:00:00"},
+		{0.5, false, "12:00:00"}, {0.5, true, "12:00:00"},
+		{0.99999999, true, "23:59:59.999000"},
+		{1.5, false, "1900-01-01 12:00:00"}, {1.5, true, "1904-01-02 12:00:00"},
+		{45000.25, false, "2023-03-15 06:00:00"}, {45000.25, true, "2027-03-16 06:00:00"},
+	}
+	for _, c := range cases {
+		if got := formatDate(c.serial, c.date1904); got != c.want {
+			t.Errorf("formatDate(%v, 1904=%v) = %q, want %q", c.serial, c.date1904, got, c.want)
+		}
 	}
 }

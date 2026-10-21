@@ -511,3 +511,20 @@ func TestISOTime(t *testing.T) {
 		t.Errorf("got %s", got)
 	}
 }
+
+func TestHostOfComparesWholeHostnames(t *testing.T) {
+	cases := map[string]string{
+		"https://WWW.Example.com:8443/x": "example.com",
+		"http://[2001:db8::1]/a":         "2001:db8::1",
+		"http://[2001:db8::1]:8080/a":    "2001:db8::1",
+		"http://127.0.0.1:9/":            "127.0.0.1",
+	}
+	for in, want := range cases {
+		if got := hostOf(in); got != want {
+			t.Errorf("hostOf(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if hostOf("http://[2001:db8::1]/") == hostOf("http://[2001:4860::1]/") {
+		t.Error("IPv6 hosts sharing a first hextet compare equal")
+	}
+}

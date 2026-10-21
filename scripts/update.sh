@@ -235,6 +235,10 @@ built="$("$STAGING/bin/lens" --version 2>/dev/null || true)"
 # below the service user owns $STAGING and could swap its bin/ entry, so
 # nothing root executes may come from there.
 install -m 0755 "$STAGING/bin/lens" "$PRIV_DIR/lens"
+# Likewise every file root installs into the system: the unit (its
+# directives run as root) and the motd.
+install -d -m 0755 "$PRIV_DIR/deploy"
+install -m 0644 "$STAGING/deploy/lens.service" "$STAGING/deploy/motd" "$PRIV_DIR/deploy/"
 chown -R "$BIN_OWNER" "$PRIV_DIR"
 chown -R "$APP_USER:$APP_USER" "$STAGING"
 chown -R "$BIN_OWNER" "$STAGING/bin"
@@ -300,7 +304,7 @@ if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi
 
-install -m 0644 "$APP_DIR/deploy/lens.service" "$UNIT_DIR/"
+install -m 0644 "$PRIV_DIR/deploy/lens.service" "$UNIT_DIR/"
 # The operator CLI is the binary itself, as a root-owned copy outside the
 # service-owned tree (see lens_install_cli); it replaces the copied bash
 # script a Python release installed here.
@@ -347,8 +351,8 @@ remove_firecrawl() {
 remove_firecrawl
 # Keep /etc/motd in sync with deploy/motd — boxes bootstrapped before the
 # banner existed never got one, and this heals drift on every update.
-if [[ -f "$APP_DIR/deploy/motd" ]] && ! cmp -s "$APP_DIR/deploy/motd" "$MOTD_FILE"; then
-  install -m 0644 "$APP_DIR/deploy/motd" "$MOTD_FILE"
+if [[ -f "$PRIV_DIR/deploy/motd" ]] && ! cmp -s "$PRIV_DIR/deploy/motd" "$MOTD_FILE"; then
+  install -m 0644 "$PRIV_DIR/deploy/motd" "$MOTD_FILE"
   ok "motd installed/refreshed"
 fi
 systemctl daemon-reload

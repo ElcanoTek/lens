@@ -798,8 +798,9 @@ func hostOf(raw string) string {
 	if err != nil {
 		return ""
 	}
-	host := strings.ToLower(u.Host)
-	host, _, _ = strings.Cut(host, ":")
+	// Hostname, not a cut at the first ':': a bracketed IPv6 host carries
+	// colons, and [2001:db8::1] vs [2001:4860::1] must not compare equal.
+	host := strings.ToLower(u.Hostname())
 	return strings.TrimPrefix(host, "www.")
 }
 

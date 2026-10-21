@@ -90,7 +90,8 @@ func TestBootstrapBuildsOutsideTheServiceTree(t *testing.T) {
 			t.Errorf("bootstrap.sh lost %q", want)
 		}
 	}
-	if strings.Contains(src, `lens_build "$APP_DIR"`) || strings.Contains(src, `"$APP_DIR/bin/lens" "$PRIV_DIR`) {
+	if strings.Contains(src, `lens_build "$APP_DIR"`) || strings.Contains(src, `"$APP_DIR/bin/lens" "$PRIV_DIR`) ||
+		strings.Contains(src, `"$APP_DIR/deploy/`) {
 		t.Error("bootstrap.sh builds in, or copies root's binary from, the service-owned tree")
 	}
 	if build, chown := strings.Index(src, `lens_build "$PRIV_DIR/tree"`), strings.Index(src, `chown -R "$APP_USER:$APP_USER" "$APP_DIR"`+"\n# bin/"); build < 0 || chown < build {
@@ -565,7 +566,8 @@ func TestUpdateScriptMigrationContract(t *testing.T) {
 		`LENS_UPDATE_NO_PULL:-0`, `LENS_UPDATE_BASE_SHA:-$before_sha`, `LENS_UPDATE_YES:-0`, `--yes|-y) export LENS_UPDATE_YES=1`,
 		`lens_lock "$@"`, `lens_ensure_go`, `mktemp -d "${APP_DIR}.staging.XXXXXX"`, `lens_build "$STAGING"`,
 		`"$PRIV_DIR/lens" migrate-access-db`, `install -m 0755 "$STAGING/bin/lens" "$PRIV_DIR/lens"`, `cp -a "$APP_DIR/.venv" "$BACKUP/.venv"`,
-		`"$BACKUP/lens-cli.previous"`, `lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"`, `ensure_auth_pubkey`,
+		`"$BACKUP/lens-cli.previous"`, `lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"`,
+		`install -m 0644 "$PRIV_DIR/deploy/lens.service" "$UNIT_DIR/"`, `ensure_auth_pubkey`,
 		`ensure_rootless_podman`, `remove_firecrawl`, `deploy/motd`, `lens_health`, `lens_prune_rollbacks`,
 		`.deployed-revision`,
 	} {
@@ -622,5 +624,21 @@ func assertCLICopy(t *testing.T, cli, bin string) {
 	}
 	if readFile(t, cli) != readFile(t, bin) {
 		t.Fatalf("CLI %s differs from %s", cli, bin)
+	}
+}
+
+// Root never installs a system file (unit, motd, Caddy site) from the
+// service-owned $APP_DIR or the service-owned staging tree.
+func TestRootInstallsNoFileFromServiceOwnedTrees(t *testing.T) {
+	for _, script := range []string{"scripts/bootstrap.sh", "scripts/update.sh"} {
+		for i, line := range strings.Split(read(t, script), "\n") {
+			code := strings.TrimSpace(line)
+			if strings.HasPrefix(code, "#") {
+				continue
+			}
+			if strings.Contains(code, `"$APP_DIR/deploy/`) || (strings.Contains(code, `"$STAGING/deploy/`) && !strings.Contains(code, `"$PRIV_DIR/deploy/"`)) {
+				t.Errorf("%s:%d installs from a service-owned tree: %s", script, i+1, code)
+			}
+		}
 	}
 }
