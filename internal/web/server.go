@@ -105,6 +105,8 @@ type Server struct {
 	handler       http.Handler
 	now           func() time.Time
 	spoolInterval time.Duration
+	// maxUpload caps each uploaded file (tests shrink it).
+	maxUpload int
 
 	wg sync.WaitGroup
 }
@@ -203,6 +205,7 @@ func New(opts Options) (*Server, error) {
 	s := &Server{
 		home: home, dirs: manager.Dirs, auth: provider, catalog: cat, manager: manager,
 		staticVersion: StaticVersion(staticFS), now: now, spoolInterval: opts.SpoolInterval,
+		maxUpload: jobs.MaxUploadBytes,
 	}
 	if s.spoolInterval <= 0 {
 		s.spoolInterval = SpoolPollInterval

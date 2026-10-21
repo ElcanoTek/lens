@@ -100,15 +100,15 @@ func (s *Server) spoolJob(entry string) (*jobs.Job, string, error) {
 	if !isRegular(source) {
 		return nil, "", fmt.Errorf("%s is missing from the request", filename)
 	}
-	payload, err := readCapped(source, jobs.MaxUploadBytes)
+	payload, err := readCapped(source, s.maxUpload)
 	if err != nil {
 		return nil, "", err
 	}
 	if len(payload) == 0 {
 		return nil, "", errors.New("Input file is empty") //nolint:revive,staticcheck // user-facing message
 	}
-	if len(payload) > jobs.MaxUploadBytes {
-		return nil, "", fmt.Errorf("File exceeds %d MB limit", jobs.MaxUploadBytes/(1024*1024)) //nolint:revive,staticcheck // user-facing message
+	if len(payload) > s.maxUpload {
+		return nil, "", fmt.Errorf("File exceeds %d MB limit", s.maxUpload/(1024*1024)) //nolint:revive,staticcheck // user-facing message
 	}
 	if err := jobs.VerifyInputPayload(filename, payload); err != nil {
 		return nil, "", err

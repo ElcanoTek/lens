@@ -195,7 +195,8 @@ func filterModels(models []rawModel, required string, promptCap, completionCap f
 		label := fmt.Sprintf("%s · %s/M in · %s/M out", name, FormatPricePerMillion(p), FormatPricePerMillion(c))
 		if required == "web_search_options" {
 			if s, ok := m.Pricing["web_search"]; ok {
-				if f, ok := price(s); ok && s != nil {
+				// float(pricing["web_search"]): None and "" do not parse.
+				if f, ok := price(s); ok && s != nil && s != "" {
 					label += fmt.Sprintf(" · search from $%s/1K requests", strconv.FormatFloat(f*1000, 'g', 6, 64))
 				} else {
 					label += " · search fees extra"

@@ -299,7 +299,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 		missingField(w, "destination", "file")
 		return
 	}
-	limitMB := jobs.MaxUploadBytes / (1024 * 1024)
+	limitMB := s.maxUpload / (1024 * 1024)
 	destination, haveDestination := "", false
 	var outcomes []uploadOutcome
 	var stored []string
@@ -399,14 +399,14 @@ func (s *Server) readUpload(part io.Reader, rawName string, limitMB int) uploadO
 	if err != nil {
 		return fail(err.Error())
 	}
-	payload, err := io.ReadAll(io.LimitReader(part, jobs.MaxUploadBytes+1))
+	payload, err := io.ReadAll(io.LimitReader(part, int64(s.maxUpload)+1))
 	if err != nil {
 		return fail(err.Error())
 	}
 	if len(payload) == 0 {
 		return fail("Uploaded file is empty")
 	}
-	if len(payload) > jobs.MaxUploadBytes {
+	if len(payload) > s.maxUpload {
 		return fail(fmt.Sprintf("File exceeds %d MB limit", limitMB))
 	}
 	if err := jobs.VerifyInputPayload(filename, payload); err != nil {
