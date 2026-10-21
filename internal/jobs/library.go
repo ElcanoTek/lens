@@ -98,8 +98,9 @@ func Chips(b map[string]int) []Chip {
 
 // BreakdownLabel is the plain-text summary, e.g. "318 Websites · 64 iOS".
 func BreakdownLabel(b map[string]int) string {
-	parts := []string{}
-	for _, c := range Chips(b) {
+	chips := Chips(b)
+	parts := make([]string, 0, len(chips))
+	for _, c := range chips {
 		parts = append(parts, groupThousands(c.Count)+" "+c.Label)
 	}
 	return strings.Join(parts, " · ")
@@ -158,10 +159,10 @@ func (d Dirs) ListInputFiles(now time.Time) []InputFile {
 		// timedelta.days floors, so a file stamped slightly in the future
 		// (clock skew) is not "today".
 		days := int(math.Floor(now.UTC().Sub(mtime).Hours() / 24))
-		switch {
-		case days == 0:
+		switch days {
+		case 0:
 			uploaded = "today " + mtime.Format("15:04")
-		case days == 1:
+		case 1:
 			uploaded = "yesterday " + mtime.Format("15:04")
 		default:
 			uploaded = fmt.Sprintf("%s %d", mtime.Format("Jan"), mtime.Day())

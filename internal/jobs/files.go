@@ -70,15 +70,15 @@ var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._ ()-]`)
 // "(2)", ampersands or accents.
 func SafeFilename(name string) (string, error) {
 	if strings.ContainsAny(name, `/\`) {
-		return "", errors.New("Filename must not contain path separators") //nolint:revive,staticcheck // user-facing message, kept from the Python release
+		return "", errors.New("Filename must not contain path separators") //nolint:staticcheck // user-facing message, kept from the Python release
 	}
 	cleaned := strings.TrimSpace(filepath.Base(name))
 	if name == "" || cleaned == "" || cleaned == "." {
-		return "", errors.New("Filename cannot be empty") //nolint:revive,staticcheck // user-facing message
+		return "", errors.New("Filename cannot be empty") //nolint:staticcheck // user-facing message
 	}
 	sanitized := unsafeFilenameChars.ReplaceAllString(cleaned, "_")
 	if strings.Trim(sanitized, "._ -") == "" {
-		return "", errors.New("Filename cannot be empty") //nolint:revive,staticcheck // user-facing message
+		return "", errors.New("Filename cannot be empty") //nolint:staticcheck // user-facing message
 	}
 	return sanitized, nil
 }
@@ -107,19 +107,30 @@ func ValidateInputFilename(name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	switch strings.ToLower(filepath.Ext(cleaned)) {
+	switch strings.ToLower(pathSuffix(cleaned)) {
 	case ".csv", ".xlsx":
 		return cleaned, nil
 	}
-	return "", errors.New("Input files must be .csv or .xlsx") //nolint:revive,staticcheck // user-facing message
+	return "", errors.New("Input files must be .csv or .xlsx") //nolint:staticcheck // user-facing message
+}
+
+// pathSuffix is pathlib's PurePath.suffix: like filepath.Ext, except that a
+// leading dot is not an extension (".csv" has none) and neither is a
+// trailing one.
+func pathSuffix(name string) string {
+	i := strings.LastIndexByte(name, '.')
+	if i <= 0 || i == len(name)-1 {
+		return ""
+	}
+	return name[i:]
 }
 
 // VerifyInputPayload sanity-checks upload bytes against the extension.
 func VerifyInputPayload(filename string, payload []byte) error {
-	switch strings.ToLower(filepath.Ext(filename)) {
+	switch strings.ToLower(pathSuffix(filename)) {
 	case ".xlsx":
 		if !bytes.HasPrefix(payload, xlsxMagic) {
-			return errors.New("File does not look like a valid .xlsx workbook (wrong file contents)") //nolint:revive,staticcheck // user-facing message
+			return errors.New("File does not look like a valid .xlsx workbook (wrong file contents)") //nolint:staticcheck // user-facing message
 		}
 	case ".csv":
 		// CSV has no magic bytes, but a NUL in the leading sample reliably
@@ -129,7 +140,7 @@ func VerifyInputPayload(filename string, payload []byte) error {
 			sample = sample[:4096]
 		}
 		if bytes.IndexByte(sample, 0) >= 0 {
-			return errors.New("File does not look like a valid CSV (binary contents detected)") //nolint:revive,staticcheck // user-facing message
+			return errors.New("File does not look like a valid CSV (binary contents detected)") //nolint:staticcheck // user-facing message
 		}
 	}
 	return nil
@@ -156,7 +167,7 @@ func CleanModelID(value string) (string, error) {
 		return "", nil
 	}
 	if !modelIDRe.MatchString(m) {
-		return "", fmt.Errorf("Invalid model id: %s", m) //nolint:revive,staticcheck // user-facing message
+		return "", fmt.Errorf("Invalid model id: %s", m) //nolint:staticcheck // user-facing message
 	}
 	return m, nil
 }

@@ -79,9 +79,9 @@ sleep 60
 	// Python computes the breakdown caches (detection is another package's
 	// port); both sides then read the same sidecars.
 	run := func(mode string) {
-		cmd := exec.Command(python, filepath.Join(filepath.Dir(state), "pyrender.py"), state, mode) //nolint:gosec // test-only reference run
+		cmd := exec.Command(python, filepath.Join(filepath.Dir(state), "pyrender.py"), state, mode)
 		if p := os.Getenv("LENS_PYRENDER"); p != "" {
-			cmd = exec.Command(python, p, state, mode) //nolint:gosec // test-only reference run
+			cmd = exec.Command(python, p, state, mode)
 		}
 		cmd.Dir = repo
 		cmd.Env = append(os.Environ(), "OPENROUTER_API_KEY=test")
@@ -173,8 +173,9 @@ sleep 60
 
 	// Dump the job table for Python (None where Go has "").
 	type dumpJob map[string]any
-	var list []dumpJob
-	for _, j := range m.List() {
+	all := m.List()
+	list := make([]dumpJob, 0, len(all))
+	for _, j := range all {
 		raw, _ := json.Marshal(j)
 		var d dumpJob
 		_ = json.Unmarshal(raw, &d)
@@ -197,7 +198,7 @@ sleep 60
 	entries, _ := os.ReadDir(outputs)
 	for _, e := range entries {
 		if e.Type().IsRegular() && e.Name() != jobs.JobsStateFilename {
-			data, _ := os.ReadFile(filepath.Join(outputs, e.Name())) //nolint:gosec // test copy
+			data, _ := os.ReadFile(filepath.Join(outputs, e.Name()))
 			_ = os.WriteFile(filepath.Join(pyOut, e.Name()), data, 0o600)
 		}
 	}
@@ -226,8 +227,8 @@ sleep 60
 		return s
 	}
 	for name := range pages {
-		goHTML, _ := os.ReadFile(filepath.Join(state, "go_"+name+".html")) //nolint:gosec // test output
-		pyHTML, _ := os.ReadFile(filepath.Join(state, "py_"+name+".html")) //nolint:gosec // test output
+		goHTML, _ := os.ReadFile(filepath.Join(state, "go_"+name+".html"))
+		pyHTML, _ := os.ReadFile(filepath.Join(state, "py_"+name+".html"))
 		g, p := normalize(string(goHTML)), normalize(string(pyHTML))
 		if g == p {
 			t.Logf("%s: identical (%d bytes)", name, len(g))

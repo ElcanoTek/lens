@@ -364,7 +364,7 @@ func truncateRunes(s string, n int) string {
 // Create queues a job and persists the table.
 func (m *Manager) Create(n NewJob) (*Job, error) {
 	if !allowedModes[n.Mode] {
-		return nil, fmt.Errorf("Invalid mode: %s", n.Mode) //nolint:revive,staticcheck // user-facing message
+		return nil, fmt.Errorf("Invalid mode: %s", n.Mode) //nolint:staticcheck // user-facing message
 	}
 	suffix := make([]byte, 3)
 	if _, err := rand.Read(suffix); err != nil {
@@ -623,7 +623,7 @@ func (m *Manager) runJob(id string) {
 
 	if snapshot.HasCategories() {
 		path := filepath.Join(m.Dirs.Outputs, snapshot.ID+"_output.csv.categories.json")
-		var pretty json.RawMessage = snapshot.CustomCategories
+		pretty := []byte(snapshot.CustomCategories)
 		if m.FormatCategories != nil {
 			if formatted, err := m.FormatCategories(snapshot.CustomCategories); err == nil {
 				pretty = formatted

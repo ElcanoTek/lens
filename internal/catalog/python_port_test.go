@@ -29,7 +29,7 @@ func model(id string, prompt, completion any, params []string, name string) json
 }
 
 func ids(opts []Option) []string {
-	out := []string{}
+	out := make([]string, 0, len(opts))
 	for _, o := range opts {
 		out = append(out, o.ID)
 	}

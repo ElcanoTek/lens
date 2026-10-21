@@ -6,8 +6,8 @@ package web
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
-	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -186,7 +186,7 @@ func TestCategoriesSidecarHandoffAndDeletion(t *testing.T) {
 	job := h.jobs()[0]
 	waitStatus(t, h, job.ID, jobs.StatusCompleted)
 	sidecar := filepath.Join(h.dirs.Outputs, job.ID+"_output.csv.categories.json")
-	raw, err := os.ReadFile(sidecar) //nolint:gosec // test file
+	raw, err := os.ReadFile(sidecar)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,14 +280,12 @@ func TestBatchDeleteAndDownload(t *testing.T) {
 	h := newHarness(t, false)
 	h.writeInput("a.csv", "a")
 	h.writeInput("b.csv", "b")
-	resp := h.do(http.MethodPost, "/files/batch-download", strings.NewReader(url.Values{"destination": {"inputs"}, "filenames": {"a.csv", "b.csv", "../x", "missing.csv"}}.Encode()), "application/x-www-form-urlencoded")
-	data, _ := io.ReadAll(resp.Body)
-	_ = resp.Body.Close()
+	resp, data := h.send(http.MethodPost, "/files/batch-download", strings.NewReader(url.Values{"destination": {"inputs"}, "filenames": {"a.csv", "b.csv", "../x", "missing.csv"}}.Encode()), "application/x-www-form-urlencoded")
 	if resp.StatusCode != 200 || !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/zip") ||
 		!regexp.MustCompile(`^attachment; filename="lens_inputs_\d{14}\.zip"$`).MatchString(resp.Header.Get("Content-Disposition")) {
 		t.Fatalf("%d %v", resp.StatusCode, resp.Header)
 	}
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	zr, err := zip.NewReader(strings.NewReader(data), int64(len(data)))
 	if err != nil || len(zr.File) != 2 || zr.File[0].Name != "a.csv" || zr.File[1].Name != "b.csv" {
 		t.Fatalf("zip: %v %v", err, zr)
 	}
@@ -300,10 +298,8 @@ func TestBatchDeleteAndDownload(t *testing.T) {
 		{url.Values{"destination": {"inputs"}}, 400, `{"detail":"No files selected"}`},
 		{url.Values{"destination": {"inputs"}, "filenames": {"nope.csv"}}, 404, `{"detail":"No valid files found"}`},
 	} {
-		resp := h.do(http.MethodPost, "/files/batch-download", strings.NewReader(tc.form.Encode()), "application/x-www-form-urlencoded")
-		body, _ := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if resp.StatusCode != tc.code || string(body) != tc.body {
+		resp, body := h.send(http.MethodPost, "/files/batch-download", strings.NewReader(tc.form.Encode()), "application/x-www-form-urlencoded")
+		if resp.StatusCode != tc.code || body != tc.body {
 			t.Errorf("%v: %d %s", tc.form, resp.StatusCode, body)
 		}
 	}
@@ -324,7 +320,7 @@ type upload struct {
 	content []byte
 }
 
-func (h *harness) upload(destination string, files ...upload) *http.Response {
+func (h *harness) upload(destination string, files ...upload) reply {
 	h.t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
@@ -341,9 +337,7 @@ func (h *harness) upload(destination string, files ...upload) *http.Response {
 		_, _ = pw.Write(f.content)
 	}
 	_ = mw.Close()
-	resp := h.do(http.MethodPost, "/files/upload", &buf, mw.FormDataContentType())
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
+	resp, _ := h.send(http.MethodPost, "/files/upload", &buf, mw.FormDataContentType())
 	return resp
 }
 
@@ -557,30 +551,22 @@ func TestIndexRendersAdvancedModelPicker(t *testing.T) {
 func TestIndexRequiresSignIn(t *testing.T) {
 	h := newHarness(t, false)
 	anon := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, _ := http.NewRequest(http.MethodGet, h.ts.URL+"/?x=1", nil) //nolint:noctx // test
-	r, err := anon.Do(req)
-	if err != nil {
-		t.Fatal(err)
+	do := func(method, path, body string) (reply, string) {
+		req, _ := http.NewRequestWithContext(context.Background(), method, h.ts.URL+path, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		return roundTrip(t, anon, req)
 	}
-	_ = r.Body.Close()
+	r, _ := do(http.MethodGet, "/?x=1", "")
 	want := "https://auth.elcanotek.com/?return_to=" + pyQuote(h.ts.URL+"/?x=1", "")
 	if r.StatusCode != 303 || location(r) != want {
 		t.Fatalf("%d %s", r.StatusCode, location(r))
 	}
 	for _, path := range []string{"/api/jobs/live", "/api/jobs/queue", "/files/download/inputs/a.csv"} {
-		req, _ := http.NewRequest(http.MethodGet, h.ts.URL+path, nil) //nolint:noctx // test
-		r, _ := anon.Do(req)
-		body, _ := io.ReadAll(r.Body)
-		_ = r.Body.Close()
-		if r.StatusCode != 401 || string(body) != `{"detail":"Unauthorized"}` {
+		if r, body := do(http.MethodGet, path, ""); r.StatusCode != 401 || body != `{"detail":"Unauthorized"}` {
 			t.Errorf("%s: %d %s", path, r.StatusCode, body)
 		}
 	}
-	req, _ = http.NewRequest(http.MethodPost, h.ts.URL+"/jobs", strings.NewReader("input_file=a.csv")) //nolint:noctx // test
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	r, _ = anon.Do(req)
-	_ = r.Body.Close()
-	if r.StatusCode != 401 {
+	if r, _ := do(http.MethodPost, "/jobs", "input_file=a.csv"); r.StatusCode != 401 {
 		t.Fatal(r.StatusCode)
 	}
 }
@@ -617,7 +603,7 @@ func TestRenamesAndFileLibraryRendering(t *testing.T) {
 			t.Errorf("%v: %s", tc.form, location(resp))
 		}
 	}
-	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "b.csv")); string(b) != "y" { //nolint:gosec // test file
+	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "b.csv")); string(b) != "y" {
 		t.Fatal("target overwritten")
 	}
 }
@@ -662,5 +648,32 @@ func TestInputFilesListedNewestFirst(t *testing.T) {
 	}
 	if !strings.Contains(body, `Uploaded files <span class="ws-count">(2)</span>`) {
 		t.Fatal("count")
+	}
+}
+
+func TestFilenameRules(t *testing.T) {
+	for in, want := range map[string]string{
+		"my file.csv": "my file.csv", "my file.xlsx": "my file.xlsx",
+		"JPMC Official Allowlist 12.16.25 (2).xlsx": "JPMC Official Allowlist 12.16.25 (2).xlsx",
+		"AT&T sites.csv": "AT_T sites.csv", "John's list.csv": "John_s list.csv", "Q1, Q2.xlsx": "Q1_ Q2.xlsx",
+		"résumé.csv": "r_sum_.csv",
+	} {
+		if got, err := jobs.ValidateInputFilename(in); err != nil || got != want {
+			t.Errorf("%q: %q %v", in, got, err)
+		}
+	}
+	for _, bad := range []string{"../../etc/passwd", `a\b.csv`, "", "   ", "my file.txt", ".csv", "csv."} {
+		if _, err := jobs.ValidateInputFilename(bad); err == nil {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+	if err := jobs.VerifyInputPayload("workbook.xlsx", []byte("this is not a zip")); err == nil || !strings.Contains(err.Error(), "valid .xlsx") {
+		t.Error(err)
+	}
+	if err := jobs.VerifyInputPayload("list.csv", []byte("\x00\x01binary")); err == nil || !strings.Contains(err.Error(), "valid CSV") {
+		t.Error(err)
+	}
+	if jobs.VerifyInputPayload("workbook.xlsx", []byte("PK\x03\x04rest")) != nil || jobs.VerifyInputPayload("list.csv", []byte("pageURL\nexample.com\n")) != nil {
+		t.Error("valid payload refused")
 	}
 }

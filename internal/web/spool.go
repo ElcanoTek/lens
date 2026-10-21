@@ -105,10 +105,10 @@ func (s *Server) spoolJob(entry string) (*jobs.Job, string, error) {
 		return nil, "", err
 	}
 	if len(payload) == 0 {
-		return nil, "", errors.New("Input file is empty") //nolint:revive,staticcheck // user-facing message
+		return nil, "", errors.New("Input file is empty") //nolint:staticcheck // user-facing message, kept from the Python release
 	}
 	if len(payload) > s.maxUpload {
-		return nil, "", fmt.Errorf("File exceeds %d MB limit", s.maxUpload/(1024*1024)) //nolint:revive,staticcheck // user-facing message
+		return nil, "", fmt.Errorf("File exceeds %d MB limit", s.maxUpload/(1024*1024)) //nolint:staticcheck // user-facing message, kept from the Python release
 	}
 	if err := jobs.VerifyInputPayload(filename, payload); err != nil {
 		return nil, "", err
@@ -118,7 +118,7 @@ func (s *Server) spoolJob(entry string) (*jobs.Job, string, error) {
 		mode = pyStr(v)
 	}
 	if !jobs.ValidMode(mode) {
-		return nil, "", fmt.Errorf("Invalid mode: %s", mode) //nolint:revive,staticcheck // user-facing message
+		return nil, "", fmt.Errorf("Invalid mode: %s", mode) //nolint:staticcheck // user-facing message, kept from the Python release
 	}
 	var cats json.RawMessage
 	if v, ok := request["custom_categories"]; ok && v != nil {

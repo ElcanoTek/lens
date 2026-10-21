@@ -17,7 +17,7 @@ func fakeRunner(t *testing.T, script string) (string, string) {
 	t.Helper()
 	home := t.TempDir()
 	exe := filepath.Join(home, "fake-lens")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"+script), 0o700); err != nil { //nolint:gosec // test helper must be executable
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"+script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return home, exe

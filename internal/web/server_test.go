@@ -31,8 +31,9 @@ import (
 
 const sportsSpec = `{"categories": [{"name": "Sports", "type": "boolean", "question": "Is it about sports?"}]}`
 
-func (h *harness) spoolEntry(name, filename string, body []byte, request map[string]any) string {
+func (h *harness) spoolEntry(name string, body []byte, request map[string]any) string {
 	h.t.Helper()
+	const filename = "sites.csv"
 	entry := filepath.Join(h.dirs.Spool, name)
 	if err := os.MkdirAll(entry, 0o700); err != nil {
 		h.t.Fatal(err)
@@ -53,7 +54,7 @@ func (h *harness) spoolEntry(name, filename string, body []byte, request map[str
 
 func spoolResult(t *testing.T, entry string) map[string]any {
 	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(entry, "result.json")) //nolint:gosec // test file
+	raw, err := os.ReadFile(filepath.Join(entry, "result.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func TestSpoolRequestBecomesADashboardJob(t *testing.T) {
 	h := newHarness(t, false)
 	var cats any
 	_ = json.Unmarshal([]byte(sportsSpec), &cats)
-	entry := h.spoolEntry("submit-abc", "sites.csv", []byte("Domain\nexample.com\n"), map[string]any{
+	entry := h.spoolEntry("submit-abc", []byte("Domain\nexample.com\n"), map[string]any{
 		"name": "deal sites", "custom_categories": cats, "decision_model": "~typesafe/jev-latest", "research_fallback": false,
 	})
 	h.srv.ProcessSpoolOnce()
@@ -85,13 +86,13 @@ func TestSpoolRequestBecomesADashboardJob(t *testing.T) {
 	if !jsonEqual(got, cats) {
 		t.Fatalf("categories %s", job.CustomCategories)
 	}
-	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "sites.csv")); string(b) != "Domain\nexample.com\n" { //nolint:gosec // test file
+	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "sites.csv")); string(b) != "Domain\nexample.com\n" {
 		t.Fatal("input not stored")
 	}
 	if exists(filepath.Join(entry, "sites.csv")) {
 		t.Fatal("spooled input not removed")
 	}
-	raw, _ := os.ReadFile(filepath.Join(entry, "result.json")) //nolint:gosec // test file
+	raw, _ := os.ReadFile(filepath.Join(entry, "result.json"))
 	if string(raw) != `{"job_id": "`+job.ID+`", "input_file": "sites.csv"}` {
 		t.Fatalf("result.json = %s", raw)
 	}
@@ -114,12 +115,12 @@ func TestSpoolRequestBecomesADashboardJob(t *testing.T) {
 func TestSpoolNameClashKeepsBothFiles(t *testing.T) {
 	h := newHarness(t, false)
 	h.writeInput("sites.csv", "Domain\nother.com\n")
-	entry := h.spoolEntry("submit-abc", "sites.csv", []byte("Domain\nexample.com\n"), nil)
+	entry := h.spoolEntry("submit-abc", []byte("Domain\nexample.com\n"), nil)
 	h.srv.ProcessSpoolOnce()
 	if got := spoolResult(t, entry)["input_file"]; got != "sites (2).csv" {
 		t.Fatal(got)
 	}
-	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "sites.csv")); string(b) != "Domain\nother.com\n" { //nolint:gosec // test file
+	if b, _ := os.ReadFile(filepath.Join(h.dirs.Inputs, "sites.csv")); string(b) != "Domain\nother.com\n" {
 		t.Fatal("existing file overwritten")
 	}
 }
@@ -143,7 +144,7 @@ func TestSpoolInvalidRequestsAreRejectedWithoutAJob(t *testing.T) {
 		if body == nil {
 			body = []byte("Domain\nexample.com\n")
 		}
-		entry := h.spoolEntry("submit-x", "sites.csv", body, tc.patch)
+		entry := h.spoolEntry("submit-x", body, tc.patch)
 		h.srv.ProcessSpoolOnce()
 		result := spoolResult(t, entry)
 		msg, ok := result["error"].(string)
@@ -169,7 +170,7 @@ func TestSpoolIncompleteSymlinkedAndSweptEntries(t *testing.T) {
 	if exists(filepath.Join(partial, "result.json")) || exists(filepath.Join(elsewhere, "result.json")) || len(h.jobs()) != 0 {
 		t.Fatal("incomplete or symlinked entry ingested")
 	}
-	entry := h.spoolEntry("submit-done", "sites.csv", []byte("Domain\nexample.com\n"), nil)
+	entry := h.spoolEntry("submit-done", []byte("Domain\nexample.com\n"), nil)
 	h.srv.ProcessSpoolOnce()
 	old := time.Now().Add(-SpoolResultTTL - 5*time.Second)
 	_ = os.Chtimes(filepath.Join(entry, "result.json"), old, old)
@@ -181,7 +182,7 @@ func TestSpoolIncompleteSymlinkedAndSweptEntries(t *testing.T) {
 
 func TestSpoolWatcherRuns(t *testing.T) {
 	h := newHarness(t, true)
-	entry := h.spoolEntry("submit-live", "sites.csv", []byte("Domain\nexample.com\n"), nil)
+	entry := h.spoolEntry("submit-live", []byte("Domain\nexample.com\n"), nil)
 	for range 250 {
 		if exists(filepath.Join(entry, "result.json")) {
 			return
@@ -229,8 +230,7 @@ func TestPagesCarryNonceCSPAndOtherResponsesAClosedOne(t *testing.T) {
 	if missing.StatusCode != 404 || body != `{"detail":"Not Found"}` || missing.Header.Get("X-Frame-Options") != "DENY" {
 		t.Error(missing.StatusCode, body)
 	}
-	wrong := h.do(http.MethodGet, "/jobs", nil, "")
-	_ = wrong.Body.Close()
+	wrong, _ := h.send(http.MethodGet, "/jobs", nil, "")
 	if wrong.StatusCode != 405 || wrong.Header.Get("Allow") != "POST" {
 		t.Error(wrong.StatusCode, wrong.Header)
 	}
@@ -277,11 +277,7 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	resp, _ := h.get("/static/styles.css")
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, h.ts.URL+"/static/styles.css", nil)
 	req.Header.Set("If-None-Match", resp.Header.Get("ETag"))
-	again, err := h.client.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = again.Body.Close()
+	again, _ := roundTrip(t, h.client, req)
 	if again.StatusCode != http.StatusNotModified {
 		t.Errorf("revalidation: %d", again.StatusCode)
 	}
@@ -300,7 +296,7 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 func TestBundledFontsAreTheTwoBrandFaces(t *testing.T) {
 	static, _ := fs.Sub(lens.Static, "static")
 	var sheets, scripts []string
-	_ = fs.WalkDir(static, ".", func(p string, d fs.DirEntry, _ error) error {
+	_ = fs.WalkDir(static, ".", func(p string, _ fs.DirEntry, _ error) error {
 		switch {
 		case strings.HasSuffix(p, ".css"):
 			sheets = append(sheets, p)
@@ -404,8 +400,7 @@ func TestHealthLogoutAndSignedOut(t *testing.T) {
 	if resp.StatusCode != 200 || health["status"] != "ok" || health["auth_mode"] != "elcano" || health["time"] == "" {
 		t.Fatal(body)
 	}
-	head := h.do(http.MethodHead, "/health", nil, "")
-	_ = head.Body.Close()
+	head, _ := h.send(http.MethodHead, "/health", nil, "")
 	if head.StatusCode != 200 {
 		t.Fatal(head.StatusCode)
 	}
@@ -440,11 +435,7 @@ func TestBackchannelBodyLimits(t *testing.T) {
 		} else {
 			req.ContentLength = length
 		}
-		resp, err := h.client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = resp.Body.Close()
+		resp, _ := roundTrip(t, h.client, req)
 		return resp.StatusCode
 	}
 	big := "logout_token=" + strings.Repeat("x", 20_001)
@@ -494,13 +485,9 @@ func TestCentralModeEndToEndWiring(t *testing.T) {
 	ts := httptest.NewServer(srv.Handler())
 	defer ts.Close()
 	client := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	get := func(p string) *http.Response {
+	get := func(p string) reply {
 		req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, ts.URL+p, nil)
-		resp, err := client.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		_ = resp.Body.Close()
+		resp, _ := roundTrip(t, client, req)
 		return resp
 	}
 	// Anonymous page visit → local login route with the path preserved.
@@ -560,8 +547,7 @@ func TestAPIAndMCPAreMounted(t *testing.T) {
 			t.Errorf("%s: %d %s", p, resp.StatusCode, body)
 		}
 	}
-	resp := h.do(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), "application/json")
-	_ = resp.Body.Close()
+	resp, _ := h.send(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"ping"}`), "application/json")
 	if resp.StatusCode == 404 {
 		t.Fatal("mcp not mounted")
 	}
@@ -591,7 +577,7 @@ g="` + gate + `/$(basename "$in")"; while [ ! -e "$g" ]; do sleep 0.02; done`
 		o.Manager = m
 	})
 	m := h.srv.Manager()
-	var ids []string
+	ids := make([]string, 0, 3)
 	for _, name := range []string{"f0.csv", "f1.csv", "f2.csv"} {
 		j, err := m.Create(jobs.NewJob{InputFile: name, Mode: "auto"})
 		if err != nil {
@@ -639,7 +625,9 @@ func TestServeStartsAndShutsDownOnSignal(t *testing.T) {
 	t.Setenv("LENS_API_TOKEN_DB", filepath.Join(home, "tokens.db"))
 	done := make(chan int, 1)
 	ready := make(chan string, 1)
-	go func() { done <- serve([]string{"--addr", "127.0.0.1:0"}, io.Discard, func(addr string) { ready <- addr }) }()
+	go func() {
+		done <- serve([]string{"--addr", "127.0.0.1:0"}, io.Discard, func(addr string) { ready <- addr })
+	}()
 	var addr string
 	select {
 	case addr = <-ready:
@@ -649,11 +637,7 @@ func TestServeStartsAndShutsDownOnSignal(t *testing.T) {
 		t.Fatal("serve did not start")
 	}
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://"+addr+"/health", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = resp.Body.Close()
+	resp, _ := roundTrip(t, http.DefaultClient, req)
 	if resp.StatusCode != 200 || !isRegular(filepath.Join(home, "managed-files", "outputs")) && !exists(filepath.Join(home, "managed-files", "spool")) {
 		t.Fatal(resp.StatusCode)
 	}

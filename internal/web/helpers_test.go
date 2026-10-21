@@ -98,7 +98,7 @@ type harnessOpt func(*Options)
 func fakeExecutable(t *testing.T, dir, script string) string {
 	t.Helper()
 	exe := filepath.Join(dir, "fake-lens")
-	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"+script), 0o700); err != nil { //nolint:gosec // test helper must be executable
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"+script), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	return exe
@@ -141,7 +141,25 @@ func newHarness(t *testing.T, start bool, opts ...harnessOpt) *harness {
 	return h
 }
 
-func (h *harness) do(method, path string, body io.Reader, contentType string) *http.Response {
+// reply is a finished response (the body already read and closed).
+type reply struct {
+	StatusCode int
+	Header     http.Header
+}
+
+// roundTrip sends req and returns the finished response.
+func roundTrip(t *testing.T, client *http.Client, req *http.Request) (reply, string) {
+	t.Helper()
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	b, _ := io.ReadAll(resp.Body)
+	return reply{StatusCode: resp.StatusCode, Header: resp.Header}, string(b)
+}
+
+func (h *harness) send(method, path string, body io.Reader, contentType string) (reply, string) {
 	h.t.Helper()
 	req, err := http.NewRequestWithContext(context.Background(), method, h.ts.URL+path, body)
 	if err != nil {
@@ -150,27 +168,18 @@ func (h *harness) do(method, path string, body io.Reader, contentType string) *h
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	resp, err := h.client.Do(req)
-	if err != nil {
-		h.t.Fatal(err)
-	}
-	return resp
+	return roundTrip(h.t, h.client, req)
 }
 
-func (h *harness) get(path string) (*http.Response, string) {
+func (h *harness) get(path string) (reply, string) {
 	h.t.Helper()
-	resp := h.do(http.MethodGet, path, nil, "")
-	defer resp.Body.Close()
-	b, _ := io.ReadAll(resp.Body)
-	return resp, string(b)
+	return h.send(http.MethodGet, path, nil, "")
 }
 
-func (h *harness) postForm(path string, values url.Values) *http.Response {
+func (h *harness) postForm(path string, values url.Values) reply {
 	h.t.Helper()
-	resp := h.do(http.MethodPost, path, strings.NewReader(values.Encode()), "application/x-www-form-urlencoded")
-	_, _ = io.Copy(io.Discard, resp.Body)
-	_ = resp.Body.Close()
-	return resp
+	r, _ := h.send(http.MethodPost, path, strings.NewReader(values.Encode()), "application/x-www-form-urlencoded")
+	return r
 }
 
 func (h *harness) writeInput(name, content string) string {
@@ -202,7 +211,7 @@ func (h *harness) oldestFirst() []jobs.Job {
 	return list
 }
 
-func location(resp *http.Response) string { return resp.Header.Get("Location") }
+func location(resp reply) string { return resp.Header.Get("Location") }
 
 func waitShort() { time.Sleep(20 * time.Millisecond) }
 
