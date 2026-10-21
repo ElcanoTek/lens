@@ -6,6 +6,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -218,3 +219,68 @@ func TestCancelWhileStartingIsHonoured(t *testing.T) {
 		t.Fatal("a cancelled job was started")
 	}
 }
+
+// breakState makes every _jobs.json write fail, even as root: the state
+// path becomes a non-empty directory, so the rename over it is refused.
+func breakState(t *testing.T, m *Manager) func() {
+	t.Helper()
+	_ = os.Remove(m.Dirs.StatePath())
+	if err := os.MkdirAll(filepath.Join(m.Dirs.StatePath(), "blocker"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return func() { _ = os.RemoveAll(m.Dirs.StatePath()) }
+}
+
+func TestUnsavedTransitionsAreRefused(t *testing.T) {
+	home, exe := fakeRunner(t, `exit 0`)
+	m := NewManager(home)
+	m.Executable = exe
+	if err := m.Dirs.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	queued, err := m.Create(NewJob{InputFile: "a.csv", Mode: "auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := breakState(t, m)
+
+	if _, err := m.Create(NewJob{InputFile: "b.csv", Mode: "auto"}); !errors.Is(err, ErrNotSaved) {
+		t.Fatalf("Create with unwritable state = %v, want ErrNotSaved", err)
+	}
+	if n := len(m.List()); n != 1 || m.QueueLength() != 1 {
+		t.Fatalf("unsaved job kept in memory: %d jobs, %d queued", n, m.QueueLength())
+	}
+	if err := m.Cancel(queued.ID); !errors.Is(err, ErrNotSaved) {
+		t.Fatalf("Cancel with unwritable state = %v, want ErrNotSaved", err)
+	}
+	if j, _ := m.Get(queued.ID); j.Status != StatusQueued || m.QueuePosition(queued.ID) != 1 {
+		t.Fatalf("unsaved cancel applied: %+v", j)
+	}
+
+	// A start that can't be recorded never runs.
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+	done := waitFor(t, m, queued.ID, StatusFailed)
+	if done.ReturnCode != nil || !strings.Contains(done.Error, "could not save job state") {
+		t.Fatalf("unsaved start = %+v", done)
+	}
+
+	restore()
+	if err := os.WriteFile(filepath.Join(home, "managed-files", "outputs", queued.ID+".log"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.mu.Lock()
+	m.jobs[queued.ID].LogFile = queued.ID + ".log"
+	m.mu.Unlock()
+	restore = breakState(t, m)
+	defer restore()
+	if err := m.Delete(queued.ID); !errors.Is(err, ErrNotSaved) {
+		t.Fatalf("Delete with unwritable state = %v, want ErrNotSaved", err)
+	}
+	if _, ok := m.Get(queued.ID); !ok || !exists(filepath.Join(home, "managed-files", "outputs", queued.ID+".log")) {
+		t.Fatal("unsaved delete removed the job or its files")
+	}
+}
+
+func exists(path string) bool { _, err := os.Stat(path); return err == nil }

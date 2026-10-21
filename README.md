@@ -390,8 +390,8 @@ curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | su
 
 It creates the `lens` system user and `/opt/lens`, builds `bin/lens` with the
 distro's Go (`make build`; `GOTOOLCHAIN=auto` fetches the pinned release),
-installs the systemd unit, links `/usr/local/bin/lens` to the binary as the
-operator CLI, and optionally sets up Caddy with automatic TLS. Updates are
+installs the systemd unit, installs a root-owned copy of the binary as the
+`/usr/local/bin/lens` operator CLI, and optionally sets up Caddy with automatic TLS. Updates are
 staged and health-checked, with automatic rollback to the previous release;
 a host still on the Python release moves to Go with a normal `lens update`.
 `lens doctor` diagnoses the installation; `lens host` handles package

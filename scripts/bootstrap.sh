@@ -190,20 +190,26 @@ fi
 # (.local/.config/.cache hold the pre-seeded Chrome image).
 rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$INSTALL_SRC_DIR/" "$APP_DIR/"
-chown -R "$APP_USER:$APP_USER" "$APP_DIR"
 
 step "3/7  Building bin/lens"
 deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
 deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
+# Built as root before the tree is handed to the service user, so a running
+# service (a bootstrap re-run) cannot change what root compiles.
 lens_build "$APP_DIR" "$deploy_sha" "$deploy_describe" || die "build failed"
-# root:root, never the service user: /usr/local/bin/lens links here and root
-# runs it for every operator command, so a binary the service account could
-# rewrite would hand a compromised service root.
+# Root executes the binary below (env helpers, migrate-access-db) and installs
+# it as the CLI: take a root-only copy before $APP_DIR becomes service-owned.
+rm -rf "${APP_DIR}".deploybin.* 2>/dev/null || true
+PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
+trap 'rm -rf "$PRIV_DIR"' EXIT
+install -o root -g root -m 0755 "$APP_DIR/bin/lens" "$PRIV_DIR/lens"
+chown -R "$APP_USER:$APP_USER" "$APP_DIR"
+# bin/ stays root:root: the service only needs to execute it.
 chown -R root:root "$APP_DIR/bin"
 if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi
-LENS_BIN="$APP_DIR/bin/lens"
+LENS_BIN="$PRIV_DIR/lens"
 ok "built: $("$LENS_BIN" --version 2>/dev/null || echo "$LENS_BIN")"
 
 step "4/7  Configuring the instance"
@@ -291,10 +297,9 @@ systemctl stop lens.service 2>/dev/null || true
 
 step "5/7  Installing systemd units + CLI"
 install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
-# The operator CLI is the binary itself. rm first: a Python-era box has a
-# copied bash script here, and writing onto a symlink would go through it.
-rm -f "$CLI_TARGET"
-ln -s "$LENS_BIN" "$CLI_TARGET"
+# The operator CLI is the binary itself, as a root-owned copy outside the
+# service-owned tree (see lens_install_cli in scripts/lib/deploy.sh).
+lens_install_cli "$LENS_BIN" "$CLI_TARGET" root:root
 systemctl daemon-reload
 ok "units + CLI installed"
 

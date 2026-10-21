@@ -164,9 +164,10 @@ Seven steps, in order:
    `0600`, then creates `/var/lib/lens` and atomically migrates the legacy
    `/opt/lens/data/access.db` when present (`lens migrate-access-db`). A
    custom `LENS_ACCESS_DB` is never moved or rewritten.
-5. **Unit and CLI** — installs `lens.service` and links `/usr/local/bin/lens`
-   to `/opt/lens/bin/lens` (replacing the copied bash script a Python release
-   installed there).
+5. **Unit and CLI** — installs `lens.service` and installs `/usr/local/bin/lens`
+   as a root-owned copy of the binary (replacing the copied bash script a
+   Python release installed there). It is a copy, not a link into `/opt/lens`,
+   because that tree belongs to the service user and root runs the CLI.
 6. **Start** — enables and starts the service, polls
    `http://127.0.0.1:8808/health` for up to 15 s and, if Lens never becomes
    ready, stops it and fails the installation. Once it is ready, a Python-era
@@ -210,7 +211,7 @@ again to fill missing configuration; use `lens env edit` to change existing valu
   └── api_tokens.db     API token hashes and the download-link key (once minted)
 /var/cache/lens-build/  root-owned Go module/build cache and toolchain (disposable)
 /etc/systemd/system/lens.service
-/usr/local/bin/lens  →  /opt/lens/bin/lens   operator CLI (the binary itself)
+/usr/local/bin/lens                     operator CLI: root-owned copy of bin/lens
 /etc/caddy/Caddyfile.d/lens.caddyfile   (optional; or conf.d/lens.caddy)
 /etc/motd
 ```
@@ -413,8 +414,10 @@ contacting the site from this host.
 
 ## Service management and the operator CLI
 
-Bootstrap links `/usr/local/bin/lens` to the release binary, so the operator
-CLI and the service are always the same build (`lens --version` prints it).
+Bootstrap and every update install `/usr/local/bin/lens` as a root-owned copy
+of the release binary, so the operator CLI and the service are always the same
+build (`lens --version` prints it). It is never a link into `/opt/lens`: that
+tree belongs to the service user, and root runs the CLI.
 Commands that need root re-run themselves under `sudo`; `lens token`,
 `lens access` and the second half of `lens submit` re-run as the service user.
 An operator needs sudo rights but not a root shell. `lens --help` lists every
@@ -527,7 +530,7 @@ build cannot take down a working install:
    from the staged binary), and rsync the staged tree over `$APP_DIR`
    (preserving `.git`, `.venv`, `.env*`, `config.json`, `managed-files`,
    legacy `data`, podman's caches and CLI run files). `restorecon` the new
-   `bin/`, reinstall the unit, relink `/usr/local/bin/lens` to the new binary,
+   `bin/`, reinstall the unit, install `/usr/local/bin/lens` as a root-owned copy of the new binary,
    retire the old Firecrawl stack if present (see below), refresh `/etc/motd`,
    then restart.
 5. **Verify.** Poll `/health` with bounded requests. On success write
@@ -571,7 +574,8 @@ lens doctor
 
 `lens_restore_release` puts back the snapshot's tree, its `bin/lens`, its
 Python `.venv` when it has one, the unit and whatever `/usr/local/bin/lens`
-was (a symlink to the binary, or the Python release's copied bash script).
+was (a copy of the binary, or the Python release's copied bash script; a
+symlink left by an early Go build is restored as a copy).
 Application rollback does not undo DNF packages, the Go toolchain or module
 cache in `/var/cache/lens-build`, migrated auth state or the removal of the
 old Firecrawl stack.
@@ -617,7 +621,7 @@ Go `update.sh` runs on its own:
   the code, the old unit and the old bash CLI.
 - The swap leaves `.venv` in place, installs the new unit
   (`ExecStart=/opt/lens/bin/lens serve …`) and replaces the copied
-  `/usr/local/bin/lens` script with a symlink to the binary.
+  `/usr/local/bin/lens` script with a root-owned copy of the binary.
 - **Only after the Go release answers `/health`** is `.venv` (and any
   `.venv.old`) removed. If the health check fails, rollback restores the
   Python release — code, venv, unit and bash CLI — and starts it again, and

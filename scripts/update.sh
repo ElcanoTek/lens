@@ -24,10 +24,10 @@ CLI_TARGET="${LENS_CLI_TARGET:-/usr/local/bin/lens}"
 UNIT_DIR="${LENS_UNIT_DIR:-/etc/systemd/system}"
 STATE_DIR="${LENS_STATE_DIR:-/var/lib/lens}"
 MOTD_FILE="${LENS_MOTD_FILE:-/etc/motd}"
-# Owner of bin/: root, never the service user. /usr/local/bin/lens links to
-# bin/lens and root runs it for every operator command (lens update, doctor,
-# env edit, ...), so a binary the service account can rewrite would hand a
-# compromised service root. The service only needs to execute it.
+# Owner of bin/ and of the CLI copy: root, never the service user. Root runs
+# /usr/local/bin/lens for every operator command (lens update, doctor, env
+# edit, ...), so a binary the service account can rewrite would hand a
+# compromised service root. The service only needs to execute bin/lens.
 BIN_OWNER="${LENS_BIN_OWNER:-root:root}"
 SERVICE="lens.service"
 for arg in "$@"; do
@@ -218,9 +218,12 @@ lens_ensure_go || die "could not install the Go toolchain (dnf install golang ma
 # (203/EXEC Permission denied). Same filesystem also makes the swap cheap.
 # /opt has no tmp reaper, so sweep leftovers from any previous run that died
 # before its EXIT trap.
-rm -rf "${APP_DIR}".staging.* 2>/dev/null || true
+rm -rf "${APP_DIR}".staging.* "${APP_DIR}".deploybin.* 2>/dev/null || true
 STAGING="$(mktemp -d "${APP_DIR}.staging.XXXXXX")"
-trap 'rm -rf "$STAGING"' EXIT
+# Root-only (mktemp -d is 0700, beside $APP_DIR under root-owned /opt): the
+# copy of the new binary that root executes and installs as the CLI.
+PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
+trap 'rm -rf "$STAGING" "$PRIV_DIR"' EXIT
 rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$STAGING/"
 describe="$(git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
 lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live install untouched"
@@ -228,9 +231,12 @@ lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live ins
 # stopped yet, so this is the last cheap exit.
 built="$("$STAGING/bin/lens" --version 2>/dev/null || true)"
 [[ "$built" == *"$after_sha"* ]] || die "staged bin/lens does not report ${after_sha:0:12} (got: ${built:-nothing}) — live install untouched"
+# Take root's copy while the staging tree is still root-owned: from the chown
+# below the service user owns $STAGING and could swap its bin/ entry, so
+# nothing root executes may come from there.
+install -m 0755 "$STAGING/bin/lens" "$PRIV_DIR/lens"
+chown -R "$BIN_OWNER" "$PRIV_DIR"
 chown -R "$APP_USER:$APP_USER" "$STAGING"
-# Root runs this binary (migrate-access-db below); keep it out of the service
-# user's reach.
 chown -R "$BIN_OWNER" "$STAGING/bin"
 ok "staging release ready: $built"
 
@@ -266,7 +272,7 @@ rollback() {
       warn "rollback needs attention — retained snapshot: $BACKUP"
     fi
   fi
-  rm -rf "$STAGING"
+  rm -rf "$STAGING" "$PRIV_DIR"
   exit "$status"
 }
 trap rollback EXIT
@@ -274,7 +280,7 @@ systemctl stop "$SERVICE"
 # Persistent auth state lives in $STATE_DIR (/var/lib/lens), outside the release tree.
 # Stopped first so no session or allowlist write lands between the online
 # backup and the restart on the new database.
-if ! "$STAGING/bin/lens" migrate-access-db \
+if ! "$PRIV_DIR/lens" migrate-access-db \
   --legacy "$APP_DIR/data/access.db" \
   --target "$STATE_DIR/access.db" \
   --env-file "$APP_DIR/.env" \
@@ -295,10 +301,10 @@ if command -v restorecon >/dev/null 2>&1; then
 fi
 
 install -m 0644 "$APP_DIR/deploy/lens.service" "$UNIT_DIR/"
-# The operator CLI is the binary itself: a symlink, replacing the copied bash
+# The operator CLI is the binary itself, as a root-owned copy outside the
+# service-owned tree (see lens_install_cli); it replaces the copied bash
 # script a Python release installed here.
-rm -f "$CLI_TARGET"
-ln -s "$APP_DIR/bin/lens" "$CLI_TARGET"
+lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"
 
 # ── Remove the retired Firecrawl stack ───────────────────────────────────
 # Firecrawl was removed from Lens (2026-10): it rescued few sites and slowed

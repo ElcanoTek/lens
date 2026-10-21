@@ -102,9 +102,10 @@ if [[ -e "$cli" || -L "$cli" ]]; then cp -a "$cli" "$backup/lens-cli.previous"; 
 // swapAndRestore is update.sh's swap followed by a failed health check.
 const swapAndRestore = `
 source "$1"; live="$2"; stage="$3"; backup="$4"; unit="$5"; cli="$6"
+export LENS_BIN_OWNER="$(id -un):$(id -gn)"
 rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" "$stage/" "$live/"
 echo 'new unit' > "$unit"
-rm -f "$cli"; ln -s "$live/bin/lens" "$cli"
+lens_install_cli "$live/bin/lens" "$cli" "$LENS_BIN_OWNER"
 lens_restore_release "$live" "$backup" "$unit" "$cli"
 `
 
@@ -189,12 +190,9 @@ func TestFailedGoUpdateRestoresThePreviousGoRelease(t *testing.T) {
 		!exists(filepath.Join(live, "old-only.txt")) || exists(filepath.Join(live, ".venv")) {
 		t.Fatal("previous Go release not restored exactly")
 	}
-	target, err := os.Readlink(cli)
-	if err != nil || target != filepath.Join(live, "bin/lens") {
-		t.Fatalf("CLI = %q, %v; want a symlink to bin/lens", target, err)
-	}
+	assertCLICopy(t, cli, filepath.Join(live, "bin/lens"))
 	if readFile(t, cli) != "v1" {
-		t.Fatal("CLI does not reach the restored binary")
+		t.Fatal("CLI is not the restored binary")
 	}
 	checkState(t, live, backup)
 }
@@ -212,7 +210,7 @@ func TestRestoreOfALegacySnapshotInstallsItsBashCLI(t *testing.T) {
 	if err := os.Symlink(filepath.Join(live, "bin/lens"), cli); err != nil {
 		t.Fatal(err)
 	}
-	r := bash(t, `source "$1"; lens_restore_release "$2" "$3" "$4" "$5"`, []string{lib(t), live, backup, unit, cli})
+	r := bash(t, `source "$1"; export LENS_BIN_OWNER="$(id -un):$(id -gn)"; lens_restore_release "$2" "$3" "$4" "$5"`, []string{lib(t), live, backup, unit, cli})
 	if r.code != 0 {
 		t.Fatal(r.stderr)
 	}
@@ -544,8 +542,8 @@ func TestUpdateScriptMigrationContract(t *testing.T) {
 	for _, want := range []string{
 		`LENS_UPDATE_NO_PULL:-0`, `LENS_UPDATE_BASE_SHA:-$before_sha`, `LENS_UPDATE_YES:-0`, `--yes|-y) export LENS_UPDATE_YES=1`,
 		`lens_lock "$@"`, `lens_ensure_go`, `mktemp -d "${APP_DIR}.staging.XXXXXX"`, `lens_build "$STAGING"`,
-		`"$STAGING/bin/lens" migrate-access-db`, `cp -a "$APP_DIR/.venv" "$BACKUP/.venv"`,
-		`"$BACKUP/lens-cli.previous"`, `ln -s "$APP_DIR/bin/lens" "$CLI_TARGET"`, `ensure_auth_pubkey`,
+		`"$PRIV_DIR/lens" migrate-access-db`, `install -m 0755 "$STAGING/bin/lens" "$PRIV_DIR/lens"`, `cp -a "$APP_DIR/.venv" "$BACKUP/.venv"`,
+		`"$BACKUP/lens-cli.previous"`, `lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"`, `ensure_auth_pubkey`,
 		`ensure_rootless_podman`, `remove_firecrawl`, `deploy/motd`, `lens_health`, `lens_prune_rollbacks`,
 		`.deployed-revision`,
 	} {
@@ -589,5 +587,18 @@ func TestUnitRunsTheGoBinary(t *testing.T) {
 				t.Errorf("%s breaks rootless podman and must stay absent", d)
 			}
 		}
+	}
+}
+
+// assertCLICopy checks the operator CLI is a regular file (never a symlink
+// into the service-owned tree) with the same bytes as the release binary.
+func assertCLICopy(t *testing.T, cli, bin string) {
+	t.Helper()
+	st, err := os.Lstat(cli)
+	if err != nil || !st.Mode().IsRegular() {
+		t.Fatalf("CLI %s is not a regular file: %v %v", cli, st, err)
+	}
+	if readFile(t, cli) != readFile(t, bin) {
+		t.Fatalf("CLI %s differs from %s", cli, bin)
 	}
 }

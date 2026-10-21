@@ -219,8 +219,11 @@ func (m *Manager) signal() {
 	}
 }
 
-// save writes _jobs.json; callers hold m.mu.
-func (m *Manager) save() {
+// save writes _jobs.json; callers hold m.mu. The error is logged here and
+// returned so state transitions a caller reports (queued, cancelled,
+// deleted, started) can be refused or rolled back when they were not
+// persisted: a restart reloads only what is on disk.
+func (m *Manager) save() error {
 	list := make([]*Job, 0, len(m.jobs))
 	for _, j := range m.jobs {
 		list = append(list, j)
@@ -233,21 +236,31 @@ func (m *Manager) save() {
 	raw, err := json.MarshalIndent(map[string]any{"saved_at": m.now(), "jobs": out}, "", "  ")
 	if err != nil {
 		logger.Error("could not encode job state: " + err.Error())
-		return
+		return err
 	}
 	if err := os.MkdirAll(m.Dirs.Outputs, 0o755); err != nil { //nolint:gosec // managed-files is operator-readable
 		logger.Error("could not create outputs dir: " + err.Error())
-		return
+		return err
 	}
 	tmp := m.Dirs.StatePath() + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil { //nolint:gosec // operators read _jobs.json to drain before updates
 		logger.Error("could not save job state: " + err.Error())
-		return
+		_ = os.Remove(tmp)
+		return err
 	}
 	if err := os.Rename(tmp, m.Dirs.StatePath()); err != nil {
 		logger.Error("could not save job state: " + err.Error())
+		_ = os.Remove(tmp)
+		return err
 	}
+	return nil
 }
+
+// ErrNotSaved wraps a job-state write failure; the requested change was not
+// applied.
+var ErrNotSaved = errors.New("could not save job state")
+
+func notSaved(err error) error { return fmt.Errorf("%w: %w", ErrNotSaved, err) }
 
 var jobIDRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
@@ -341,7 +354,7 @@ func (m *Manager) Load() {
 		m.signal()
 	}
 	if interrupted {
-		m.save()
+		_ = m.save() // best effort; logged
 	}
 }
 
@@ -381,7 +394,13 @@ func (m *Manager) Create(n NewJob) (*Job, error) {
 	m.mu.Lock()
 	m.jobs[job.ID] = job
 	m.queue = append(m.queue, job.ID)
-	m.save()
+	if err := m.save(); err != nil {
+		// Never queue a job the next restart would not know about.
+		delete(m.jobs, job.ID)
+		m.removeQueued(job.ID)
+		m.mu.Unlock()
+		return nil, notSaved(err)
+	}
 	cp := *job
 	m.mu.Unlock()
 	m.signal()
@@ -458,20 +477,28 @@ func (m *Manager) Cancel(id string) error {
 		return ErrUnknownJob
 	}
 	if job.Status == StatusQueued {
+		queue := append([]string(nil), m.queue...)
 		m.removeQueued(id)
 		job.Status = StatusCancelled
 		job.FinishedAt = m.now()
-		m.save()
+		if err := m.save(); err != nil {
+			// Unsaved, a restart would run it anyway: refuse instead.
+			m.queue, job.Status, job.FinishedAt = queue, StatusQueued, ""
+			return notSaved(err)
+		}
 		return nil
 	}
 	if cmd, slot := m.running[id]; job.Status == StatusRunning && slot {
 		job.Status = StatusCancelling
+		if err := m.save(); err != nil {
+			job.Status = StatusRunning
+			return notSaved(err)
+		}
 		if cmd != nil && cmd.Process != nil {
 			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
 		}
 		// Otherwise the process is still being started: runJob sees
 		// "cancelling" and either never starts it or signals it right after.
-		m.save()
 		return nil
 	}
 	return &NotAllowedError{fmt.Sprintf("Job %s is not cancellable", id)}
@@ -497,6 +524,17 @@ func (m *Manager) Delete(id string) error {
 	if !IsTerminal(job.Status) {
 		return &NotAllowedError{fmt.Sprintf("Job %s is not deletable", id)}
 	}
+	// Forget the job durably first: if that fails, keep both the entry and
+	// its files rather than leave a recorded job with no artifacts.
+	delete(m.jobs, id)
+	if err := m.save(); err != nil {
+		m.jobs[id] = job
+		return notSaved(err)
+	}
+	m.removeQueued(id)
+	if m.current == id {
+		m.current = ""
+	}
 	for _, name := range []string{job.OutputFile, job.ProgressFile, job.LogFile} {
 		if name == "" {
 			continue
@@ -509,12 +547,6 @@ func (m *Manager) Delete(id string) error {
 	if job.HasCategories() {
 		_ = os.Remove(filepath.Join(m.Dirs.Outputs, job.ID+"_output.csv.categories.json"))
 	}
-	delete(m.jobs, id)
-	m.removeQueued(id)
-	if m.current == id {
-		m.current = ""
-	}
-	m.save()
 	return nil
 }
 
@@ -613,7 +645,15 @@ func (m *Manager) runJob(id string) {
 	}
 	job.Status = StatusRunning
 	job.StartedAt = m.now()
-	m.save()
+	if err := m.save(); err != nil {
+		// Don't start a run the next restart would see as still queued and
+		// start again; fail it in memory so the dashboard says why.
+		job.Status, job.StartedAt = StatusFailed, ""
+		job.FinishedAt = m.now()
+		job.Error = notSaved(err).Error()
+		m.mu.Unlock()
+		return
+	}
 	args := m.Command(job)
 	snapshot := *job
 	m.mu.Unlock()
@@ -624,7 +664,7 @@ func (m *Manager) runJob(id string) {
 		job.Status = StatusFailed
 		job.FinishedAt = m.now()
 		job.Error = err.Error()
-		m.save()
+		_ = m.save() // best effort; logged
 	}
 
 	if snapshot.HasCategories() {
@@ -648,7 +688,7 @@ func (m *Manager) runJob(id string) {
 		// Cancelled while the categories file was being written.
 		job.Status = StatusCancelled
 		job.FinishedAt = m.now()
-		m.save()
+		_ = m.save() // best effort; logged
 		m.mu.Unlock()
 		return
 	}
@@ -671,7 +711,7 @@ func (m *Manager) runJob(id string) {
 	job.OutputFile = snapshot.ID + "_output.csv"
 	job.ProgressFile = snapshot.ID + "_progress.json"
 	job.LogFile = snapshot.ID + ".log"
-	m.save()
+	_ = m.save() // best effort; logged
 	m.mu.Unlock()
 
 	err := cmd.Wait()
@@ -703,5 +743,5 @@ func (m *Manager) runJob(id string) {
 		job.Error = fmt.Sprintf("Analyzer exited with code %d", code)
 	}
 	job.FinishedAt = m.now()
-	m.save()
+	_ = m.save() // best effort; logged
 }

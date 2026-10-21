@@ -311,7 +311,7 @@ Production target: **Fedora/RHEL 9+**
 - `deploy/lens.service` — systemd unit; runs `/opt/lens/bin/lens serve --addr 127.0.0.1:8808` with `WorkingDirectory=/opt/lens`; hardened with `ProtectSystem=full`, `ProtectKernelModules`, `LockPersonality` and a restricted address-family set. `NoNewPrivileges`, `ProtectControlGroups`, `ProtectKernelTunables`, `PrivateTmp` and `ProtectHome` are deliberately **absent** — each one breaks rootless podman (see the comments in the unit).
 - `deploy/lens.caddy` — Caddy reverse proxy config with security headers; `{{HOSTNAME}}` placeholder substituted by bootstrap
 - `deploy/nginx-lens.conf` — Nginx alternative reverse proxy config
-- `/usr/local/bin/lens` — the operator CLI is the binary itself (a symlink; `internal/opscli`): `start|stop|restart|status|logs|update|rebuild|doctor|host|env|tls`, plus `access`, `token` and `submit`. Root-only verbs re-run themselves under sudo; service-user verbs re-run under runuser/sudo -u.
+- `/usr/local/bin/lens` — the operator CLI is the binary itself (a root-owned copy, never a link into the service-owned `/opt/lens`; `internal/opscli`): `start|stop|restart|status|logs|update|rebuild|doctor|host|env|tls`, plus `access`, `token` and `submit`. Root-only verbs re-run themselves under sudo; service-user verbs re-run under runuser/sudo -u.
 
 ## CLI Flags Reference (`lens run`)
 

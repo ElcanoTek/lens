@@ -327,8 +327,9 @@ func lookupUser(name string) (uid, gid int, err error) {
 	return uid, gid, nil
 }
 
-// executable is the binary's real path: /usr/local/bin/lens is a symlink to
-// /opt/lens/bin/lens, and re-executions should name the release binary.
+// executable is the binary's real path, for re-executions. Deploys install
+// /usr/local/bin/lens as a root-owned copy (never a link into the
+// service-owned /opt/lens), so this is normally that copy itself.
 func executable() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {

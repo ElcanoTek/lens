@@ -150,9 +150,7 @@ func TestUpdateMigratesAPythonReleaseToGo(t *testing.T) {
 	if strings.TrimSpace(readFile(t, filepath.Join(b.app, ".deployed-revision"))) != b.sha {
 		t.Fatal(".deployed-revision not written")
 	}
-	if target, err := os.Readlink(b.cli); err != nil || target != filepath.Join(b.app, "bin/lens") {
-		t.Fatalf("CLI = %q, %v", target, err)
-	}
+	assertCLICopy(t, b.cli, filepath.Join(b.app, "bin/lens"))
 	if readFile(t, filepath.Join(b.unit, "lens.service")) != read(t, "deploy/lens.service") {
 		t.Fatal("unit not installed")
 	}
@@ -223,9 +221,7 @@ func TestUpdateFailedGoToGoRestoresThePreviousGoRelease(t *testing.T) {
 	if readFile(t, filepath.Join(b.app, "bin/lens")) != first {
 		t.Fatal("previous Go binary not restored")
 	}
-	if target, err := os.Readlink(b.cli); err != nil || target != filepath.Join(b.app, "bin/lens") {
-		t.Fatalf("CLI = %q, %v", target, err)
-	}
+	assertCLICopy(t, b.cli, filepath.Join(b.app, "bin/lens"))
 	if exists(filepath.Join(b.app, ".venv")) {
 		t.Fatal("a venv reappeared")
 	}
