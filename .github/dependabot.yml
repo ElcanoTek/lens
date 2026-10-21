@@ -14,7 +14,8 @@
 # updates only; security updates are never delayed. Minor + patch bumps are
 # grouped into one PR per ecosystem; majors stay separate for their own review.
 # There are no `ignore` rules; if one is ever needed, say which upstream
-# constraint forces it and what would let it go.
+# constraint forces it and what would let it go. `labels: []` keeps Dependabot
+# from applying labels this repo does not have (as in explorer).
 #
 # Not covered: the Go toolchain itself (go.mod's `go` line, which also moves
 # the golangci-lint pin — see .golangci.yml; govulncheck flags a stale
@@ -33,9 +34,7 @@ updates:
       semver-major-days: 7
       semver-minor-days: 7
       semver-patch-days: 3
-    labels:
-      - dependencies
-      - go
+    labels: []
     commit-message:
       prefix: "deps(go)"
     groups:
@@ -49,9 +48,7 @@ updates:
     schedule:
       interval: daily
     open-pull-requests-limit: 10
-    labels:
-      - dependencies
-      - github-actions
+    labels: []
     commit-message:
       prefix: "deps(actions)"
     groups:
