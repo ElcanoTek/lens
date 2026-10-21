@@ -154,9 +154,9 @@ ensure_auth_pubkey() {
     printf '%s?%s Paste it now (run `auth pubkey` on the auth host; blank to skip): ' "$c_cyan" "$c_reset"
     local pubkey_in; read -r pubkey_in
     if [[ -n "$pubkey_in" ]]; then
-      [[ -f "$APP_DIR/.env" ]] || install -o "$APP_USER" -g "$APP_USER" -m 0640 /dev/null "$APP_DIR/.env"
+      [[ -f "$APP_DIR/.env" ]] || install -o "$APP_USER" -g "$APP_USER" -m 0600 /dev/null "$APP_DIR/.env"
       printf 'AUTH_SIGNING_PUBKEY="%s"\n' "$pubkey_in" >> "$APP_DIR/.env"
-      chown "$APP_USER:$APP_USER" "$APP_DIR/.env"; chmod 0640 "$APP_DIR/.env"
+      chown "$APP_USER:$APP_USER" "$APP_DIR/.env"; chmod 0600 "$APP_DIR/.env"
       ok "AUTH_SIGNING_PUBKEY written to $APP_DIR/.env"
     else
       warn "skipped — set it later with: lens env edit   (then: lens restart)"
