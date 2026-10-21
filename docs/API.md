@@ -5,7 +5,8 @@ platform) uses this API to start Lens jobs from chat or a scheduled task,
 check on them and pull the results into its workspace. Any other service can
 use the same API.
 
-There are two surfaces over one implementation (`lens_api.py`):
+There are two surfaces over one implementation (`internal/api`, with the MCP
+adapter in `internal/mcp`):
 
 | Surface | Endpoint | For |
 |---|---|---|

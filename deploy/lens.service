@@ -8,10 +8,12 @@ User=lens
 Group=lens
 WorkingDirectory=/opt/lens
 EnvironmentFile=/opt/lens/.env
-Environment=PYTHONUNBUFFERED=1
 StateDirectory=lens
 StateDirectoryMode=0750
-ExecStart=/opt/lens/.venv/bin/python -m uvicorn web_service:app --host 127.0.0.1 --port 8808 --proxy-headers --forwarded-allow-ips=127.0.0.1
+# Loopback only: Caddy (or nginx) terminates TLS in front and is the only
+# client trusted for X-Forwarded-* headers. The working directory is the Lens
+# home (.env, config.json, managed-files/).
+ExecStart=/opt/lens/bin/lens serve --addr 127.0.0.1:8808
 Restart=always
 RestartSec=5
 

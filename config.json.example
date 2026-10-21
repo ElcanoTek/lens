@@ -1,7 +1,7 @@
 {
-  "_comment": "Copy to config.json (git-ignored) and edit. Every key below is optional — omit one and the default shown here applies. Secrets do NOT belong in this file; they live in .env (see .env.example). Keys are read by config.py and exposed uppercased on the global `config` singleton.",
+  "_comment": "Copy to config.json (git-ignored) and edit. Every key below is optional — omit one and the default shown here applies. Secrets do NOT belong in this file; they live in .env (see .env.example). Keys are read by internal/config (lens run reads config.json from its working directory; lens serve from the Lens home).",
 
-  "_comment_paths": "File paths for a CLI run. The web dashboard overrides all four per job, so these matter only when you run `python main.py` directly.",
+  "_comment_paths": "File paths for a CLI run. The web dashboard overrides all four per job, so these matter only when you run `lens run` directly.",
   "input_csv_path": "input.csv",
   "output_csv_path": "output.csv",
   "progress_file_path": "progress.json",

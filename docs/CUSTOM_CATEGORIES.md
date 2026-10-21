@@ -74,7 +74,7 @@ images or video.
 ## CLI
 
 ```bash
-python main.py --input-csv inventory.csv \
+./bin/lens run --input-csv inventory.csv \
   --output-csv custom-output.csv --progress-file custom-progress.json \
   --custom-categories examples/custom-categories.json \
   --decision-model '~typesafe/jev-latest'   # optional; this is the default

@@ -23,7 +23,8 @@ lens host tools [--yes] [--dry-run]  install/upgrade distro Node + npm + Go
 lens host upgrade [--yes] [--dry-run] download latest stable Fedora (max two releases)
 
 Updates never reboot automatically. After an OS upgrade: lens rebuild; lens doctor.
-tools is optional: Lens itself uses Python/uv, with browsers running in Podman.
+tools is optional: lens update installs golang itself (GOTOOLCHAIN=auto fetches
+the pinned Go), and browsers run in Podman.
 --dry-run prints the plan; upgrade also reads Fedora's release feed.
 EOF
     exit 0 ;;

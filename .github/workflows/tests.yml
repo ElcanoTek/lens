@@ -18,40 +18,92 @@ permissions:
   contents: read
 
 jobs:
-  uv-compat:
-    name: deployment uv ${{ matrix.uv }}
+  go:
+    name: go build + vet + test
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    strategy:
-      matrix:
-        uv: ["0.7.22", "0.12.16"]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version-file: .python-version
-      - name: Install uv under test
-        run: pip install "uv==${{ matrix.uv }}"
-      - name: Build and relocate a deployment venv
-        shell: bash
+          # go.mod is the one declaration of the toolchain.
+          go-version-file: go.mod
+          check-latest: true
+
+      # Fails on any file gofmt would rewrite, and names them.
+      - name: gofmt
+        run: make fmt-check
+
+      - name: go build (every package)
+        run: go build ./...
+
+      # The deployable artifact, built exactly as update.sh builds it
+      # (make build → bin/lens, version-stamped), and proof it runs.
+      - name: make build
         run: |
-          source scripts/lib/deploy.sh
-          APP_DIR="$(mktemp -d "$RUNNER_TEMP/lens-uv.XXXXXX")"
-          APP_USER="$(id -un)"
-          export UV_PYTHON_INSTALL_DIR="$APP_DIR/python" UV_CACHE_DIR="$APP_DIR/cache"
-          # Keep this test unprivileged; run the real uv commands as this user.
-          runuser() { shift 3; "$@"; }
-          mkdir "$APP_DIR/staging"
-          cp .python-version "$APP_DIR/staging/"
-          touch "$APP_DIR/staging/requirements.txt"
-          lens_venv "$APP_DIR/staging"
-          # Bootstrap re-runs rebuild over an existing venv; that must succeed too.
-          lens_venv "$APP_DIR/staging"
-          mv "$APP_DIR/staging" "$APP_DIR/live"
-          want="$(cut -d. -f1,2 .python-version)"
-          "$APP_DIR/live/.venv/bin/python" -c 'import sys; assert "%d.%d" % sys.version_info[:2] == sys.argv[1], sys.version' "$want"
+          make build
+          ./bin/lens --version
+          ./bin/lens --version | grep -F "$(git rev-parse HEAD)"
+
+      - name: go vet
+        run: go vet ./...
+
+      # Hermetic: no API key, no network (httptest servers), temp dirs only.
+      # The race detector is the gate for the dashboard's job queue and the
+      # per-run cost meters, which the Python release serialised on asyncio's
+      # single thread. internal/deploytest exercises the bash deploy scripts
+      # with stub tools, so it needs rsync and jq (both on the runner image).
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+      # The first-migration path for real: a Python-era update.sh
+      # (internal/deploytest/testdata/python-release) fetches the Go release
+      # and re-execs the new update.sh. That old script insists on root and
+      # has no override, so run just this test as root — from a test binary
+      # built as the runner user, so no root-owned files land in its caches.
+      - name: Python → Go update path (as root)
+        run: |
+          go test -c -o "$RUNNER_TEMP/deploytest.test" ./internal/deploytest
+          cd internal/deploytest
+          sudo "$RUNNER_TEMP/deploytest.test" -test.count=1 -test.v -test.run 'TestPythonEraUpdateReexecsIntoTheGoUpdate'
+
+      # Call-graph-aware scan of the dependency tree and the stdlib for known
+      # vulnerabilities reachable from Lens. The advisory database is live on
+      # purpose: this step can turn red with no commit involved, and that is
+      # the gate working. The scanner stays @latest (upstream's documented
+      # invocation); pin it here only as a one-line rollback if a bad release
+      # ever blocks every PR.
+      - name: govulncheck
+        run: make govulncheck
+
+  lint:
+    name: golangci-lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          # .golangci.yml is the v2 schema. The binary needs a pin so CI and a
+          # local `make lint` agree; v2.14.0 is the first release whose Go
+          # (1.27) can read go1.27.2's export data — see .golangci.yml before
+          # changing either go.mod or this.
+          version: v2.14.0
+          # A full gate: fail on any finding, not only new ones. Fix it or add
+          # a //nolint:<linter> // <reason> (nolintlint enforces the reason).
+          only-new-issues: false
 
   shell:
     name: deployment shell checks
@@ -63,77 +115,51 @@ jobs:
           persist-credentials: false
       - name: Install ShellCheck
         run: sudo apt-get update && sudo apt-get install -y shellcheck
+      # bash -n + shellcheck -x -S warning over install.sh, scripts/*.sh and
+      # scripts/lib/*.sh (the list lives in the Makefile).
       - name: Check deployment scripts
-        run: |
-          for script in install.sh scripts/bootstrap.sh scripts/update.sh scripts/lib/deploy.sh scripts/doctor.sh scripts/host.sh deploy/lens-cli; do
-            bash -n "$script"
-          done
-          shellcheck -x -S warning install.sh scripts/bootstrap.sh scripts/update.sh scripts/lib/deploy.sh scripts/doctor.sh scripts/host.sh deploy/lens-cli
+        run: make shellcheck
 
-  lint:
-    name: lint
+  deploy-build:
+    # The deploy path builds with whatever Go the box's dnf provides and lets
+    # GOTOOLCHAIN=auto fetch go.mod's pinned release. Prove both ends: a
+    # distro Go older than the pin (must download the toolchain into the
+    # build cache), and the pinned release itself.
+    name: deployment build with Go ${{ matrix.go }}
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        go: ["1.24", "stable"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version-file: .python-version
-
-      # Ruff is a static analyser, so it needs no project dependencies —
-      # installing it alone keeps this job to a few seconds. The version is
-      # pinned in requirements-dev.txt so local and CI runs agree; grep it out
-      # rather than duplicating the number here.
-      - name: Install ruff
-        run: pip install "$(grep -m1 '^ruff==' requirements-dev.txt)"
-
-      # `--output-format=github` turns findings into inline PR annotations
-      # instead of burying them in the log.
-      - name: Lint
-        run: ruff check --output-format=github .
-
-      # Runs even if the lint step failed, so a contributor sees formatting
-      # and rule violations in one pass rather than one per push.
-      - name: Format check
-        if: always()
-        run: ruff format --check --diff .
-
-  pytest:
-    name: pytest
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version-file: .python-version
-
-      # requirements-dev.txt is a fully pinned superset of the runtime lock,
-      # so this single file is the whole dev environment — including httpx,
-      # which backs fastapi's TestClient and used to be installed ad hoc here.
-      - name: Install dependencies
+          go-version: ${{ matrix.go }}
+          cache: false
+      - name: Build and relocate a deployment release
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt
-
-      # Known-vulnerability audit of both locks (pip-audit is pinned in
-      # requirements-dev.txt). The locks pin every transitive dependency, so
-      # --no-deps --disable-pip audits exactly those pins without resolving
-      # anything; --strict fails on any package it cannot audit.
-      - name: Dependency audit
-        run: pip-audit -r requirements.txt -r requirements-dev.txt --strict --no-deps --disable-pip
-
-      - name: Install deployment test dependency
-        run: sudo apt-get update && sudo apt-get install -y rsync
-
-      - name: Run tests
-        # Hermetic: the suite self-stubs OPENROUTER_API_KEY and mints its own
-        # Ed25519 keys, so no secrets are needed. Covers the unified-auth
-        # cookie verifier (tests/test_auth.py) + the web service.
-        run: python -m pytest -q
+          source scripts/lib/deploy.sh
+          APP_DIR="$(mktemp -d "$RUNNER_TEMP/lens-go.XXXXXX")"
+          # Unprivileged stand-in for /var/cache/lens-build.
+          export LENS_BUILD_CACHE="$APP_DIR/cache"
+          # Whatever GOTOOLCHAIN the runner image or setup-go left in the
+          # environment, the deploy path must not depend on it: drop it and
+          # let lens_build / the Makefile choose (auto), as on a Fedora box.
+          unset GOTOOLCHAIN
+          sha="$(git rev-parse HEAD)"
+          mkdir "$APP_DIR/staging"
+          # A staging tree, like update.sh's: release files only, no .git.
+          rsync -a "${LENS_STATE_EXCLUDES[@]}" ./ "$APP_DIR/staging/"
+          lens_build "$APP_DIR/staging" "$sha" "$(git describe --tags --always)"
+          # Bootstrap re-runs rebuild over an existing tree; that must succeed too.
+          lens_build "$APP_DIR/staging" "$sha" "$(git describe --tags --always)"
+          mv "$APP_DIR/staging" "$APP_DIR/live"
+          "$APP_DIR/live/bin/lens" --version
+          "$APP_DIR/live/bin/lens" --version | grep -F "$sha"
+          # The binary carries its assets; nothing else of the tree is needed.
+          cp "$APP_DIR/live/bin/lens" "$RUNNER_TEMP/lens-alone"
+          (cd / && "$RUNNER_TEMP/lens-alone" --version)

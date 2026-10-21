@@ -21,8 +21,8 @@ What is and is not real:
   data is placeholder text — `Example`, `Contoso`, `Northwind` and friends.
 - No customer, partner or client data appears in this repository.
 
-Point a run at one with `--input-csv`:
+Point a run at one with `--input-csv` (after `make build`):
 
 ```bash
-python main.py --input-csv test-input/url_master.csv --scrape-mode direct
+./bin/lens run --input-csv test-input/url_master.csv --scrape-mode direct
 ```

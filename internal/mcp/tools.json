@@ -1,0 +1,306 @@
+{
+  "instructions": "Elcano Lens classifies websites, iOS apps, Android apps and CTV apps into advertising quality tiers (Premium / Standard / Long Tail / Failed) with IAB categories, language, political leaning, audience size and optional custom questions. Workflow: create_job -> get_job until status is completed -> get_job_results for a summary and rows -> get_download_link(file='output') for the full CSV. Jobs run in the background and take from a minute (a few domains) to hours (tens of thousands); never create a second job for the same list while one is queued or running. For a short list pass items; for a CSV/XLSX in the workspace pass content_base64 as a workspace file reference with filename; for a file already uploaded to Lens pass input_file (see list_input_files). Jobs spend real OpenRouter money, so confirm large runs with the user first. The defaults are recommended: only set models or turn off deep_retry / research_fallback when the user asks.",
+  "serverInfo": {
+    "name": "lens",
+    "title": "Elcano Lens",
+    "version": "1.0.0"
+  },
+  "protocolVersions": [
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26"
+  ],
+  "tools": [
+    {
+      "name": "create_job",
+      "scope": "jobs:run",
+      "title": "Start a Lens classification job",
+      "description": "Queue a Lens job that classifies websites, iOS/Android apps or CTV apps. Give exactly one input: items (identifiers such as 'nytimes.com', '284882215' or 'com.spotify.music'), content_base64 + filename (a .csv/.xlsx; prefer a workspace file reference), or input_file (a file already in the Lens library). Returns the job with its id; poll get_job until it completes. The run spends OpenRouter credit.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 120,
+            "description": "Run name shown in the Lens dashboard, e.g. 'Q4 allowlist review'."
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            },
+            "minItems": 1,
+            "maxItems": 10000,
+            "description": "Domains, App Store ids or Android package names, one per entry."
+          },
+          "content_base64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "maxLength": 2900000,
+            "description": "The input file's bytes (CSV or XLSX), base64-encoded. Requires filename. Lens finds the identifier column itself (Domain, url, pageURL, app_id, Bundle ID for CTV)."
+          },
+          "filename": {
+            "type": "string",
+            "pattern": "^[^/\\\\]+\\.([cC][sS][vV]|[xX][lL][sS][xX])$",
+            "description": "Name for the uploaded file, ending .csv or .xlsx."
+          },
+          "input_file": {
+            "type": "string",
+            "description": "Name of a file already in the Lens input library (list_input_files)."
+          },
+          "ctv": {
+            "type": "boolean",
+            "description": "Force the CTV workflow. Lens detects CTV lists by their columns, so this is rarely needed."
+          },
+          "custom_categories": {
+            "type": "object",
+            "description": "Optional extra questions answered per row, as {\"categories\": [{\"name\", \"type\": \"boolean\"|\"choice\", \"question\", \"options\"?}]} (max 12). get_options shows an example."
+          },
+          "research_fallback": {
+            "type": "boolean",
+            "description": "Classify unscrapeable sites from web research (default true)."
+          },
+          "deep_retry": {
+            "type": "boolean",
+            "description": "Retry failed sites with headless Chrome (default true; slow on big lists)."
+          },
+          "llm_model": {
+            "type": "string",
+            "description": "Classification model override (see get_options)."
+          },
+          "research_model": {
+            "type": "string",
+            "description": "Research model override (see get_options)."
+          },
+          "decision_model": {
+            "type": "string",
+            "description": "Custom-category model override (see get_options)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Start a Lens classification job",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      }
+    },
+    {
+      "name": "get_job",
+      "scope": "jobs:read",
+      "title": "Check a Lens job",
+      "description": "Status, progress (processed/total, successes, errors), estimated seconds remaining, spend so far, settings, available files and, for failed jobs, the log tail.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Check a Lens job",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "list_jobs",
+      "scope": "jobs:read",
+      "title": "List Lens jobs",
+      "description": "Recent Lens jobs, newest first, from every source (dashboard, CLI, API).",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "cancelled",
+              "cancelling",
+              "completed",
+              "failed",
+              "queued",
+              "running"
+            ],
+            "description": "Only jobs in this state."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "How many (default 20)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "List Lens jobs",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_job_results",
+      "scope": "jobs:read",
+      "title": "Read a Lens job's results",
+      "description": "Summary counts (by quality tier, content type and top IAB tier 1) over the whole output plus a page of rows. Filter with quality (e.g. 'Premium'), pick columns, page with offset/limit. Works on running jobs too (rows written so far). For the full file use get_download_link.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip (default 0)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 200,
+            "description": "Rows to return (default 25; 0 for the summary only)."
+          },
+          "quality": {
+            "type": "string",
+            "description": "Only rows with this Quality value: Premium, Standard, Long Tail or Failed."
+          },
+          "columns": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these columns, e.g. ['Domain', 'Quality', 'IAB Tier 1']."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Read a Lens job's results",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_download_link",
+      "scope": "jobs:read",
+      "title": "Get a download link for a Lens file",
+      "description": "A short-lived (15 minute), single-file URL for a job's output CSV, run log, input list or custom-category definitions. Fetch it into the workspace with download_url; it needs no credentials.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          },
+          "file": {
+            "type": "string",
+            "enum": [
+              "output",
+              "log",
+              "input",
+              "categories"
+            ],
+            "description": "Which file (default output)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Get a download link for a Lens file",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "cancel_job",
+      "scope": "jobs:run",
+      "title": "Cancel a Lens job",
+      "description": "Cancel a queued or running job. A running job stops after its current items; rows already written stay in its output.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Cancel a Lens job",
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "list_input_files",
+      "scope": "jobs:read",
+      "title": "List Lens input files",
+      "description": "Files in the Lens input library, newest first, with how many websites/apps/CTV rows each holds.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "annotations": {
+        "title": "List Lens input files",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "get_options",
+      "scope": "jobs:read",
+      "title": "Lens job options",
+      "description": "Default and selectable models, limits, the custom-categories format and the output CSV columns. Call it before overriding a model or writing custom categories.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "annotations": {
+        "title": "Lens job options",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    }
+  ]
+}

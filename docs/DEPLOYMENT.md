@@ -1,11 +1,12 @@
 # Deploying Lens
 
 The authoritative guide to running the Lens dashboard as a service. Everything
-here is verified against `scripts/bootstrap.sh`, `scripts/update.sh`
-and the units in `deploy/`.
+here is verified against `scripts/bootstrap.sh`, `scripts/update.sh`,
+`scripts/lib/deploy.sh`, the operator commands (`internal/opscli`,
+`internal/doctor`) and the units in `deploy/`.
 
-You do **not** need any of this to use the CLI. `python main.py` on a laptop
-with an OpenRouter key is the whole story — see the
+You do **not** need any of this to use the CLI. `make build` and
+`./bin/lens run` on a laptop with an OpenRouter key is the whole story — see the
 [README quick start](../README.md#quick-start). This document is about the
 long-running web dashboard.
 
@@ -27,6 +28,7 @@ long-running web dashboard.
 - [Deep scraping (headless Chrome)](#deep-scraping-headless-chrome)
 - [Service management and the operator CLI](#service-management-and-the-operator-cli)
 - [Updating and rolling back](#updating-and-rolling-back)
+- [Upgrading from the Python release](#upgrading-from-the-python-release)
 - [Doctor and host maintenance](#doctor-and-host-maintenance)
 - [Run artifacts and backup](#run-artifacts-and-backup)
 - [Health checks and monitoring](#health-checks-and-monitoring)
@@ -38,17 +40,18 @@ long-running web dashboard.
 
 **Supported OS: Fedora, RHEL 9+, and RHEL rebuilds (Rocky, Alma).**
 `bootstrap.sh` installs packages with `dnf` and assumes systemd, SELinux and
-`firewalld` conventions. It has no apt path; on Debian/Ubuntu, run the
-dashboard by hand (`uvicorn web_service:app`) or adapt the script.
+`firewalld` conventions. It has no apt path; on Debian/Ubuntu, build and run
+the dashboard by hand (`make build && ./bin/lens serve --addr 127.0.0.1:8808`
+from the Lens home) or adapt the script.
 
 | Requirement | Notes |
 |---|---|
 | Root access | `bootstrap.sh` refuses to run as a non-root user |
 | curl | The public installer installs Git and clones main over HTTPS; no GitHub credentials needed |
 | An OpenRouter API key | Every classification is an OpenRouter call. Runs cost real money — budget before pointing it at a large list. |
-| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API and the Google Play Store |
+| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API and the Google Play Store; at build time (install and every update) to the Go module proxy and checksum database (`proxy.golang.org`, `sum.golang.org`), which also serve the pinned Go toolchain |
 | 1 vCPU / 2 GB RAM | Enough for the direct crawl and research fallback. The deep crawler's Chrome container wants ~2 GB more RAM. |
-| ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), plus whatever run output you keep |
+| ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), the Go build cache (`/var/cache/lens-build`, a few hundred MB) and whatever run output you keep |
 | A public DNS record | Only if you want Caddy to obtain a Let's Encrypt certificate |
 
 ## Install
@@ -117,9 +120,11 @@ then pass these same variables to `bash` with that file.
 
 Seven steps, in order:
 
-1. **`dnf install`** — `git curl jq python3 python3-devel gcc uv rsync openssl`,
-   plus `chromium chromedriver` (unless `SKIP_CHROME`), and `podman` (unless
-   `SKIP_DEEP`). Then, when `cockpit-ws` is installed, it removes Cockpit with
+1. **`dnf install`** — `git curl jq golang make rsync openssl util-linux
+   ca-certificates`, plus `chromium chromedriver` (unless `SKIP_CHROME`), and
+   `podman` (unless `SKIP_DEEP`). Any distro Go ≥ 1.21 is enough: the build
+   runs with `GOTOOLCHAIN=auto`, so Go downloads the exact release `go.mod`
+   pins (see step 3). Then, when `cockpit-ws` is installed, it removes Cockpit with
    `dnf -y remove 'cockpit*'`: the Vultr Fedora image ships Cockpit's
    root-capable web login on :9090, and Lens hosts are administered over ssh
    only. `LENS_KEEP_COCKPIT=1` keeps it; a failed removal only warns.
@@ -134,38 +139,43 @@ Seven steps, in order:
    again if `sshd -t` rejects it, and never fails the install. It also skips
    when `sshd -T` shows public-key login off.
    `LENS_KEEP_SSH_PASSWORDS=1` skips it.
-2. **User and directory** — creates the `lens` *system* user with home
+2. **User, directory and source** — creates the `lens` *system* user with home
    `/opt/lens` and shell `/usr/sbin/nologin`. Then the rootless-podman
    prerequisites: subuid/subgid ranges `200000-265535` (system users get none
    by default, and without them image unpacking fails), `loginctl
    enable-linger lens` so `/run/user/<uid>` survives without a login session,
    `podman system migrate` to clear any stale pause process, and a pre-pull of
    the Chrome image so the first deep crawl doesn't stall on a large
-   download.
-3. **Source sync** — seeds `/opt/lens-src` (keeping `.git`), then rsyncs it to
-   `/opt/lens` with `--delete`, preserving `.git`, `.venv`, `.env`,
-   `managed-files`, the legacy `data` directory during migration, and podman's
-   `.local`/`.config`/`.cache`.
-4. **venv** — refresh uv-managed Python to the latest patch of the minor in
-   `.python-version` (3.12, covered by CI), then create a relocatable venv and
-   install `requirements.txt`. This avoids following Fedora's default Python
-   major before Lens dependencies have been tested on it. Downloads live under
-   the service user's `.local/share/uv`; Node/npm/Go are optional host tools.
-   Python refresh uses `uv python install` followed by `uv python upgrade`,
-   compatible with uv 0.7.22 and current uv. Patch availability comes from uv's
-   bundled catalogue: keep the distro's uv package current with `lens host update`.
-5. **Configuration and state** — writes `.env`, owned `lens:lens`, mode `0600`,
-   then creates `/var/lib/lens` and atomically migrates the legacy
-   `/opt/lens/data/access.db` when present. A custom `LENS_ACCESS_DB` is never
-   moved or rewritten.
-6. **Units and CLI** — installs `lens.service` and `/usr/local/bin/lens`.
-7. **Start** — enables and starts the service, polls
-   `http://127.0.0.1:8808/health` for up to 15 s and fails the installation if
-   Lens never becomes ready. It then optionally installs Caddy, opens
-   http/https in firewalld and waits up to 45 s for TLS.
-   Finally it installs `deploy/motd` to `/etc/motd`.
+   download. Finally it seeds `/opt/lens-src` (keeping `.git`) and rsyncs it to
+   `/opt/lens` with `--delete`, preserving `.git`, `.env*`, `config.json`,
+   `managed-files`, the legacy `data` directory during migration, a
+   Python-era `.venv`, CLI run files, and podman's `.local`/`.config`/`.cache`.
+3. **Build** — `make build` in `/opt/lens` emits `/opt/lens/bin/lens`, stamped
+   with the checkout's commit (`scripts/lib/deploy.sh`, `lens_build`). The
+   build runs with `GOTOOLCHAIN=auto` and `GOENV=off`, and keeps GOPATH, the
+   module cache, the build cache and any downloaded toolchain in the
+   root-owned `/var/cache/lens-build`, so it neither litters `/root` nor
+   depends on `HOME`, and reruns reuse what was downloaded. The binary is
+   static (`CGO_ENABLED=0`) and carries the dashboard assets and taxonomy.
+   `bin/` is owned by root: root runs this binary for every operator command,
+   so the service account must not be able to rewrite it.
+4. **Configuration and state** — writes `.env` with `lens env set` (values
+   travel through the environment, never argv), owned `lens:lens`, mode
+   `0600`, then creates `/var/lib/lens` and atomically migrates the legacy
+   `/opt/lens/data/access.db` when present (`lens migrate-access-db`). A
+   custom `LENS_ACCESS_DB` is never moved or rewritten.
+5. **Unit and CLI** — installs `lens.service` and installs `/usr/local/bin/lens`
+   as a root-owned copy of the binary (replacing the copied bash script a
+   Python release installed there). It is a copy, not a link into `/opt/lens`,
+   because that tree belongs to the service user and root runs the CLI.
+6. **Start** — enables and starts the service, polls
+   `http://127.0.0.1:8808/health` for up to 15 s and, if Lens never becomes
+   ready, stops it and fails the installation. Once it is ready, a Python-era
+   `.venv` left in `/opt/lens` is removed.
+7. **TLS** — optionally installs Caddy, opens http/https in firewalld and
+   waits up to 45 s for TLS. Finally it installs `deploy/motd` to `/etc/motd`.
 
-Given a public hostname (step 5), bootstrap also names the box after it, so
+Given a public hostname (step 4), bootstrap also names the box after it, so
 prompts stop reading `root@vultr`. It renames only when the current static
 hostname is an unset cloud-image default (`vultr.guest`, `localhost`,
 `localhost.localdomain`); any other name, short ones included, is left alone and
@@ -186,25 +196,31 @@ again to fill missing configuration; use `lens env edit` to change existing valu
 
 ```
 /opt/lens-src/          git checkout — the only place `lens update` fetches into
-/opt/lens/              runtime install (owned by lens:lens)
-  ├── .venv/            uv-built virtualenv
-  ├── .env              secrets, 0640 lens:lens
+/opt/lens/              runtime install and Lens home (owned by lens:lens)
+  ├── bin/lens          the release: one static binary (owned by root)
+  ├── .deployed-revision   commit the running release was built from
+  ├── .env              secrets, 0600 lens:lens
   ├── managed-files/
   │   ├── inputs/       uploaded CSV/XLSX lists
-  │   └── outputs/      per-job output.csv, progress.json, .log, plus _jobs.json
+  │   ├── outputs/      per-job output.csv, progress.json, .log, plus _jobs.json
+  │   └── spool/        lens submit hand-off (0700)
   ├── .local/ .config/ .cache/   rootless podman storage (holds the pulled images)
-  └── (application source, rsynced from /opt/lens-src)
+  └── (release tree, rsynced from /opt/lens-src; the binary needs none of it)
 /var/lib/lens/          persistent application state (owned by lens:lens, 0750)
-  └── access.db         central allowlist, hashed sessions and revocation state, 0600
+  ├── access.db         central allowlist, hashed sessions and revocation state, 0600
+  └── api_tokens.db     API token hashes and the download-link key (once minted)
+/var/cache/lens-build/  root-owned Go module/build cache and toolchain (disposable)
 /etc/systemd/system/lens.service
-/usr/local/bin/lens                     operator CLI
+/usr/local/bin/lens                     operator CLI: root-owned copy of bin/lens
 /etc/caddy/Caddyfile.d/lens.caddyfile   (optional; or conf.d/lens.caddy)
 /etc/motd
 ```
 
 The `lens` account is a system user with no login shell. `lens.service` runs
-uvicorn bound to **127.0.0.1:8808** — never directly exposed; a reverse proxy
-terminates TLS in front of it.
+`/opt/lens/bin/lens serve --addr 127.0.0.1:8808` with `WorkingDirectory=/opt/lens`
+(the Lens home: `.env`, `config.json`, `managed-files/`) — never directly
+exposed; a reverse proxy terminates TLS in front of it. Each dashboard job is a
+`lens run` subprocess of the same binary, run as `lens` in that directory.
 
 `lens.service` is hardened, but deliberately less than you might expect.
 Each of `NoNewPrivileges`, `ProtectControlGroups`, `ProtectKernelTunables`,
@@ -219,13 +235,15 @@ environment / CLI flags.
 
 ### Environment variables
 
-Read from `/opt/lens/.env` via `EnvironmentFile=` (and from `.env` in the
-working directory via the vendored dotenv parser, `_vendor/dotenv/`, for CLI
-runs).
+Read from `/opt/lens/.env` via `EnvironmentFile=`, and by every `lens`
+process from the nearest `.env` in its working directory or a parent
+(`internal/dotenv`, a port of python-dotenv, so the grammar is unchanged);
+variables already set win. Jobs run as `lens` and load `.env` themselves, so the
+service user must be able to read it.
 
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
-| `OPENROUTER_API_KEY` | **Yes** | — | OpenRouter credential. `config.py` raises `ValueError` at import if unset, so the service will not start without it. |
+| `OPENROUTER_API_KEY` | **Yes** | — | OpenRouter credential. `lens run` refuses to start without it, so every dashboard job fails while it is unset (the dashboard itself still starts; `lens doctor` reports it). |
 | `AUTH_SIGNING_PUBKEY` | Yes, for the dashboard | *(empty)* | Base64 of the auth service's 32-byte Ed25519 **public** key. Only verifies signatures — it cannot mint a session, so distributing it is safe. Empty means every request redirects to login. |
 | `AUTH_LOGIN_URL` | No | `https://auth.elcanotek.com` | Where unauthenticated browsers are sent. Point at your own auth service. |
 | `AUTH_COOKIE_NAME` | No | `elcano_auth` | Session cookie to verify. |
@@ -236,7 +254,7 @@ runs).
 | `LENS_ACCESS_DB` | No | `/var/lib/lens/access.db` | Persistent local access/session/revocation SQLite database. |
 | `LENS_MAX_PARALLEL_JOBS` | No | `1` | Dashboard jobs run at once (1–8). Website jobs each run their own crawler pool, so 2–3 suits a small host. |
 | `SCRAPER_VERBOSE` | No | *(unset)* | `1`/`true`/`yes`/`on` enables extra CLI diagnostics. Same as `--verbose`. |
-| `PYTHONUNBUFFERED` | No | set to `1` by the unit | Keeps log lines flowing into journald. |
+| `LENS_HOME` | No | working directory | Lens home for `lens serve` (`.env`, `config.json`, `managed-files/`). The unit relies on `WorkingDirectory=/opt/lens` instead. |
 
 ### config.json
 
@@ -266,7 +284,7 @@ the same list grouped by concern.
 | `reject_redirects` | `true` | Direct pass fails off-host redirects (a domain ↔ its own subdomains is not off-host) |
 | `user_agent` | current-Chrome string | An ancient UA is itself a bot signal |
 | `skip_deep_retry_on_block` | `true` | Deep pass skips sites the direct pass proved are blocked (401/403/429 or a block page) rather than retrying from the same IP |
-| `deep_retry_enabled` | `true` | Run the deep retry pass at all. Per run: dashboard "Retry with headless Chrome", `lens submit --no-deep`, `main.py --deep-retry off` |
+| `deep_retry_enabled` | `true` | Run the deep retry pass at all. Per run: dashboard "Retry with headless Chrome", `lens submit --no-deep`, `lens run --deep-retry off` |
 | `retry_follow_redirects` | `true` | Deep retry pass follows cross-host brand→parent redirects (e.g. `foxnewsdigital.com` → `foxnews.com`) that the direct pass rejects. A legacy `firecrawl_follow_redirects` is honoured when this is unset. |
 | `deep_scrape_podman_binary` | `podman` | Container runtime |
 | `deep_scrape_image` | `docker.io/selenium/standalone-chrome:latest` | Fully qualified on purpose — Podman refuses short names without a TTY |
@@ -305,8 +323,9 @@ the same list grouped by concern.
 | `ctv_max_retries` | `3` | — |
 | `ctv_retry_delay` | `2.0` | — |
 
-Keys are uppercased onto a global `config` singleton, so `llm_model` is
-`config.LLM_MODEL`. Note that `config.json` is **git-ignored** — it is local
+`lens serve` reads `/opt/lens/config.json` at start, and every job reads it
+again when it starts, so a change applies to the next job (restart for the
+dashboard's own defaults). Note that `config.json` is **git-ignored** — it is local
 state, not part of a release. Old `firecrawl_*` keys left in a `config.json`
 are ignored.
 
@@ -355,8 +374,8 @@ sudo nginx -t && sudo systemctl enable --now nginx
 sudo certbot --nginx -d lens.example.com --agree-tos --redirect
 ```
 
-`client_max_body_size 100m` must stay at or above `MAX_UPLOAD_BYTES` in
-`web_service.py`, or large uploads fail at the proxy with a 413 before Lens
+`client_max_body_size 100m` must stay at or above Lens's 100 MB upload limit
+(`MaxUploadBytes` in `internal/jobs/files.go`), or large uploads fail at the proxy with a 413 before Lens
 sees them.
 
 If SELinux is enforcing, allow nginx to make outbound connections:
@@ -395,8 +414,14 @@ contacting the site from this host.
 
 ## Service management and the operator CLI
 
-Bootstrap installs `/usr/local/bin/lens`. Every subcommand shells out to
-`sudo`, so an operator needs sudo rights but not a root shell.
+Bootstrap and every update install `/usr/local/bin/lens` as a root-owned copy
+of the release binary, so the operator CLI and the service are always the same
+build (`lens --version` prints it). It is never a link into `/opt/lens`: that
+tree belongs to the service user, and root runs the CLI.
+Commands that need root re-run themselves under `sudo`; `lens token`,
+`lens access` and the second half of `lens submit` re-run as the service user.
+An operator needs sudo rights but not a root shell. `lens --help` lists every
+command.
 
 | Command | What it does |
 |---|---|
@@ -406,22 +431,26 @@ Bootstrap installs `/usr/local/bin/lens`. Every subcommand shells out to
 | `lens status` | `systemctl status lens.service` |
 | `lens logs` | `journalctl -fu lens.service` |
 | `lens logs [args…]` | Passes arguments straight to journalctl, e.g. `lens logs -n 200 --since -1h` |
-| `lens update [--yes]` | Fetch, staged build, restart, health check; restore previous code and venv on failure |
-| `lens doctor [--json] [--strict]` | Read-only diagnostics; exit 1 on failures (also warnings with `--strict`) |
+| `lens update [--yes]` | Fetch, staged Go build, restart, health check; restore the previous release on failure |
+| `lens doctor [--json] [--strict] [--public-url https://HOST]` | Read-only diagnostics; exit 1 on failures (also warnings with `--strict`) |
 | `lens host check` | Refresh DNF metadata and show package updates |
 | `lens host update [--yes]` | Upgrade packages from enabled DNF repositories |
 | `lens host tools [--yes]` | Install/update distro Node, npm and Go |
 | `lens host upgrade [--yes]` | Download latest stable Fedora release upgrade; print offline reboot command |
 | `lens rebuild` | Rebuild and restart the *current* checkout without fetching. The correct command after a manual rollback. |
-| `lens env` | Print `/opt/lens/.env` with anything matching `TOKEN\|KEY\|SECRET\|PASSWORD\|PUBKEY` redacted |
+| `lens env [show]` | Print `/opt/lens/.env` with anything matching `TOKEN\|KEY\|SECRET\|PASSWORD\|PUBKEY` redacted |
 | `lens env edit` | Open `/opt/lens/.env` in `$EDITOR` (default `vi`); follow with `lens restart` |
 | `lens submit FILE [options]` | Queue a dashboard run from a file on the host (see below) |
+| `lens access grant\|revoke <email>`, `lens access list` | Central-auth allowlist on this instance |
+| `lens token create\|list\|revoke` | API tokens (see below) |
+| `lens --version` | Build version and full commit of this binary |
 | `lens tls status` | Hostname, certificate subject/issuer/validity, Caddy state |
 | `lens tls reload` | Reload the Caddyfile |
 | `lens tls restart` | Restart Caddy |
 
-Overrides: `LENS_SRC_DIR` (default `/opt/lens-src`) and `LENS_APP_DIR`
-(default `/opt/lens`).
+Overrides: `LENS_SRC_DIR` (default `/opt/lens-src`), `LENS_APP_DIR`
+(default `/opt/lens`) and `LENS_APP_USER` (default `lens`); they are carried
+across the sudo re-run.
 
 `lens update` honours `LENS_UPDATE_YES=1` to skip the confirmation prompt —
 useful from a deploy pipeline.
@@ -440,7 +469,8 @@ lens submit /tmp/apps.csv --ctv --decision-model '~typesafe/jev-latest'
 Options: `--name`, `--categories JSON` (same format as the CLI's
 `--custom-categories`), `--ctv`, `--llm-model`, `--research-model`,
 `--decision-model`, `--no-research-fallback`, `--no-deep` (skip the
-headless-Chrome retry; much faster on large lists). It prints the job id once the
+headless-Chrome retry; much faster on large lists), `--timeout SECONDS` (how
+long to wait for the service, default 30). It prints the job id once the
 service has queued it.
 
 The hand-off goes through `/opt/lens/managed-files/spool/` (mode 0700, owned by
@@ -478,30 +508,36 @@ build cannot take down a working install:
    stamp also matches — a failed previous deployment can be retried normally.
    Local source changes abort before deployment.
    The branch is fast-forwarded, never merged — a diverged branch aborts.
-   If the update changed `update.sh` itself, the script re-execs the new copy
-   in rebuild-only mode, because bash is still holding the old inode.
+   If the update changed `update.sh` or `scripts/lib/deploy.sh`, the script
+   re-execs the new copy in rebuild-only mode, because bash is still holding
+   the old inode.
 2. **Heal.** Ensure `AUTH_SIGNING_PUBKEY` is present (prompting when
    interactive) — without it every request redirects in a loop. Then ensure
    the rootless-podman prerequisites and the pre-pulled Chrome image, which
    fixes hosts bootstrapped before deep-scrape support existed.
-3. **Stage.** Build a complete new tree *and* venv in
-   `/opt/lens.staging.XXXXXX`. Staging next to `$APP_DIR` rather than in
-   `/tmp` is deliberate: a venv built under `/tmp` keeps its SELinux `tmp_t`
-   label across a move and systemd then refuses to exec it (203/EXEC). Same
-   filesystem also makes the final move atomic. A failed `uv pip install`
-   dies here with the live install untouched.
-4. **Swap.** Stop the service, migrate a legacy access database to
-   `/var/lib/lens`, then rsync the staged tree over `$APP_DIR` (preserving
-   `.git`, `.venv`, `.env`, `managed-files`, legacy `data`, and podman's
-   caches, `config.json`, `.env*` and CLI state). Snapshot the
-   actual deployed source and venv under `/opt/lens.rollback.XXXXXX` before
-   stopping, then move the old venv aside and the new one in,
-   `restorecon` it, reinstall the unit and CLI, retire the old
-   Firecrawl stack if present (see below), refresh `/etc/motd`, then restart.
+3. **Stage.** Install `golang` and `make` from dnf if either is missing, copy
+   the release tree into `/opt/lens.staging.XXXXXX` and `make build` there,
+   with the same `GOTOOLCHAIN=auto` and `/var/cache/lens-build` caches as
+   bootstrap. The staged `bin/lens --version` must report the target commit.
+   Staging next to `$APP_DIR` rather than in `/tmp` is deliberate: a tree
+   built under `/tmp` keeps its SELinux `tmp_t` label across a move and
+   systemd then refuses to exec it (203/EXEC). A failed build or toolchain
+   download dies here with the live install untouched.
+4. **Swap.** Snapshot the deployed release under `/opt/lens.rollback.XXXXXX`
+   — the release tree with its `bin/lens`, a Python-era `.venv` if there is
+   one, the unit and the operator CLI — then stop the service, migrate a
+   legacy access database to `/var/lib/lens` (`lens migrate-access-db`, run
+   from the staged binary), and rsync the staged tree over `$APP_DIR`
+   (preserving `.git`, `.venv`, `.env*`, `config.json`, `managed-files`,
+   legacy `data`, podman's caches and CLI run files). `restorecon` the new
+   `bin/`, reinstall the unit, install `/usr/local/bin/lens` as a root-owned copy of the new binary,
+   retire the old Firecrawl stack if present (see below), refresh `/etc/motd`,
+   then restart.
 5. **Verify.** Poll `/health` with bounded requests. On success write
-   `.deployed-revision` and remove `.venv.old`. On any failure after stopping,
-   automatically restore the previous source, venv, unit and CLI and probe
-   readiness again. The command still exits non-zero, even if recovery succeeds.
+   `.deployed-revision` and remove a leftover Python `.venv` / `.venv.old`.
+   On any failure after stopping, automatically restore the snapshot (code,
+   binary, venv if any, unit and CLI) and probe readiness again. The command
+   still exits non-zero, even if recovery succeeds.
    After a successful update only the newest two `/opt/lens.rollback.*`
    snapshots are kept (`LENS_KEEP_ROLLBACKS` changes the count); a failed
    update prunes nothing. Snapshots exclude instance data and do not replace
@@ -509,6 +545,8 @@ build cannot take down a working install:
 
 Update environment variables: `LENS_UPDATE_YES`, `LENS_UPDATE_NO_PULL`,
 `LENS_UPDATE_BRANCH`, `LENS_UPDATE_SKIP_DEEP`, `LENS_KEEP_ROLLBACKS`.
+The build honours `GOTOOLCHAIN` (default `auto`), `GOPROXY`, `GOSUMDB` and
+`LENS_BUILD_CACHE` (default `/var/cache/lens-build`) from the environment.
 
 ### Retiring the old Firecrawl stack
 
@@ -528,14 +566,19 @@ fails, use the snapshot path printed by the updater:
 ```bash
 sudo systemctl stop lens.service
 sudo bash -c 'source /opt/lens-src/scripts/lib/deploy.sh; lens_restore_release /opt/lens /opt/lens.rollback.XXXXXX /etc/systemd/system/lens.service /usr/local/bin/lens'
-sudo restorecon -RF /opt/lens/.venv
+sudo restorecon -RF /opt/lens/bin    # and /opt/lens/.venv when restoring a Python release
 sudo systemctl daemon-reload
 sudo systemctl start lens.service
 lens doctor
 ```
 
-Application rollback does not undo DNF packages, uv-managed Python patch
-updates, migrated auth state or the removal of the old Firecrawl stack.
+`lens_restore_release` puts back the snapshot's tree, its `bin/lens`, its
+Python `.venv` when it has one, the unit and whatever `/usr/local/bin/lens`
+was (a copy of the binary, or the Python release's copied bash script; a
+symlink left by an early Go build is restored as a copy).
+Application rollback does not undo DNF packages, the Go toolchain or module
+cache in `/var/cache/lens-build`, migrated auth state or the removal of the
+old Firecrawl stack.
 
 **Bad code** — check out the previous commit and rebuild, without fetching:
 
@@ -549,6 +592,66 @@ Use `lens rebuild`, not `lens update`: from a detached HEAD, `update` resolves
 a branch and fast-forwards straight back to the tip you were trying to leave.
 The end of a successful update prints the retained snapshot path. Prefer that
 snapshot when a previous failed update already advanced the source checkout.
+Going back across the Go rewrite this way — checking out a Python-era commit
+and rebuilding — is not supported: that commit's `update.sh` expects uv and the
+Python runtime the Go release no longer has. Restore the Python release from a
+rollback snapshot that still holds its `.venv` instead (above).
+
+## Upgrading from the Python release
+
+Hosts installed before the Go rewrite move to it with a normal update — no
+reinstall, no manual steps:
+
+```bash
+lens update --yes
+```
+
+On such a host `lens` is still the Python release's bash CLI, which runs the
+*old* `scripts/update.sh`. That script fetches and fast-forwards as usual,
+sees that `update.sh` changed and re-execs the new one in rebuild-only mode
+(`LENS_UPDATE_NO_PULL=1`, with the deploy lock still held). From there the
+Go `update.sh` runs on its own:
+
+- It installs `golang` and `make` with dnf (a Python host has neither) and
+  builds `bin/lens` in staging; `GOTOOLCHAIN=auto` downloads the toolchain
+  `go.mod` pins into `/var/cache/lens-build`, so an older distro Go is fine.
+  The first build fetches the toolchain and modules and takes a few minutes;
+  later ones reuse the cache.
+- The rollback snapshot includes the Python `.venv` (about 250 MB) along with
+  the code, the old unit and the old bash CLI.
+- The swap leaves `.venv` in place, installs the new unit
+  (`ExecStart=/opt/lens/bin/lens serve …`) and replaces the copied
+  `/usr/local/bin/lens` script with a root-owned copy of the binary.
+- **Only after the Go release answers `/health`** is `.venv` (and any
+  `.venv.old`) removed. If the health check fails, rollback restores the
+  Python release — code, venv, unit and bash CLI — and starts it again, and
+  `lens update` exits non-zero. `lens logs` shows why the Go release did not
+  come up; fix that and run `lens update` again (it rebuilds the already
+  fetched commit). The restored Python CLI's `lens doctor` does not work in
+  this state — it runs `scripts/doctor.sh` from `/opt/lens-src`, which is
+  already on the Go release.
+
+Everything instance-specific carries over unchanged: `.env`, `config.json`,
+`managed-files/` (job history, inputs, outputs, `_jobs.json`),
+`/var/lib/lens/access.db` and `api_tokens.db` (same schemas, so central
+sessions, the allowlist and Fleet's tokens keep working), and the podman
+storage with the Chrome image. Queued jobs stay queued. As with any update,
+the service is stopped for the swap, so let running jobs finish first: a job
+running at the stop is marked failed ("Interrupted by server restart").
+
+Afterwards:
+
+```bash
+lens --version          # Go build version and commit
+lens doctor --strict    # binary, assets, release, python-venv: no leftovers
+```
+
+The Python release's uv cache under `/opt/lens/.cache/uv` and uv-managed
+Pythons under `/opt/lens/.local/share/uv` are no longer used; they can be
+removed once you no longer want to roll back to a Python snapshot. Leave the
+rest of `.local`, `.config` and `.cache` alone — podman's storage lives there.
+Once the snapshot holding the venv ages out (`LENS_KEEP_ROLLBACKS`, two
+updates), the Python release can no longer be restored automatically.
 
 ## Doctor and host maintenance
 
@@ -562,10 +665,16 @@ lens host tools --yes                           # optional distro Node/npm/Go
 lens host upgrade --dry-run                     # current → latest stable Fedora
 ```
 
-Doctor is read-only: configuration presence/key shape (no secret values), Python
-minor, dependency consistency, running interpreter, service/readiness, deployed
-revision, source drift, disk space, OS support deadline, rootless Podman and
-a leftover `firecrawl.service` (run `lens update` to retire it). Run as
+Doctor is read-only and bounded (every command it runs has a timeout): required
+tools and the Go toolchain `lens update` builds with, configuration
+presence/key shape (no secret values), the access and token databases, the
+release binary (present, runs, and reports the commit in `.deployed-revision`),
+the dashboard assets embedded in it, service/readiness, whether the running
+process is the installed `bin/lens`, deployed revision, source drift, a
+retired Python `.venv` still on disk, `managed-files/` ownership, the job
+queue file, disk space, OS support deadline, rootless Podman and the Chrome
+image, Cockpit, Caddy, and a leftover `firecrawl.service` (run `lens update`
+to retire it). Run as
 root, it also warns when `sshd -T` reports `passwordauthentication yes` or
 `permitrootlogin yes` (see the production-support README, Access: SSH keys).
 `env-permissions` only checks that `.env` is mode 0600 or 0640. `env-readable` checks that the service user can open it. A root-owned
@@ -680,8 +789,12 @@ consistent snapshot first, then upload that snapshot to private backup storage.
 Do not copy a live SQLite file directly and do not use S3 as its active
 filesystem.
 
-Jobs interrupted by a restart resume where they left off: `progress.json` is
-written after every single item.
+A dashboard job running when the service stops is marked failed
+("Interrupted by server restart") on the next start; queued jobs stay queued.
+Its `progress.json` and output CSV hold every item finished before the stop
+(`progress.json` is written after every single item). A CLI run (`lens run`)
+interrupted the same way resumes where it left off when re-run with the same
+output and progress paths.
 
 ## Health checks and monitoring
 
@@ -731,8 +844,8 @@ dashboard and in each job's `progress.json`.
 
 ### Every request redirects to the login page, forever
 
-`AUTH_SIGNING_PUBKEY` is unset or malformed. `verify_session` returns `None`
-for every failure mode — no key, wrong length, bad signature, expired token —
+`AUTH_SIGNING_PUBKEY` is unset or malformed. The cookie verifier
+(`internal/auth`) reports one "not signed in" for every failure mode — no key, wrong length, bad signature, expired token —
 and callers treat them all as "logged out", so a missing key looks exactly
 like a logged-out user.
 
@@ -746,21 +859,27 @@ The value must be base64 of exactly 32 raw bytes. A PEM-wrapped key, a
 base64url variant or a private key will all decode to the wrong length and be
 silently rejected.
 
-### Service won't start: `OPENROUTER_API_KEY environment variable is required`
+### Every job fails: `OPENROUTER_API_KEY environment variable is required`
 
-`config.py` builds its singleton at import time and raises without the key, so
-this is a startup crash, not a runtime error. Check `journalctl -u lens` for
-the traceback, then `lens env edit` and `lens restart`.
+The dashboard starts without the key, but each job is a `lens run` that refuses
+to run without it, so every run fails at once with this line in its log.
+`lens doctor` reports the missing key under `configuration`. Set it with
+`lens env edit`, then `lens restart`. If the key is set and jobs still fail
+this way, check `env-readable`: jobs run as `lens` and read `.env` themselves.
 
 ### 203/EXEC Permission denied after an update
 
-An SELinux label problem on the venv. `update.sh` runs `restorecon -RF` for
-this reason; if you built a venv by hand, do the same:
+An SELinux label problem on the binary. `bootstrap.sh` and `update.sh` run
+`restorecon -RF` on `bin/` for this reason; if you built or copied a binary by
+hand, do the same:
 
 ```bash
-sudo restorecon -RF /opt/lens/.venv
+sudo restorecon -RF /opt/lens/bin
 sudo systemctl restart lens.service
 ```
+
+A binary built under `/tmp` and moved into place keeps its `tmp_t` label, which
+is exactly what this fixes.
 
 ### Many websites come back `Failed` with block signatures
 
@@ -790,7 +909,7 @@ truncated tool calls and 429s.
 - 429s: lower `concurrent_sessions`, and `research_max_concurrent` if the
   research pass is the noisy one. `llm_request_max_retries` already backs off.
 - A dead model pin makes every request fail then silently fall back.
-  `config.py` warns and substitutes the default for models known to be
+  Lens warns and substitutes the default for models known to be
   permanently gone; check the logs for that warning.
 - Watch the spend. A large list against a frontier model is expensive; the
   dashboard's model picker is price-capped for exactly this reason.
@@ -818,21 +937,27 @@ That command stops the user's running containers. Normal updates only run it
 when they add subuid/subgid mappings, so an unsuccessful staging build does not
 stop an otherwise healthy deep-crawl container.
 
-### Staging fails to hardlink a root-owned uv cache file
+### Build fails during an update or bootstrap
 
-Older manual Python maintenance can leave root-owned `__pycache__` files in the
-service user's uv cache. Linux's protected-hardlink checks then reject staging
-installs with `Operation not permitted`. The cache is disposable; clear it and
-restore ownership of that cache only, then retry `lens update`:
+The live install is untouched (the build runs in staging), so this is never an
+outage. The usual causes:
 
-```bash
-sudo uv cache clean --cache-dir /opt/lens/.cache/uv
-sudo install -d -o lens -g lens /opt/lens/.cache/uv
-```
+- **No Go.** `lens update` installs `golang` and `make` itself; if dnf cannot,
+  install them by hand (`sudo dnf install -y golang make`) or with
+  `lens host tools --yes`.
+- **Toolchain or module download fails.** With `GOTOOLCHAIN=auto` a distro Go
+  older than `go.mod`'s pin downloads the pinned release, and modules come
+  from `proxy.golang.org` (checked against `sum.golang.org`). Allow those
+  hosts, or set `GOPROXY`/`GOSUMDB` for your mirror in the environment of
+  `lens update`. On an air-gapped box, install the pinned Go release and run
+  with `GOTOOLCHAIN=local`.
+- **A corrupt cache.** `/var/cache/lens-build` is disposable. Go makes module
+  files read-only, so clear it with
+  `sudo chmod -R u+w /var/cache/lens-build && sudo rm -rf /var/cache/lens-build`
+  and retry; the next build downloads everything again.
 
-Do not recursively chown `/opt/lens/.local`: rootless container layers deliberately
-contain subordinate UIDs/GIDs. Likewise, avoid recursively byte-compiling Python
-under the entire service home as root; it also reaches container storage.
+Do not recursively chown `/opt/lens/.local`: rootless container layers
+deliberately contain subordinate UIDs/GIDs.
 
 ### Missing chromedriver / deep scrape never runs
 
@@ -851,18 +976,22 @@ own WebDriver client) and needs only podman.
 
 ### Uploads fail at ~100 MB
 
-Two independent limits: `MAX_UPLOAD_BYTES` in `web_service.py` and
-`client_max_body_size` (nginx) or Caddy's default. A 413 from the proxy never
+Two independent limits: Lens's own 100 MB (`MaxUploadBytes` in
+`internal/jobs/files.go`) and `client_max_body_size` (nginx) or Caddy's
+default. A 413 from the proxy never
 reaches Lens, so raise the proxy limit first.
 
 ### Disk filling up
 
 Usual suspects, in order: `managed-files/outputs/` (never pruned), podman
 image storage under `/opt/lens/.local/share/containers` (`deep_scrape_pull_policy:
-always` accumulates image layers), `/var/lib/lens/access.db`, and journald.
+always` accumulates image layers), `/opt/lens.rollback.*` snapshots (the
+first Go update's also holds the Python venv), the Go build cache in
+`/var/cache/lens-build` (disposable; see above), `/var/lib/lens/access.db`, and
+journald.
 
 ```bash
-sudo du -sh /opt/lens/managed-files/* /opt/lens/.local/share/containers /var/lib/lens
+sudo du -sh /opt/lens/managed-files/* /opt/lens/.local/share/containers /opt/lens.rollback.* /var/cache/lens-build /var/lib/lens
 sudo runuser -u lens -- env XDG_RUNTIME_DIR=/run/user/$(id -u lens) \
   HOME=/opt/lens podman image prune -a
 sudo journalctl --vacuum-time=14d

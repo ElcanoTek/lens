@@ -4,9 +4,9 @@ Thanks for looking. Bug reports, small fixes and well-scoped features are all
 welcome.
 
 Before anything else, read [`AGENTS.md`](AGENTS.md). It is the architecture map
-— module responsibilities, the auto-mode ladder, and the non-obvious gotchas
-that will otherwise cost you an afternoon (the config singleton that crashes on
-import without an API key, the CTV news-routing rule, why `read()` has to loop).
+— package responsibilities, the auto-mode ladder, and the non-obvious gotchas
+that will otherwise cost you an afternoon (the CTV news-routing rule, why the
+direct pass reads the body to EOF, why the deep pass is single-session).
 
 ## Licensing of contributions
 
@@ -18,43 +18,38 @@ Change Date like the rest of the file. There is no separate CLA to sign.
 
 Every new first-party source file starts with:
 
-```python
-# SPDX-License-Identifier: BUSL-1.1
-# Copyright (c) 2026 ElcanoTek, Inc.
+```go
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 ElcanoTek, Inc.
 ```
 
-After a shebang and any coding declaration, before the module docstring. See
-[`docs/LICENSING.md`](docs/LICENSING.md) for what the licence does and does not
-allow — note that it is non-production-only, so please don't open a PR that
-assumes otherwise.
+Before the package doc comment, separated from it by a blank line. Shell
+scripts and the Makefile use the same two lines as `#` comments, after any
+shebang. See [`docs/LICENSING.md`](docs/LICENSING.md) for what the licence does
+and does not allow — note that it is non-production-only, so please don't open
+a PR that assumes otherwise.
 
 ## Setup
 
-Python 3.11 or 3.12. CI runs both (3.12 for the unit suite, 3.11 for the
-classification smoke test).
-
-With [uv](https://docs.astral.sh/uv/) — what the deploy scripts use:
+Go, version 1.21 or newer, and `make`. `go.mod` pins the exact toolchain
+(currently 1.27.3); the Makefile exports `GOTOOLCHAIN=auto`, so an older local
+Go downloads the pinned release on first use instead of failing. CI builds with
+the pinned release, and the deploy-build job also proves an older distro Go
+(1.24) still gets there.
 
 ```bash
 git clone https://github.com/ElcanoTek/lens.git
 cd lens
-uv venv
-uv pip install -r requirements-dev.txt
-source .venv/bin/activate
+make build                # → bin/lens, stamped with git describe / HEAD
+./bin/lens --version
 ```
 
-Or plain venv:
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-dev.txt
-```
-
-You do **not** need an OpenRouter key to run the tests — the suite stubs it.
-You do need one to run the pipeline for real:
+You do **not** need an OpenRouter key to run the tests. You do need one to run
+the pipeline for real:
 
 ```bash
 cp .env.example .env      # then fill in OPENROUTER_API_KEY
+./bin/lens run --input-csv test-input/url_master.csv --scrape-mode direct
 ```
 
 Remember that real runs cost money. `test-input/` has small synthetic fixtures
@@ -63,105 +58,86 @@ for cheap smoke tests.
 ## Running the tests
 
 ```bash
-python -m pytest -q                        # the whole suite, ~5s
-python -m pytest tests/test_input_detector.py -q
-python -m pytest tests/test_ctv_functionality.py -k news_routing -v
+make test                                   # go test ./..., ~15s
+make test-race                              # what CI runs; the gate for the job queue and cost meters
+go test ./internal/detect/                  # one package
+go test ./internal/openrouter/ -run CTVNewsRouting -v
+make test-cover                             # coverage.out plus a total
 ```
-
-`pytest.ini` sets `asyncio_mode = auto`, so async tests need no
-`@pytest.mark.asyncio` decorator.
 
 Two things to know about the suite:
 
-- It is **hermetic**. The repo-root `conftest.py` (and each test module) calls
-  `os.environ.setdefault("OPENROUTER_API_KEY", ...)` *before* importing project
-  modules, because `config.py` builds its singleton at import and raises
-  without the key. That same root conftest sandboxes every filesystem path at a
-  per-test `tmp_path`, for every test pytest collects — under `tests/` or beside
-  it. Tests that touch auth mint their own throwaway Ed25519 keypair. No
-  network, no secrets.
-- Because of that ordering requirement, test modules legitimately have imports
-  below the top of the file. Don't "fix" them.
+- It is **hermetic**. No API key, no network: OpenRouter, the stores, the
+  WebDriver endpoint and Auth are `httptest` servers, and tests that touch
+  auth mint their own throwaway Ed25519 keypair. Nothing reads a key at
+  package load — `config.Load` never fails for a missing
+  `OPENROUTER_API_KEY`; only the commands that need it call `RequireAPIKey`.
+- It **never touches real paths**. Every test that writes builds its tree
+  under `t.TempDir()`, hands it over explicitly (`web.Options{Home: …}`,
+  `jobs.NewManager(home)`) or with `t.Setenv("LENS_HOME", …)` / `t.Chdir`, so
+  it cannot write into a developer's `managed-files/`, `.env` or
+  `config.json`. Keep new tests that way; don't read the working directory.
 
-`tests/test_integrations.py` contains one test that talks to OpenRouter for
-real; it skips itself when no usable key is present.
+`internal/deploytest` runs the bash deploy scripts end to end against a scratch
+tree with stub tools on `PATH` (needs `bash`, `rsync`, `jq`; skips without
+them). One test — the Python-era `update.sh` re-execing into the Go one — only
+runs as root; CI runs it separately under `sudo`.
 
-## Linting
-
-[Ruff](https://docs.astral.sh/ruff/) handles both formatting and linting; it
-replaced the earlier `black` + `flake8` pair. The tree is clean and CI
-**enforces** it, so a violation fails the build.
+## Linting and checks
 
 ```bash
-ruff format .        # apply formatting
-ruff check .         # lint
-ruff check --fix .   # apply the safe fixes
+make fmt          # gofmt -w the tree
+make fmt-check    # fail when any file needs gofmt
+make vet          # go vet ./...
+make lint         # golangci-lint run (.golangci.yml)
+make govulncheck  # known vulnerabilities reachable from Lens
+make shellcheck   # bash -n + shellcheck the deploy scripts
+make ci           # everything CI's go + shell jobs run
 ```
 
-Run both before pushing. The `lint` job runs them as `--check`, in parallel
-with the tests.
+CI **enforces** all of them, so a finding fails the build.
 
-Configuration lives in `pyproject.toml`, and a few decisions there are
-deliberate:
+`make lint` needs **golangci-lint v2.14.0**, the version CI pins. Install that
+release, built with Go 1.27 or newer (golangci-lint refuses to run when the Go
+it was built with is older than the one `go.mod` targets, and go1.27.2 changed
+the export-data format v2.13.x cannot read). From source, for example:
 
-- **Line length is the formatter's job, so `E501` is off.** `ruff format`
-  wraps everything it safely can; what's left is mostly the prompt literals in
-  `openrouter_client.py`. Hand-wrapping those would edit prompt text and change
-  classification behavior.
-- **`tests/` is exempt from `E402`.** This encodes the import-ordering rule
-  described above — the suites must stub the API key and extend `sys.path`
-  before importing project modules, so the linter is told not to "fix" them.
-- **FastAPI's `Depends`/`File`/`Form` markers are exempt from `B008`.** Calling
-  them in argument defaults is how a route declares dependencies.
-- **`UP` and `SIM` are deliberately not enabled.** The reasoning is recorded in
-  `pyproject.toml`.
+```bash
+GOTOOLCHAIN=auto go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.14.0
+```
 
-Because formatting is now automatic and enforced, it no longer bloats diffs the
-way an ad-hoc `black` run once did — so the old advice to avoid reformatting is
-gone. Do still keep unrelated refactors out of functional PRs. The test suite
-remains the gate on behavior; the linter is the gate on style.
+Bumping `go.mod`'s Go line can therefore mean bumping the pin in
+`.github/workflows/tests.yml` too — see the comment in `.golangci.yml`. The lint
+is a full gate (`only-new-issues: false`): fix a finding or silence it with
+`//nolint:<linter> // <reason>`; `nolintlint` rejects a suppression with no
+reason or one that no longer suppresses anything.
+
+`govulncheck` runs against a live advisory database, so it can turn red with no
+commit involved — usually a Go security release the `go` line in `go.mod`
+needs to move to.
+
+Keep unrelated refactors out of functional PRs. The test suite is the gate on
+behaviour; gofmt and golangci-lint are the gate on style.
 
 ## Dependencies
 
-Dependencies are locked with [pip-tools](https://pip-tools.readthedocs.io/).
-Four files, two of which are generated:
+There are three direct Go modules (`golang.org/x/net`, `golang.org/x/text`,
+`modernc.org/sqlite`); `go.mod` and `go.sum` pin them and everything they pull
+in, so every build — CI, a laptop, a production deploy — compiles the same
+code. To change one, `go get module@version`, then `go mod tidy`, and commit
+both files. Never hand-edit `go.sum`.
 
-| File | Role |
-|---|---|
-| `requirements.in` | Runtime dependencies you edit, as `>=` floors |
-| `requirements-dev.in` | Test/lint dependencies you edit; pulls in `requirements.in` |
-| `requirements.txt` | **Generated.** Exact runtime pins, fully transitive |
-| `requirements-dev.txt` | **Generated.** Exact pins for runtime + dev |
+Dependabot proposes updates (daily, cooldown 7 days (3 for patch releases),
+minor/patch grouped); a human merges one only when the bump earns it (a
+security fix whose code path Lens uses, or an upstream commit we need). Before
+adding a dependency, check whether the standard library or a small package of
+our own would do — see "Dependencies and in-housed code" in
+[`AGENTS.md`](AGENTS.md) for the policy and what is already in-house.
 
-**Never edit a `.txt` by hand.** Change the matching `.in`, then recompile
-*both* — `requirements-dev.txt` is built from `requirements.in`, so a runtime
-change that skips the second command leaves the two locks disagreeing:
-
-```bash
-pip install pip-tools
-pip-compile --strip-extras --allow-unsafe --output-file requirements.txt requirements.in
-pip-compile --strip-extras --allow-unsafe --output-file requirements-dev.txt requirements-dev.in
-```
-
-Commit the regenerated `.txt` files with your change.
-
-Why locks: every install — CI, a fresh clone, a production deploy — resolves
-to byte-identical versions. Previously the floors were `>=` with nothing
-pinned, so `pip` picked the newest release at install time and an upstream
-change could break CI with no commit in this repo. Now a dependency moves only
-when a reviewed PR moves it. Dependabot proposes updates (daily, cooldown
-7 days (3 for patch releases), minor/patch grouped); a human merges one only
-when the bump earns it (a security fix whose code path Lens uses, or an
-upstream commit we need). Before adding a dependency, check whether the
-standard library or a small module of our own would do — see "Dependencies and in-housed code" in
-[`AGENTS.md`](AGENTS.md) for the policy and what is already vendored.
-
-Production installs `requirements.txt` only, so pytest and ruff never ship to
-servers. The deploy scripts are unchanged — `uv pip install -r
-requirements.txt` reads a pinned file exactly as it read a floating one.
-
-The locks are resolved on Python 3.11 (the lower of the two versions CI uses)
-and verified to install and pass the suite on both 3.11 and 3.12.
+Test-only and tooling code (golangci-lint, govulncheck) is never a module
+dependency. Production builds nothing but `bin/lens`; the binary carries its
+assets (templates, static files, taxonomy, TLD list), so nothing else of the
+tree is needed at run time.
 
 ## Branches and pull requests
 
@@ -181,7 +157,7 @@ exactly what a reviewer needs. The convention in this repo's history is a
 
 Commit subjects are imperative and describe the *effect*, not the mechanism —
 "Skip the deep crawler for sites the direct pass proved are blocked"
-rather than "update scraper_client.py". Conventional-commit prefixes
+rather than "update internal/scrape". Conventional-commit prefixes
 (`chore(ci):`, `fix:`) appear in the history too and are fine.
 
 A good PR:
@@ -193,12 +169,14 @@ A good PR:
   `docs/DEPLOYMENT.md` for anything operational, `config.json.example` and
   `.env.example` for any new setting (the examples are meant to document
   *every* key the code reads).
-- Leaves `python -m pytest -q` green.
+- Leaves `make fmt-check vet lint test-race` green (and `make shellcheck`
+  when it touches the deploy scripts).
 
 ### Things that need extra care
 
-- **`config.py` defaults** — a new key belongs in `config.json.example` too,
-  with a comment.
+- **`internal/config` defaults** — a new key belongs in `config.json.example`
+  too, with a comment; `internal/config/config_test.go` fails when the example
+  and `Default()` disagree.
 - **Scrape-ladder behaviour** — read the anti-bot section of `AGENTS.md`
   first. "Try harder" changes (more retries, stealth escalation) increase ban
   risk without helping, and have been deliberately removed before.

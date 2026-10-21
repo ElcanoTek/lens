@@ -1,0 +1,1185 @@
+{
+ "app_bundle.xlsx": {
+  "breakdown": {
+   "ctv": 3,
+   "total": 3
+  },
+  "ctv_input": [
+   [
+    "54092",
+    "54092",
+    "",
+    ""
+   ],
+   [
+    "B091RFCS5V",
+    "B091RFCS5V",
+    "",
+    ""
+   ],
+   [
+    "com.plexapp.ctv",
+    "com.plexapp.ctv",
+    "",
+    ""
+   ]
+  ],
+  "ctv_work_items": [
+   [
+    "54092",
+    "54092",
+    "",
+    "",
+    "Roku",
+    ""
+   ],
+   [
+    "B091RFCS5V",
+    "B091RFCS5V",
+    "",
+    "",
+    "Fire TV",
+    ""
+   ],
+   [
+    "com.plexapp.ctv",
+    "com.plexapp.ctv",
+    "",
+    "",
+    "Android TV",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "App Bundle",
+   "ctv_file": true,
+   "items": [
+    [
+     "54092",
+     "ios_app"
+    ],
+    [
+     "B091RFCS5V",
+     "website"
+    ],
+    [
+     "com.plexapp.ctv",
+     "android_app"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "app_bundle_ids.xlsx": {
+  "breakdown": {
+   "ctv": 5,
+   "total": 5
+  },
+  "ctv_input": [
+   [
+    "54092",
+    "54092",
+    "",
+    ""
+   ],
+   [
+    "B091RFCS5V",
+    "B091RFCS5V",
+    "",
+    ""
+   ],
+   [
+    "com.plexapp.ctv",
+    "com.plexapp.ctv",
+    "",
+    ""
+   ],
+   [
+    "crunchyroll.roku",
+    "crunchyroll.roku",
+    "",
+    ""
+   ]
+  ],
+  "ctv_work_items": [
+   [
+    "54092",
+    "54092",
+    "",
+    "",
+    "Roku",
+    ""
+   ],
+   [
+    "54092",
+    "54092",
+    "",
+    "",
+    "Roku",
+    ""
+   ],
+   [
+    "B091RFCS5V",
+    "B091RFCS5V",
+    "",
+    "",
+    "Fire TV",
+    ""
+   ],
+   [
+    "com.plexapp.ctv",
+    "com.plexapp.ctv",
+    "",
+    "",
+    "Android TV",
+    ""
+   ],
+   [
+    "crunchyroll.roku",
+    "crunchyroll.roku",
+    "",
+    "",
+    "Roku",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "App Bundle",
+   "ctv_file": true,
+   "items": [
+    [
+     "54092",
+     "ios_app"
+    ],
+    [
+     "B091RFCS5V",
+     "website"
+    ],
+    [
+     "com.plexapp.ctv",
+     "android_app"
+    ],
+    [
+     "crunchyroll.roku",
+     "android_app"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "bom_crlf.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "foxnews.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "foxbusiness.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "foxnews.com",
+     "website"
+    ],
+    [
+     "foxbusiness.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "ctv_basic.csv": {
+  "breakdown": {
+   "ctv": 3,
+   "total": 3
+  },
+  "ctv_input": [
+   [
+    "Netflix",
+    "com.netflix",
+    "",
+    ""
+   ],
+   [
+    "Hulu",
+    "54092",
+    "",
+    ""
+   ],
+   [
+    "Disney+",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "ctv_work_items": [
+   [
+    "Netflix",
+    "com.netflix",
+    "",
+    "",
+    "Android TV",
+    "https://netflix.com"
+   ],
+   [
+    "Hulu",
+    "54092",
+    "",
+    "",
+    "Roku",
+    ""
+   ],
+   [
+    "Disney+",
+    "",
+    "",
+    "",
+    "Apple TV",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "url",
+   "ctv_file": true,
+   "items": [
+    [
+     "https://netflix.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "ctv_master.csv": {
+  "breakdown": {
+   "ctv": 3,
+   "total": 3
+  },
+  "ctv_input": [
+   [
+    "Example News Network",
+    "512001",
+    "ExampleSSP",
+    "Northwind Broadcasting"
+   ],
+   [
+    "Second App",
+    "B091RFCS5V",
+    "X",
+    ""
+   ]
+  ],
+  "ctv_work_items": [
+   [
+    "Example News Network",
+    "512001",
+    "ExampleSSP",
+    "Northwind Broadcasting",
+    "Roku",
+    ""
+   ],
+   [
+    "Example News Network",
+    "512002",
+    "OtherSSP",
+    "Pub",
+    "Roku",
+    ""
+   ],
+   [
+    "Second App",
+    "B091RFCS5V",
+    "X",
+    "",
+    "Fire TV",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "App, Account or Network Name",
+   "ctv_file": true,
+   "items": [
+    [
+     "Example News Network",
+     "website"
+    ],
+    [
+     "Second App",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "dup_headers.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 1,
+   "websites": 1
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "a.com",
+    "",
+    "",
+    "",
+    "",
+    "c.com"
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "a.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "dupes_and_blanks.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 3,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "foo.org",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "foo.org",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "headerless.xlsx": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 3,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "harborlight-news.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "cedarpost.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "01net-example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "harborlight-news.com",
+     "website"
+    ],
+    [
+     "cedarpost.com",
+     "website"
+    ],
+    [
+     "01net-example.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "headerless_domains.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 3,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "github.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "github.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "headerless_mixed.csv": {
+  "breakdown": {
+   "android": 1,
+   "ios": 1,
+   "total": 3,
+   "websites": 1
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "com.example.app",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "284882215",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "com.example.app",
+     "android_app"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "identifier_mixed.csv": {
+  "breakdown": {
+   "android": 1,
+   "ios": 1,
+   "total": 5,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "another-site.org",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "https://third.io",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "284882215",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "com.example.app",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "identifier",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "another-site.org",
+     "website"
+    ],
+    [
+     "https://third.io",
+     "website"
+    ],
+    [
+     "284882215",
+     "ios_app"
+    ],
+    [
+     "com.example.app",
+     "android_app"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "ids_blank.xlsx": {
+  "breakdown": {
+   "android": 0,
+   "ios": 1,
+   "total": 2,
+   "websites": 1
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "333903271",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "333903271",
+     "ios_app"
+    ],
+    [
+     "example.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "latin1.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "caf�.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "ok.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "caf�.com",
+     "website"
+    ],
+    [
+     "ok.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "mixed_pageurl.csv": {
+  "breakdown": {
+   "android": 1,
+   "ios": 1,
+   "total": 3,
+   "websites": 1
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "333903271",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "com.spotify.music",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "pageURL",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "333903271",
+     "ios_app"
+    ],
+    [
+     "com.spotify.music",
+     "android_app"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "numeric_ids_blank.csv": {
+  "breakdown": {
+   "exception": "Error tokenizing data. C error: Expected 1 fields in line 5, saw 2\n"
+  },
+  "ctv_work_items": {
+   "exception": "Error tokenizing data. C error: Expected 1 fields in line 5, saw 2\n"
+  },
+  "work": {
+   "exception": "ParserError: Error tokenizing data. C error: Expected 1 fields in line 5, saw 2\n"
+  }
+ },
+ "pageurl.xlsx": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 3,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "github.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "pageURL",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "github.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "quoted.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "multi\nline.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "multi\nline.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "ranked.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 3,
+   "websites": 3
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "1",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "2",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "3",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Address",
+   "ctv_file": false,
+   "items": [
+    [
+     "nytimes.com",
+     "website"
+    ],
+    [
+     "wsj.com",
+     "website"
+    ],
+    [
+     "cnn.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "semicolon.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "lemonde.fr",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "spiegel.de",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "lemonde.fr",
+     "website"
+    ],
+    [
+     "spiegel.de",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "tab.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "lemonde.fr",
+    "",
+    "",
+    "",
+    "",
+    "lemonde.fr"
+   ],
+   [
+    "spiegel.de",
+    "",
+    "",
+    "",
+    "",
+    "spiegel.de"
+   ]
+  ],
+  "work": {
+   "column": "Site",
+   "ctv_file": false,
+   "items": [
+    [
+     "lemonde.fr",
+     "website"
+    ],
+    [
+     "spiegel.de",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "trailing_empty.csv": {
+  "breakdown": {
+   "android": 0,
+   "ios": 0,
+   "total": 2,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "nytimes.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "wsj.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "nytimes.com",
+     "website"
+    ],
+    [
+     "wsj.com",
+     "website"
+    ]
+   ],
+   "type_column": ""
+  }
+ },
+ "two_sheets.xlsx": {
+  "breakdown": {
+   "android": 1,
+   "ios": 1,
+   "total": 3,
+   "websites": 1
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "284882215",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "com.whatsapp",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "284882215",
+     "ios_app"
+    ],
+    [
+     "com.whatsapp",
+     "android_app"
+    ]
+   ],
+   "type_column": "Type"
+  }
+ },
+ "typed_master.csv": {
+  "breakdown": {
+   "android": 2,
+   "ios": 1,
+   "total": 5,
+   "websites": 2
+  },
+  "ctv_input": [],
+  "ctv_work_items": [
+   [
+    "333903271",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "com.foo.bar",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "example.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "kik.android",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ],
+   [
+    "x.com",
+    "",
+    "",
+    "",
+    "",
+    ""
+   ]
+  ],
+  "work": {
+   "column": "Domain",
+   "ctv_file": false,
+   "items": [
+    [
+     "333903271",
+     "ios_app"
+    ],
+    [
+     "com.foo.bar",
+     "android_app"
+    ],
+    [
+     "example.com",
+     "website"
+    ],
+    [
+     "kik.android",
+     "android_app"
+    ],
+    [
+     "x.com",
+     "website"
+    ]
+   ],
+   "type_column": "Type"
+  }
+ }
+}

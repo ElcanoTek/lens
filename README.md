@@ -47,9 +47,9 @@ output, progress and log artifacts.](docs/images/dashboard.png)
   categories alongside standard results, with raw probabilities, answered by
   an OpenRouter decision model (TypeSafe's Jev by default).
   [Setup and examples](docs/CUSTOM_CATEGORIES.md).
-- **A web dashboard, or just the CLI.** The FastAPI dashboard adds uploads, a
-  one-at-a-time job queue, live progress and artifact downloads. The CLI needs
-  nothing but Python and a key.
+- **A web dashboard, or just the CLI.** One `lens` binary is both: `lens serve`
+  adds uploads, a one-at-a-time job queue, live progress and artifact
+  downloads; `lens run` needs nothing but the binary and a key.
 - **Drivable from agents and scripts.** An MCP server (`/mcp`) and a REST API
   (`/api/v1`) let Fleet or any other caller start jobs, check progress, read
   results and download files with a scoped, revocable token rather than an
@@ -116,7 +116,8 @@ curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | su
 ```
 
 The installer asks for your OpenRouter key, auth configuration and an optional
-TLS hostname. It installs the service, Python runtime and browser containers.
+TLS hostname. It builds the `lens` binary, installs the service and pulls the
+browser container.
 Then manage everything with:
 
 ```bash
@@ -135,11 +136,13 @@ diagnostics, optional Node/npm/Go tooling and the Fedora upgrade workflow.
 
 The CLI is the low-friction path — no service, no auth, no containers.
 
+You need Go 1.21 or newer; `make` fetches the exact release `go.mod` pins
+(`GOTOOLCHAIN=auto`).
+
 ```bash
 git clone https://github.com/ElcanoTek/lens.git
 cd lens
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
+make build                    # → bin/lens, one static binary
 
 cp .env.example .env          # then put your OpenRouter key in it
 ```
@@ -148,7 +151,7 @@ Point it at a list. The bundled fixtures are synthetic and safe to burn a few
 cents on:
 
 ```bash
-python main.py --input-csv test-input/url_master.csv \
+./bin/lens run --input-csv test-input/url_master.csv \
                --output-csv output.csv \
                --scrape-mode direct
 ```
@@ -165,7 +168,7 @@ com.spotify.music
 ```
 
 ```bash
-python main.py --input-csv my-list.csv     # auto mode: full ladder
+./bin/lens run --input-csv my-list.csv     # auto mode: full ladder
 ```
 
 Results land in `output.csv`, resumable state in `progress.json`, and a
@@ -175,7 +178,7 @@ processed; delete `progress.json` and `output.csv` for a clean run.
 CTV lists are auto-detected, or forced explicitly:
 
 ```bash
-python main.py --input-csv test-input/CTV_Master.csv --ctv
+./bin/lens run --input-csv test-input/CTV_Master.csv --ctv
 ```
 
 ### Useful flags
@@ -193,17 +196,21 @@ python main.py --input-csv test-input/CTV_Master.csv --ctv
 | `--allow-redirects` | Follow off-host redirects instead of failing them |
 | `--quiet` / `--verbose` | Less or more per-item output |
 | `--jsonl PATH` | Structured per-attempt log |
+| `--custom-categories FILE` / `--decision-model MODEL` | [Custom categories](docs/CUSTOM_CATEGORIES.md) and their decision model |
 
-Housekeeping lives in `manage.py`:
+`./bin/lens run --help` lists them all; `./bin/lens --help` lists every
+command.
+
+Housekeeping lives in `lens manage`:
 
 ```bash
-python manage.py setup          # scaffold .env and config.json
-python manage.py validate       # check the key and input file are present
-python manage.py progress       # progress summary
-python manage.py stats          # detailed counters and failures
-python manage.py reset          # delete progress.json (with confirmation)
-python manage.py reset-failed   # re-queue only the failed items
-python manage.py sample         # write sample_input.csv
+./bin/lens manage setup          # scaffold .env and config.json
+./bin/lens manage validate       # check the key and input file are present
+./bin/lens manage progress       # progress summary
+./bin/lens manage stats          # detailed counters and failures
+./bin/lens manage reset          # delete progress.json (with confirmation)
+./bin/lens manage reset-failed   # re-queue only the failed items
+./bin/lens manage sample         # write sample_input.csv
 ```
 
 ### Output columns
@@ -282,7 +289,7 @@ custom labels stay blank, and `Decision_Status` / `Decision_Error` explain the
 failure.
 
 For CLI use, add `--custom-categories examples/custom-categories.json` to your
-normal command. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for the JSON
+normal `lens run` command. See [Custom categories](docs/CUSTOM_CATEGORIES.md) for the JSON
 format, setup details, definition downloads, and resume behavior.
 
 ## Configuration
@@ -334,7 +341,7 @@ Full reference: [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md#configuration-referenc
 
 ## The web dashboard
 
-A FastAPI app (`web_service.py`) for teams that would rather not share a
+`lens serve` (`internal/web`) is for teams that would rather not share a
 terminal:
 
 - Drag-and-drop CSV/XLSX upload, with a detected content-type breakdown shown
@@ -352,7 +359,7 @@ terminal:
 ```bash
 export OPENROUTER_API_KEY=...
 export AUTH_SIGNING_PUBKEY=...      # else every request redirects to login
-uvicorn web_service:app --host 127.0.0.1 --port 8808
+./bin/lens serve --addr 127.0.0.1:8808
 ```
 
 In legacy mode, authentication is a signed cookie verified against a public
@@ -368,9 +375,10 @@ every central session of the account and signs the user out of every
 application; the browser lands on Auth's login page. Legacy logout continues
 through the Elcano Auth service.
 
-The dashboard shells out to `main.py` as a subprocess per job, so environment
-variables and CLI flags are the only configuration surface — there is no
-separate in-process code path to keep in sync.
+The dashboard runs each job as a `lens run` subprocess of its own binary, so
+environment variables and CLI flags are the only configuration surface — there
+is no separate in-process code path to keep in sync. Its working directory (or
+`LENS_HOME`) is the Lens home: `.env`, `config.json` and `managed-files/`.
 
 ## Deployment
 
@@ -380,11 +388,14 @@ Running Lens as a service on Fedora/RHEL is a single bootstrap script:
 curl -fsSL https://raw.githubusercontent.com/ElcanoTek/lens/main/install.sh | sudo bash
 ```
 
-It creates the `lens` system user and `/opt/lens`, builds a venv with `uv`,
-installs the systemd units and a `lens` operator CLI, and optionally sets up
-Caddy with automatic TLS. Updates are staged and health-checked, with automatic
-code-and-venv rollback. `lens doctor` diagnoses the installation; `lens host`
-handles package maintenance and Fedora upgrade preparation.
+It creates the `lens` system user and `/opt/lens`, builds `bin/lens` with the
+distro's Go (`make build`; `GOTOOLCHAIN=auto` fetches the pinned release),
+installs the systemd unit, installs a root-owned copy of the binary as the
+`/usr/local/bin/lens` operator CLI, and optionally sets up Caddy with automatic TLS. Updates are
+staged and health-checked, with automatic rollback to the previous release;
+a host still on the Python release moves to Go with a normal `lens update`.
+`lens doctor` diagnoses the installation; `lens host` handles package
+maintenance and Fedora upgrade preparation.
 
 **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) is the full guide** — prerequisites,
 the `/opt/lens` layout, the complete environment and `config.json` reference,
@@ -403,7 +414,7 @@ the failure modes you will actually hit.
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Setup, tests, branch and PR conventions |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability; scope; secure operation |
 | [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) | Contributor Covenant 2.1 |
-| [`NOTICE`](NOTICE) | Third-party attribution (IAB taxonomy, IANA, fonts) |
+| [`NOTICE`](NOTICE) | Third-party attribution (IAB taxonomy, IANA, fonts, Go modules, ported code) |
 | [`config.json.example`](config.json.example) / [`.env.example`](.env.example) | Every setting the code reads, annotated |
 | [`test-input/README.md`](test-input/README.md) | What the sample fixtures are and why they are synthetic |
 
@@ -416,8 +427,7 @@ Issues and pull requests are welcome. Start with
 The test suite is hermetic — no API key, no network:
 
 ```bash
-pip install -r requirements-dev.txt
-python -m pytest -q
+make test          # or make test-race, as CI runs it
 ```
 
 Contributions are accepted under BSL 1.1 with ElcanoTek as Licensor. There is

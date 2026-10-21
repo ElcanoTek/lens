@@ -34,16 +34,19 @@ We do not operate a paid bug-bounty programme.
 
 **In scope** — this repository:
 
-- The FastAPI dashboard (`web_service.py`): authentication and session
-  handling, file upload and download, path traversal, job control,
+- The dashboard server (`lens serve`, `internal/web`): authentication and
+  session handling, file upload and download, path traversal, job control,
   authorisation gaps between routes.
-- Cookie verification (`auth_cookie.py`): signature checking, expiry,
-  key handling.
-- The pipeline (`orchestration.py`, `scraper_client.py`,
-  `openrouter_client.py`, `input_detector.py`, and the processors): injection
+- Sign-in and tokens (`internal/auth`, `internal/apitoken`): cookie and
+  `id_token` verification, expiry, key handling, the scoped API tokens and
+  signed download links.
+- The REST API and MCP server (`internal/api`, `internal/mcp`).
+- The pipeline (`internal/pipeline`, `internal/scrape`, `internal/openrouter`,
+  `internal/detect`, `internal/htmldom`, `internal/tabular`): injection
   through crawled content or input files, SSRF, resource exhaustion, unsafe
   parsing.
-- Deployment assets (`scripts/`, `deploy/`): privilege escalation, unsafe
+- Deployment assets and the operator CLI (`scripts/`, `deploy/`,
+  `internal/opscli`, `internal/submit`): privilege escalation, unsafe
   defaults, secrets exposure, unsafe file permissions.
 - Accidentally committed credentials or customer data.
 
@@ -85,10 +88,10 @@ Worth knowing whether or not you are reporting anything:
   safe to distribute and a leak cannot forge a session.
 - **Bind the app to localhost** and terminate TLS in a reverse proxy. That is
   what `lens.service` and the shipped Caddy config do.
-- `/opt/lens/.env` holds the OpenRouter key and is written `0640 lens:lens`.
+- `/opt/lens/.env` holds the OpenRouter key and is written `0600 lens:lens`.
   `lens env` redacts secrets when printing.
 - `/health` is intentionally unauthenticated so load balancers can probe it. It
-  returns only a status and a timestamp.
+  returns only a status, a timestamp and the active auth mode.
 - **Uploads and output are sensitive.** `managed-files/` holds the identifiers
   you analyse and the results; nothing prunes it automatically.
 - Lens fetches and feeds untrusted third-party web content to an LLM. Treat

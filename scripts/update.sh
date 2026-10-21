@@ -2,13 +2,33 @@
 # SPDX-License-Identifier: BUSL-1.1
 # Copyright (c) 2026 ElcanoTek, Inc.
 # scripts/update.sh — staged update for a Lens install.
+#
+# Fetch, build bin/lens in a staging tree beside $APP_DIR, snapshot the live
+# release, stop, migrate the access DB, swap, restart and health-check; any
+# failure after the stop restores the snapshot. The first run on a box still
+# on the Python release arrives here by re-exec from the OLD update.sh
+# (LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 LENS_UPDATE_BASE_SHA=<old HEAD>,
+# deploy lock already held), so this script must stand on its own: it
+# installs the Go toolchain itself, snapshots the Python venv with the code so
+# a failed health check brings the Python release back, and retires the venv
+# only once the Go release has answered /health.
 
 set -euo pipefail
 
 SRC_DIR="${SRC_DIR:-${LENS_SRC_DIR:-/opt/lens-src}}"
 APP_DIR="${APP_DIR:-${LENS_APP_DIR:-/opt/lens}}"
 APP_USER="${APP_USER:-lens}"
-CLI_TARGET="/usr/local/bin/lens"
+CLI_TARGET="${LENS_CLI_TARGET:-/usr/local/bin/lens}"
+# Host locations. The overrides exist for internal/deploytest, which runs
+# this script end to end against a scratch tree with stub tools.
+UNIT_DIR="${LENS_UNIT_DIR:-/etc/systemd/system}"
+STATE_DIR="${LENS_STATE_DIR:-/var/lib/lens}"
+MOTD_FILE="${LENS_MOTD_FILE:-/etc/motd}"
+# Owner of bin/ and of the CLI copy: root, never the service user. Root runs
+# /usr/local/bin/lens for every operator command (lens update, doctor, env
+# edit, ...), so a binary the service account can rewrite would hand a
+# compromised service root. The service only needs to execute bin/lens.
+BIN_OWNER="${LENS_BIN_OWNER:-root:root}"
 SERVICE="lens.service"
 for arg in "$@"; do
   case "$arg" in
@@ -32,7 +52,7 @@ ok()   { printf '%s✓ %s%s\n' "$c_green" "$*" "$c_reset"; }
 warn() { printf '%s! %s%s\n' "$c_yellow" "$*" "$c_reset" >&2; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_reset" >&2; exit 1; }
 
-[[ $EUID -eq 0 ]] || die "run as root: sudo lens update"
+[[ $EUID -eq 0 || "${LENS_UPDATE_TEST_NONROOT:-0}" == 1 ]] || die "run as root: sudo lens update"
 [[ -d "$SRC_DIR/.git" ]] || die "no source checkout at $SRC_DIR"
 [[ -d "$APP_DIR" ]]      || die "no existing install at $APP_DIR"
 lens_lock "$@"
@@ -134,9 +154,9 @@ ensure_auth_pubkey() {
     printf '%s?%s Paste it now (run `auth pubkey` on the auth host; blank to skip): ' "$c_cyan" "$c_reset"
     local pubkey_in; read -r pubkey_in
     if [[ -n "$pubkey_in" ]]; then
-      [[ -f "$APP_DIR/.env" ]] || install -o "$APP_USER" -g "$APP_USER" -m 0640 /dev/null "$APP_DIR/.env"
+      [[ -f "$APP_DIR/.env" ]] || install -o "$APP_USER" -g "$APP_USER" -m 0600 /dev/null "$APP_DIR/.env"
       printf 'AUTH_SIGNING_PUBKEY="%s"\n' "$pubkey_in" >> "$APP_DIR/.env"
-      chown "$APP_USER:$APP_USER" "$APP_DIR/.env"; chmod 0640 "$APP_DIR/.env"
+      chown "$APP_USER:$APP_USER" "$APP_DIR/.env"; chmod 0600 "$APP_DIR/.env"
       ok "AUTH_SIGNING_PUBKEY written to $APP_DIR/.env"
     else
       warn "skipped — set it later with: lens env edit   (then: lens restart)"
@@ -188,49 +208,85 @@ ensure_rootless_podman() {
 }
 ensure_rootless_podman
 
-step "2/4  Building staging venv"
-# Stage beside $APP_DIR, not in /tmp: a venv built under /tmp keeps its
+step "2/4  Building staging release"
+# go + make from dnf when missing (a first Go migration of a Python box has
+# neither). GOTOOLCHAIN=auto then fetches go.mod's pinned release into the
+# root-owned build cache (scripts/lib/deploy.sh).
+lens_ensure_go || die "could not install the Go toolchain (dnf install golang make) — live install untouched"
+# Stage beside $APP_DIR, not in /tmp: a tree built under /tmp keeps its
 # SELinux tmp_t label across mv, and systemd refuses to exec tmp_t
-# (203/EXEC Permission denied). Same filesystem also makes the final mv
-# atomic and lets uv hardlink from its cache. /opt has no tmp reaper, so
-# sweep leftovers from any previous run that died before its EXIT trap.
-rm -rf "${APP_DIR}".staging.* 2>/dev/null || true
+# (203/EXEC Permission denied). Same filesystem also makes the swap cheap.
+# /opt has no tmp reaper, so sweep leftovers from any previous run that died
+# before its EXIT trap.
+rm -rf "${APP_DIR}".staging.* "${APP_DIR}".deploybin.* 2>/dev/null || true
 STAGING="$(mktemp -d "${APP_DIR}.staging.XXXXXX")"
-trap 'rm -rf "$STAGING"' EXIT
+# Root-only (mktemp -d is 0700, beside $APP_DIR under root-owned /opt): the
+# copy of the new binary that root executes and installs as the CLI.
+PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
+trap 'rm -rf "$STAGING" "$PRIV_DIR"' EXIT
 rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$STAGING/"
+describe="$(git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
+lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live install untouched"
+# Refuse a binary that cannot even report its own identity: nothing has been
+# stopped yet, so this is the last cheap exit.
+built="$("$STAGING/bin/lens" --version 2>/dev/null || true)"
+[[ "$built" == *"$after_sha"* ]] || die "staged bin/lens does not report ${after_sha:0:12} (got: ${built:-nothing}) — live install untouched"
+# Take root's copy while the staging tree is still root-owned: from the chown
+# below the service user owns $STAGING and could swap its bin/ entry, so
+# nothing root executes may come from there.
+install -m 0755 "$STAGING/bin/lens" "$PRIV_DIR/lens"
+# Likewise every file root installs into the system: the unit (its
+# directives run as root) and the motd.
+install -d -m 0755 "$PRIV_DIR/deploy"
+install -m 0644 "$STAGING/deploy/lens.service" "$STAGING/deploy/motd" "$PRIV_DIR/deploy/"
+chown -R "$BIN_OWNER" "$PRIV_DIR"
 chown -R "$APP_USER:$APP_USER" "$STAGING"
-lens_venv "$STAGING" || die "venv build failed — live install untouched"
-ok "staging venv ready"
+chown -R "$BIN_OWNER" "$STAGING/bin"
+ok "staging release ready: $built"
 
 step "3/4  Swapping + restarting"
 BACKUP="$(mktemp -d "${APP_DIR}.rollback.XXXXXX")"
 rsync -a "${LENS_STATE_EXCLUDES[@]}" "$APP_DIR/" "$BACKUP/"
-cp -a "$APP_DIR/.venv" "$BACKUP/.venv"
-install -m 0644 /etc/systemd/system/lens.service "$BACKUP/lens.service.previous"
-# Any failure after stopping restores the actual deployed code AND interpreter.
+# A Python release (first migration) also needs its interpreter back on
+# rollback; a Go release has no venv and the binary is already in bin/.
+if [[ -d "$APP_DIR/.venv" ]]; then cp -a "$APP_DIR/.venv" "$BACKUP/.venv"; fi
+install -m 0644 "$UNIT_DIR/lens.service" "$BACKUP/lens.service.previous"
+# The CLI as it is: a copied bash script (Python) or a symlink (Go).
+if [[ -e "$CLI_TARGET" || -L "$CLI_TARGET" ]]; then cp -a "$CLI_TARGET" "$BACKUP/lens-cli.previous"; fi
+# Any failure after stopping restores the actual deployed code AND runtime.
 rollback() {
   local status=$?
   trap - EXIT
   if [[ "$status" != 0 ]]; then
     warn "deploy failed — restoring $BACKUP"
     systemctl stop "$SERVICE" || true
-    if lens_restore_release "$APP_DIR" "$BACKUP" /etc/systemd/system/lens.service "$CLI_TARGET"; then
-      command -v restorecon >/dev/null && restorecon -RF "$APP_DIR/.venv" || true
+    if lens_restore_release "$APP_DIR" "$BACKUP" "$UNIT_DIR/lens.service" "$CLI_TARGET"; then
+      if command -v restorecon >/dev/null 2>&1; then
+        for d in "$APP_DIR/bin" "$APP_DIR/.venv"; do
+          if [[ -d "$d" ]]; then restorecon -RF "$d" >/dev/null 2>&1 || true; fi
+        done
+      fi
       systemctl daemon-reload
-      systemctl start "$SERVICE" && lens_health && ok "previous Lens release restored" \
-        || warn "rollback needs attention — lens logs; snapshot: $BACKUP"
+      if systemctl start "$SERVICE" && lens_health; then
+        ok "previous Lens release restored"
+      else
+        warn "rollback needs attention — lens logs; snapshot: $BACKUP"
+      fi
     else
       warn "rollback needs attention — retained snapshot: $BACKUP"
     fi
   fi
-  rm -rf "$STAGING"
+  rm -rf "$STAGING" "$PRIV_DIR"
   exit "$status"
 }
 trap rollback EXIT
 systemctl stop "$SERVICE"
-if ! "$STAGING/.venv/bin/python" "$STAGING/scripts/migrate_access_db.py" \
+# Persistent auth state lives in $STATE_DIR (/var/lib/lens), outside the release tree.
+# Stopped first so no session or allowlist write lands between the online
+# backup and the restart on the new database.
+if ! "$PRIV_DIR/lens" migrate-access-db \
   --legacy "$APP_DIR/data/access.db" \
-  --target /var/lib/lens/access.db \
+  --target "$STATE_DIR/access.db" \
   --env-file "$APP_DIR/.env" \
   --owner "$APP_USER"; then
   systemctl start "$SERVICE" 2>/dev/null || true
@@ -238,21 +294,21 @@ if ! "$STAGING/.venv/bin/python" "$STAGING/scripts/migrate_access_db.py" \
 fi
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
 # (managed-files), the legacy auth DB retained for operator verification
-# (data), and rootless podman's storage/config under the service user's home
-# (.local/.config/.cache hold the pre-seeded Chrome image).
+# (data), rootless podman's storage/config under the service user's home
+# (.local/.config/.cache hold the pre-seeded Chrome image) and a Python-era
+# .venv, which stays until the new release is healthy.
 rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$STAGING/" "$APP_DIR/"
-if [[ -d "$APP_DIR/.venv" ]]; then
-  rm -rf "$APP_DIR/.venv.old"; mv "$APP_DIR/.venv" "$APP_DIR/.venv.old"
-fi
-mv "$STAGING/.venv" "$APP_DIR/.venv"
-chown -R "$APP_USER:$APP_USER" "$APP_DIR/.venv"
+chown -R "$BIN_OWNER" "$APP_DIR/bin"
 if command -v restorecon >/dev/null 2>&1; then
-  restorecon -RF "$APP_DIR/.venv" || warn "restorecon failed for $APP_DIR/.venv"
+  restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi
 
-install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
-install -m 0755 "$APP_DIR/deploy/lens-cli" "$CLI_TARGET"
+install -m 0644 "$PRIV_DIR/deploy/lens.service" "$UNIT_DIR/"
+# The operator CLI is the binary itself, as a root-owned copy outside the
+# service-owned tree (see lens_install_cli); it replaces the copied bash
+# script a Python release installed here.
+lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"
 
 # ── Remove the retired Firecrawl stack ───────────────────────────────────
 # Firecrawl was removed from Lens (2026-10): it rescued few sites and slowed
@@ -261,7 +317,7 @@ install -m 0755 "$APP_DIR/deploy/lens-cli" "$CLI_TARGET"
 # the unit, containers, volumes and images; the deep crawler's Chrome image
 # stays. Idempotent: does nothing once the stack is gone.
 remove_firecrawl() {
-  local unit=/etc/systemd/system/firecrawl.service removed=0
+  local unit="$UNIT_DIR/firecrawl.service" removed=0
   if [[ -f "$unit" ]]; then
     systemctl disable --now firecrawl.service >/dev/null 2>&1 || true
     rm -f "$unit"
@@ -295,8 +351,8 @@ remove_firecrawl() {
 remove_firecrawl
 # Keep /etc/motd in sync with deploy/motd — boxes bootstrapped before the
 # banner existed never got one, and this heals drift on every update.
-if [[ -f "$APP_DIR/deploy/motd" ]] && ! cmp -s "$APP_DIR/deploy/motd" /etc/motd; then
-  install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
+if [[ -f "$PRIV_DIR/deploy/motd" ]] && ! cmp -s "$PRIV_DIR/deploy/motd" "$MOTD_FILE"; then
+  install -m 0644 "$PRIV_DIR/deploy/motd" "$MOTD_FILE"
   ok "motd installed/refreshed"
 fi
 systemctl daemon-reload
@@ -309,11 +365,19 @@ step "4/4  Health check"
 # Probe the public /health endpoint instead (/login would 404).
 lens_health || die "Lens readiness failed — restoring the previous release"
 printf '%s\n' "$after_sha" > "$APP_DIR/.deployed-revision"
-rm -rf "$APP_DIR/.venv.old"
+# The Go release is healthy, so the Python interpreter it replaced is retired
+# now — never earlier, because the rollback above restores it from the
+# snapshot and a failed first migration must come back up on Python. The
+# snapshot keeps its copy until lens_prune_rollbacks ages it out.
+if [[ -d "$APP_DIR/.venv" || -d "$APP_DIR/.venv.old" ]]; then
+  rm -rf "$APP_DIR/.venv" "$APP_DIR/.venv.old"
+  ok "retired the Python virtualenv"
+fi
 ok "lens /health → 200; previous release retained at $BACKUP"
 
-# Every update leaves a full code + venv snapshot (~250 MB); keep only the
-# newest few so a box updated weekly doesn't fill its disk.
+# Every update leaves a full code snapshot (the first Go migration's also
+# holds the ~250 MB Python venv); keep only the newest few so a box updated
+# weekly doesn't fill its disk.
 lens_prune_rollbacks "$APP_DIR" "${LENS_KEEP_ROLLBACKS:-2}"
 
 say
@@ -322,5 +386,5 @@ printf '%s ✓ Updated %s → %s%s\n' "$c_bold" "${before_sha:0:12}" "${after_sh
 printf '%s═══════════════════════════════════════════════%s\n' "$c_green" "$c_reset"
 say
 say "  Logs:      ${c_dim}lens logs${c_reset}"
-say "  Previous:  ${c_dim}$BACKUP (code + venv; restore instructions in docs/DEPLOYMENT.md)${c_reset}"
+say "  Previous:  ${c_dim}$BACKUP (restore instructions in docs/DEPLOYMENT.md)${c_reset}"
 say "  Diagnose:  ${c_dim}lens doctor${c_reset}"

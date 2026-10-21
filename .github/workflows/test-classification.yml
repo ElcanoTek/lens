@@ -11,9 +11,9 @@ on:
 # OPENROUTER_API_KEY. Dependabot PRs run with an empty secrets context, so that
 # key is absent — instead of failing every Dependabot run, the API-backed steps
 # self-skip when the key is missing (guarded on `env.OPENROUTER_API_KEY != ''`).
-# Dependency installs still run, so a pip / github-actions bump is still
-# exercised (the suite proves requirements.txt installs); only the live
-# classification is skipped. Human PRs and pushes have the secret and run fully.
+# The build still runs, so a gomod / github-actions bump is still exercised
+# (the suite proves the binary builds); only the live classification is
+# skipped. Human PRs and pushes have the secret and run fully.
 
 # PRs share a group per ref and cancel superseded runs. Every other event
 # (pushes to main, schedules) gets its own group per commit: a shared group
@@ -24,11 +24,6 @@ concurrency:
 
 permissions:
   contents: read
-
-# The lowest supported Python: pyproject's ruff target-version and the version
-# both locks are compiled on. The pytest job runs .python-version (deploy's).
-env:
-  LOWEST_PYTHON: "3.11"
 
 jobs:
   test-urls:
@@ -44,21 +39,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version: ${{ env.LOWEST_PYTHON }}
-          cache: 'pip'
+          go-version-file: go.mod
+          check-latest: true
 
-      - name: Install dependencies
+      # The same artifact a deploy installs (make build → bin/lens).
+      - name: Build lens
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          make build
+          ./bin/lens --version
 
       - name: Note skipped live run (no API key)
         if: env.OPENROUTER_API_KEY == ''
         run: |
-          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. Dependencies still installed successfully."
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. The binary still built successfully."
 
       - name: Create test input (10 URLs)
         if: env.OPENROUTER_API_KEY != ''
@@ -72,7 +68,7 @@ jobs:
       - name: Run classification (simple scraper)
         if: env.OPENROUTER_API_KEY != ''
         run: |
-          python main.py --scrape-mode direct --quiet
+          ./bin/lens run --scrape-mode direct --quiet
         timeout-minutes: 15
 
       - name: Upload classification results
@@ -112,21 +108,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version: ${{ env.LOWEST_PYTHON }}
-          cache: 'pip'
+          go-version-file: go.mod
+          check-latest: true
 
-      - name: Install dependencies
+      # The same artifact a deploy installs (make build → bin/lens).
+      - name: Build lens
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          make build
+          ./bin/lens --version
 
       - name: Note skipped live run (no API key)
         if: env.OPENROUTER_API_KEY == ''
         run: |
-          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. Dependencies still installed successfully."
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live classification run is skipped. The binary still built successfully."
 
       - name: Create test input (10 apps)
         if: env.OPENROUTER_API_KEY != ''
@@ -140,7 +137,7 @@ jobs:
       - name: Run classification (simple scraper)
         if: env.OPENROUTER_API_KEY != ''
         run: |
-          python main.py --scrape-mode direct --quiet
+          ./bin/lens run --scrape-mode direct --quiet
         timeout-minutes: 15
 
       - name: Upload classification results
@@ -180,21 +177,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Set up Python
-        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
-          python-version: ${{ env.LOWEST_PYTHON }}
-          cache: 'pip'
+          go-version-file: go.mod
+          check-latest: true
 
-      - name: Install dependencies
+      # The same artifact a deploy installs (make build → bin/lens).
+      - name: Build lens
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          make build
+          ./bin/lens --version
 
       - name: Note skipped live run (no API key)
         if: env.OPENROUTER_API_KEY == ''
         run: |
-          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live CTV classification run is skipped. Dependencies still installed successfully."
+          echo "::notice title=Classification skipped::OPENROUTER_API_KEY is not available (e.g. a Dependabot PR), so the live CTV classification run is skipped. The binary still built successfully."
 
       - name: Create test input (10 CTV apps)
         if: env.OPENROUTER_API_KEY != ''
@@ -208,31 +206,69 @@ jobs:
       - name: Run classification (simple scraper)
         if: env.OPENROUTER_API_KEY != ''
         run: |
-          python main.py --ctv --scrape-mode direct --quiet
+          ./bin/lens run --ctv --scrape-mode direct --quiet
         timeout-minutes: 15
 
       - name: Validate CTV output labels
         if: always() && env.OPENROUTER_API_KEY != ''
+        # A real CSV parser (quoted fields carry commas), as a throwaway Go
+        # program outside the module so the runner needs nothing but Go.
         run: |
-          python - <<'PY'
-          import csv
-          import sys
+          cat > "$RUNNER_TEMP/ctvcheck.go" <<'GO'
+          package main
 
-          with open("output.csv", newline="") as handle:
-              reader = csv.DictReader(handle)
-              if "Type" not in (reader.fieldnames or []):
-                  print("Missing Type column in output.csv")
-                  sys.exit(1)
-              rows = list(reader)
-              if not rows:
-                  print("No rows found in output.csv")
-                  sys.exit(1)
-              wrong = [row for row in rows if row.get("Type") != "CTV"]
-              if wrong:
-                  print(f"Found non-CTV Type values: {wrong[:3]}")
-                  sys.exit(1)
-          print("CTV output validation passed.")
-          PY
+          import (
+          	"encoding/csv"
+          	"fmt"
+          	"os"
+          	"strings"
+          )
+
+          func main() {
+          	f, err := os.Open("output.csv")
+          	if err != nil {
+          		fmt.Println("No output.csv:", err)
+          		os.Exit(1)
+          	}
+          	r := csv.NewReader(f)
+          	r.FieldsPerRecord = -1
+          	rows, err := r.ReadAll()
+          	if err != nil {
+          		fmt.Println("output.csv does not parse:", err)
+          		os.Exit(1)
+          	}
+          	if len(rows) == 0 {
+          		fmt.Println("output.csv is empty")
+          		os.Exit(1)
+          	}
+          	col := -1
+          	for i, name := range rows[0] {
+          		if strings.TrimPrefix(name, "\ufeff") == "Type" {
+          			col = i
+          		}
+          	}
+          	if col < 0 {
+          		fmt.Println("Missing Type column in output.csv")
+          		os.Exit(1)
+          	}
+          	if len(rows) < 2 {
+          		fmt.Println("No rows found in output.csv")
+          		os.Exit(1)
+          	}
+          	var wrong [][]string
+          	for _, row := range rows[1:] {
+          		if col >= len(row) || row[col] != "CTV" {
+          			wrong = append(wrong, row)
+          		}
+          	}
+          	if len(wrong) > 0 {
+          		fmt.Printf("Found non-CTV Type values: %q\n", wrong[:min(3, len(wrong))])
+          		os.Exit(1)
+          	}
+          	fmt.Println("CTV output validation passed.")
+          }
+          GO
+          go run "$RUNNER_TEMP/ctvcheck.go"
 
       - name: Upload classification results
         if: always() && env.OPENROUTER_API_KEY != ''

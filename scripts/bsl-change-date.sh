@@ -18,14 +18,10 @@ fi
 
 commit_date="$(git show -s --format=%as "$ref")"
 commit_sha="$(git rev-parse --short "$ref")"
-change_date="$(python3 -c "
-import datetime, sys
-d = datetime.date.fromisoformat(sys.argv[1])
-try:
-    print(d.replace(year=d.year + 2))
-except ValueError:            # 29 Feb -> 28 Feb
-    print(d.replace(year=d.year + 2, day=28))
-" "$commit_date")"
+year="${commit_date%%-*}" month_day="${commit_date#*-}"
+# Two years after a leap year is never one: 29 Feb -> 28 Feb.
+[[ "$month_day" == 02-29 ]] && month_day=02-28
+change_date="$((10#$year + 2))-$month_day"
 
 echo "commit:        $commit_sha ($commit_date)"
 echo "Change Date:   $change_date"

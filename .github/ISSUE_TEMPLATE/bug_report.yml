@@ -14,18 +14,18 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Run `python main.py --input-csv …`
+        1. Run `lens run --input-csv …`
         2. …
   - type: input
     id: version
     attributes:
       label: Version
-      description: The commit you are running (`lens status`, or `git rev-parse --short HEAD`).
+      description: The build you are running (`lens --version`, or `git rev-parse --short HEAD` in a checkout).
   - type: dropdown
     id: area
     attributes:
       label: Area
-      options: [CLI pipeline (main.py), Web dashboard, Crawl ladder / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
+      options: [CLI pipeline (lens run), Web dashboard, Crawl ladder / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
   - type: textarea
     id: logs
     attributes:
