@@ -10,6 +10,7 @@ package wdtest
 import (
 	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -124,7 +125,7 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	const prefix = "/wd/hub/session"
 	if !strings.HasPrefix(r.URL.Path, prefix) {
-		send(w, http.StatusNotFound, map[string]any{"value": map[string]any{"error": "unknown command", "message": r.URL.Path}})
+		send(w, http.StatusNotFound, map[string]any{"value": map[string]any{"error": "unknown command", "message": "unknown command"}})
 		return
 	}
 	rest := strings.TrimPrefix(r.URL.Path, prefix)
@@ -136,13 +137,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		s.counter++
 		id := fmt.Sprintf("s%d", s.counter)
 		s.sessions[id] = true
-		var caps any
-		if m, ok := body.(map[string]any); ok {
-			if c, ok := m["capabilities"].(map[string]any); ok {
-				caps = c["alwaysMatch"]
-			}
-		}
-		send(w, http.StatusOK, map[string]any{"value": map[string]any{"sessionId": id, "capabilities": caps}})
+		// The fake never echoes request data back (tests read what was
+		// sent from Requests instead).
+		send(w, http.StatusOK, map[string]any{"value": map[string]any{"sessionId": id, "capabilities": map[string]any{"browserName": "chrome"}}})
 		return
 	}
 	id, suffix, _ := strings.Cut(strings.TrimPrefix(rest, "/"), "/")
@@ -173,7 +170,8 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		send(w, http.StatusOK, map[string]any{"value": nil})
 	case r.Method == http.MethodGet && suffix == "/url":
-		send(w, http.StatusOK, map[string]any{"value": s.url})
+		// Escaped like any echoed value; test URLs carry no HTML specials.
+		send(w, http.StatusOK, map[string]any{"value": html.EscapeString(s.url)})
 	case r.Method == http.MethodGet && suffix == "/source":
 		send(w, http.StatusOK, map[string]any{"value": s.page})
 	default:

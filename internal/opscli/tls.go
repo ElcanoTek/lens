@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -100,21 +101,31 @@ func describeCert(ctx context.Context, c *CLI, host string) error {
 	defer cancel()
 	d := tls.Dialer{
 		NetDialer: &net.Dialer{Timeout: 5 * time.Second},
-		// Show whatever certificate is served — expired, self-signed or for
-		// the wrong name — like openssl s_client did; verification is done
-		// explicitly below and reported instead of aborting the handshake.
-		Config: &tls.Config{ServerName: host, InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}, //nolint:gosec // inspection only; verified explicitly below
+		Config:    &tls.Config{ServerName: host, MinVersion: tls.VersionTLS12},
 	}
+	// A verifying handshake. When verification fails, the error still
+	// carries the served chain, so an expired, self-signed or wrong-name
+	// certificate is shown (like openssl s_client did) and its failure is
+	// reported instead of aborting.
+	var (
+		certs     []*x509.Certificate
+		verifyErr error
+	)
 	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(host, "443"))
-	if err != nil {
+	var cve *tls.CertificateVerificationError
+	switch {
+	case err == nil:
+		defer conn.Close()
+		tconn, ok := conn.(*tls.Conn)
+		if !ok {
+			return fmt.Errorf("not a TLS connection")
+		}
+		certs = tconn.ConnectionState().PeerCertificates
+	case errors.As(err, &cve):
+		certs, verifyErr = cve.UnverifiedCertificates, cve.Err
+	default:
 		return err
 	}
-	defer conn.Close()
-	tconn, ok := conn.(*tls.Conn)
-	if !ok {
-		return fmt.Errorf("not a TLS connection")
-	}
-	certs := tconn.ConnectionState().PeerCertificates
 	if len(certs) == 0 {
 		return fmt.Errorf("no certificate served")
 	}
@@ -122,12 +133,8 @@ func describeCert(ctx context.Context, c *CLI, host string) error {
 	const layout = "Jan _2 15:04:05 2006 GMT"
 	fmt.Fprintf(c.Stdout, "subject=%s\nissuer=%s\nnotBefore=%s\nnotAfter=%s\n",
 		leaf.Subject, leaf.Issuer, leaf.NotBefore.UTC().Format(layout), leaf.NotAfter.UTC().Format(layout))
-	inter := x509.NewCertPool()
-	for _, ic := range certs[1:] {
-		inter.AddCert(ic)
-	}
-	if _, err := leaf.Verify(x509.VerifyOptions{DNSName: host, Intermediates: inter}); err != nil {
-		fmt.Fprintf(c.Stdout, "verify: FAILED (%v)\n", err)
+	if verifyErr != nil {
+		fmt.Fprintf(c.Stdout, "verify: FAILED (%v)\n", verifyErr)
 	} else {
 		fmt.Fprintf(c.Stdout, "verify: ok (expires in %d days)\n", int(time.Until(leaf.NotAfter).Hours()/24))
 	}

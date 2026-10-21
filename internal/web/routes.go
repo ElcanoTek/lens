@@ -306,13 +306,21 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 	seenFile := false
 	pending := 0 // bytes of files read before the destination field
 	store := func(o uploadOutcome) uploadOutcome {
-		if err := os.WriteFile(filepath.Join(s.dirs.Inputs, o.filename), o.payload, 0o644); err != nil { //nolint:gosec // the library is operator-readable
+		// o.filename passed ValidateInputFilename in readUpload; re-derive
+		// the path from the sanitizer here so the write is visibly contained.
+		name, err := jobs.SafeFilename(o.filename)
+		if err != nil {
+			o.failure = err.Error()
+			return o
+		}
+		path := filepath.Join(s.dirs.Inputs, name)
+		if err := os.WriteFile(path, o.payload, 0o644); err != nil { //nolint:gosec // the library is operator-readable
 			o.failure = err.Error()
 			return o
 		}
 		// Pre-compute the content breakdown now so the file library renders
 		// its counts immediately on reload.
-		s.dirs.Breakdown(filepath.Join(s.dirs.Inputs, o.filename))
+		s.dirs.Breakdown(path)
 		stored = append(stored, o.filename)
 		o.payload = nil
 		return o

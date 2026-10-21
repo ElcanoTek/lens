@@ -5,6 +5,7 @@ package openrouter
 
 import (
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/ElcanoTek/lens/internal/categories/pyjson"
@@ -60,12 +61,11 @@ func usageTokens(resp pyjson.Object) int {
 	if !ok {
 		return 0
 	}
-	switch n, _ := obj.Get("total_tokens"); t := n.(type) {
-	case int64:
-		return int(t)
-	case float64:
-		return int(t)
+	n, _ := obj.Get("total_tokens")
+	if i, ok := n.(int64); ok && i >= 0 && i <= math.MaxInt32 {
+		return int(i)
 	}
+	// A float total (never sent by OpenRouter) counts as unknown.
 	return 0
 }
 

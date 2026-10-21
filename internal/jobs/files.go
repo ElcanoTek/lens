@@ -77,8 +77,17 @@ func SafeFilename(name string) (string, error) {
 		return "", errors.New("Filename cannot be empty") //nolint:staticcheck // user-facing message
 	}
 	sanitized := unsafeFilenameChars.ReplaceAllString(cleaned, "_")
+	// A single path component can't traverse, but collapse dot runs anyway
+	// so the containment check below is explicit (and visible to CodeQL):
+	// every name this returns is safe to join under a managed directory.
+	for strings.Contains(sanitized, "..") {
+		sanitized = strings.ReplaceAll(sanitized, "..", ".")
+	}
 	if strings.Trim(sanitized, "._ -") == "" {
 		return "", errors.New("Filename cannot be empty") //nolint:staticcheck // user-facing message
+	}
+	if strings.Contains(sanitized, "..") || !filepath.IsLocal(sanitized) {
+		return "", errors.New("Filename must not contain path separators") //nolint:staticcheck // user-facing message
 	}
 	return sanitized, nil
 }

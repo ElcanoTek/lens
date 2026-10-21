@@ -267,7 +267,9 @@ func SafeLocalPath(raw string) string {
 			return "/"
 		}
 	}
-	if !strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "//") || strings.Contains(raw, "\\") {
+	// Same-origin absolute path only: a leading "/" whose second character
+	// is neither "/" nor "\\" (both make a protocol-relative URL in browsers).
+	if raw == "" || raw[0] != '/' || (len(raw) > 1 && (raw[1] == '/' || raw[1] == '\\')) || strings.Contains(raw, "\\") {
 		return "/"
 	}
 	// urlsplit of a string starting with a single "/" never yields a scheme
