@@ -141,7 +141,7 @@ func (p *CTVProcessor) ProcessCTVApp(ctx context.Context, it item.CTVWorkItem) {
 			return c, err
 		}
 		if !c.Success {
-			return c, errors.New("Classification failed: " + orDefault(c.Error, "Unknown error"))
+			return c, errors.New(orDefault(c.Error, "Unknown error"))
 		}
 		return c, nil
 	}()
