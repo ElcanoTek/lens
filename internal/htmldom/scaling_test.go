@@ -18,18 +18,20 @@ import (
 // reached review one after another in the Python module (closed-void
 // bookkeeping, list.remove() in decompose, slicing in find_next_sibling),
 // each fast on ordinary pages and seconds-long on a hostile one. A response
-// body is up to 5 MiB, so this harness times each operation at N and 2N on
+// body is up to 5 MiB, so this harness times each operation at N and 4N on
 // flat (many siblings) and deep (many nested levels) markup and fails when
-// doubling the input costs much more than double the time.
+// quadrupling the input costs far more than four times as long.
 //
 // Timings take the best of several runs, and a size pair is re-measured
-// before failing, so a busy runner does not flake: linear work doubles
-// (ratio ~2), quadratic work quadruples (ratio ~4), and the bound sits
-// between them.
+// before failing, so a busy runner does not flake: linear work grows ~4x,
+// quadratic work ~16x, and the bound sits between them.
 
 const (
-	scaleN   = 20_000 // nodes (or nesting levels) at the smaller size
-	maxRatio = 3.0    // 2N vs N; linear is ~2, quadratic ~4
+	scaleN = 20_000 // nodes (or nesting levels) at the smaller size
+	// Compare N with 4N rather than 2N: linear is ~4x and quadratic ~16x, so a
+	// threshold of 8 leaves a 2x margin on both sides. With 2N (2x vs 4x) a
+	// busy CI runner under -race tripped the test on linear code.
+	maxRatio = 8.0
 	maxTime  = 10 * time.Second
 	devLink  = `<a href="/store/apps/dev?id=1">Dev</a>`
 )
@@ -89,21 +91,24 @@ func best(run func(), prepare func(), repeats int) time.Duration {
 	return fastest
 }
 
-// assertLinear times op(n) for n = N and 2N.
+// assertLinear times op(n) for n = N and 4N.
 func assertLinear(t *testing.T, timeAt func(n int) time.Duration) {
 	t.Helper()
 	var small, large time.Duration
-	for attempt := 0; attempt < 3; attempt++ {
-		small, large = timeAt(scaleN), timeAt(2*scaleN)
+	for attempt := 0; attempt < 5; attempt++ {
+		small, large = timeAt(scaleN), timeAt(4*scaleN)
 		if large > maxTime {
-			t.Fatalf("%v at 2N", large)
+			t.Fatalf("%v at 4N", large)
 		}
-		// Below ~5 ms the clock is noise; only a slow operation can be quadratic.
-		if large < 5*time.Millisecond || float64(large) < maxRatio*float64(small) {
+		// Below 50 ms the ratio is cache effects and scheduler noise (a linear
+		// walk of 80k nested nodes can take 12x a 20k one when it stops
+		// fitting in cache); a quadratic operation at 4N takes seconds, so
+		// it can never hide under this floor.
+		if large < 50*time.Millisecond || float64(large) < maxRatio*float64(small) {
 			return
 		}
 	}
-	t.Fatalf("doubling the input took %.1fx as long (%v -> %v)", float64(large)/float64(small), small, large)
+	t.Fatalf("quadrupling the input took %.1fx as long (%v -> %v)", float64(large)/float64(small), small, large)
 }
 
 func TestOperationsScaleLinearly(t *testing.T) {
@@ -112,13 +117,13 @@ func TestOperationsScaleLinearly(t *testing.T) {
 	}
 	shapes := map[string]func(int) string{"flat": flat, "deep": deep}
 	for shapeName, shape := range shapes {
-		markup := map[int]string{scaleN: shape(scaleN), 2 * scaleN: shape(2 * scaleN)}
+		markup := map[int]string{scaleN: shape(scaleN), 4 * scaleN: shape(4 * scaleN)}
 		t.Run(shapeName+"/parse", func(t *testing.T) {
 			assertLinear(t, func(n int) time.Duration {
 				return best(func() { htmldom.Parse(markup[n]) }, func() {}, 3)
 			})
 		})
-		parsed := map[int]*htmldom.Node{scaleN: htmldom.Parse(markup[scaleN]), 2 * scaleN: htmldom.Parse(markup[2*scaleN])}
+		parsed := map[int]*htmldom.Node{scaleN: htmldom.Parse(markup[scaleN]), 4 * scaleN: htmldom.Parse(markup[4*scaleN])}
 		for name, op := range operations {
 			t.Run(shapeName+"/"+name, func(t *testing.T) {
 				assertLinear(t, func(n int) time.Duration {
@@ -153,7 +158,7 @@ func TestExtractorsScaleLinearlyOnFlatPages(t *testing.T) {
 	}
 	for name, extract := range extractors {
 		t.Run(name, func(t *testing.T) {
-			pages := map[int]string{scaleN: page(scaleN), 2 * scaleN: page(2 * scaleN)}
+			pages := map[int]string{scaleN: page(scaleN), 4 * scaleN: page(4 * scaleN)}
 			assertLinear(t, func(n int) time.Duration {
 				return best(func() { extract(pages[n]) }, func() {}, 3)
 			})
