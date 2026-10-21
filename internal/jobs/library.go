@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -85,7 +86,10 @@ func Chips(b map[string]int) []Chip {
 		}
 		pct := 0.0
 		if total > 0 {
-			pct = math.Round(float64(n)/float64(total)*100*100) / 100
+			// Python's round(x, 2): correctly rounded from the exact binary
+			// value, which strconv's fixed formatting also does (x*100
+			// rounding in float arithmetic does not, e.g. for 1.005).
+			pct, _ = strconv.ParseFloat(strconv.FormatFloat(float64(n)/float64(total)*100, 'f', 2, 64), 64)
 		}
 		chips = append(chips, Chip{Key: t.key, Seg: t.seg, Label: t.label, Count: n, Pct: pct})
 	}
@@ -151,7 +155,9 @@ func (d Dirs) ListInputFiles(now time.Time) []InputFile {
 		}
 		mtime := info.ModTime().UTC()
 		var uploaded string
-		days := int(now.UTC().Sub(mtime).Hours() / 24)
+		// timedelta.days floors, so a file stamped slightly in the future
+		// (clock skew) is not "today".
+		days := int(math.Floor(now.UTC().Sub(mtime).Hours() / 24))
 		switch {
 		case days == 0:
 			uploaded = "today " + mtime.Format("15:04")

@@ -401,7 +401,7 @@ func TestSetKeyPreservesFileMode(t *testing.T) {
 func TestSetKeySymlinks(t *testing.T) {
 	dir := t.TempDir()
 	target := filepath.Join(dir, "target.env")
-	if err := os.WriteFile(target, []byte("a=x\n"), 0o644); err != nil { //nolint:gosec // test fixture
+	if err := os.WriteFile(target, []byte("a=x\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	link := filepath.Join(dir, ".env")

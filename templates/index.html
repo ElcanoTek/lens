@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Lens — Elcano</title>
-  <script nonce="{{ request.state.csp_nonce }}">
+  <script nonce="{{ .Nonce }}">
     (function () {
       var storageKey = "flag-theme-preference";
       var preferredTheme = null;
@@ -26,18 +26,18 @@
       document.documentElement.setAttribute("data-theme", resolvedTheme);
     })();
   </script>
-  <link rel="stylesheet" href="{{ static_url('design-system/fonts/fonts.css') }}">
-  <link rel="stylesheet" href="{{ static_url('design-system/tokens/design-tokens.css') }}">
-  <link rel="stylesheet" href="{{ static_url('styles.css') }}">
-  <link rel="icon" type="image/svg+xml" href="{{ static_url('design-system/logos/lens-favicon.svg') }}">
-  <script src="{{ static_url('design-system/theme/theme-controller.js') }}"></script>
+  <link rel="stylesheet" href="{{ static_url "design-system/fonts/fonts.css" }}">
+  <link rel="stylesheet" href="{{ static_url "design-system/tokens/design-tokens.css" }}">
+  <link rel="stylesheet" href="{{ static_url "styles.css" }}">
+  <link rel="icon" type="image/svg+xml" href="{{ static_url "design-system/logos/lens-favicon.svg" }}">
+  <script src="{{ static_url "design-system/theme/theme-controller.js" }}"></script>
 </head>
 <body>
   <div class="page-shell">
     <header class="page-header" role="banner">
       <div class="ds-app-header">
         <div class="ds-app-header__brand">
-          <img class="ds-app-header__mark" src="{{ static_url('design-system/logos/elcano-mark-primary.svg') }}" alt="Elcano">
+          <img class="ds-app-header__mark" src="{{ static_url "design-system/logos/elcano-mark-primary.svg" }}" alt="Elcano">
           <div class="ds-app-header__text">
             <h1 class="ds-app-header__title">Lens</h1>
           </div>
@@ -45,14 +45,14 @@
         <div class="ds-app-header__actions">
           <button data-flag-theme-toggle class="icon-action theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
             <span class="theme-toggle__icon-wrap" aria-hidden="true">
-              <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#sun"></use></svg>
-              <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#moon"></use></svg>
+              <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#sun"></use></svg>
+              <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#moon"></use></svg>
             </span>
           </button>
           <form method="post" action="/logout" class="header-action-form">
-            {% if csrf_token %}<input type="hidden" name="csrf_token" value="{{ csrf_token }}">{% endif %}
+            {{ if .CSRFToken }}<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">{{ end }}
             <button class="icon-action" type="submit" aria-label="Log out" title="Log out">
-              <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#logout"></use></svg>
+              <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#logout"></use></svg>
             </button>
           </form>
         </div>
@@ -63,24 +63,24 @@
     <div id="toast-root" class="toast-root" aria-live="polite"></div>
     <div
       id="flash-data"
-      data-message="{{ message }}"
-      data-error="{{ error }}"
-      data-files-message="{{ files_message }}"
-      data-files-error="{{ files_error }}"
-      data-files-scope="{{ files_scope }}"
+      data-message="{{ .Message }}"
+      data-error="{{ .Error }}"
+      data-files-message="{{ .FilesMessage }}"
+      data-files-error="{{ .FilesError }}"
+      data-files-scope="{{ .FilesScope }}"
       hidden
     ></div>
 
     <main class="dashboard-grid">
 
-      <!-- ── Your files ───────────────────────────────────────────── -->
+      {{ comment "── Your files ─────────────────────────────────────────────" }}
       <section class="panel panel-new-run">
         <h2>Your files</h2>
 
         <form method="post" action="/files/upload" enctype="multipart/form-data" id="input-upload-form">
           <input type="hidden" name="destination" value="inputs">
           <div class="dropzone thin" id="fileDropzone" tabindex="0" role="button" aria-label="Upload input files">
-            <svg class="dropzone-icon" aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#paperclip"></use></svg>
+            <svg class="dropzone-icon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#paperclip"></use></svg>
             <p class="dropzone-text">Drop a CSV or Excel file here, or click to browse</p>
             <p class="dropzone-subtext" id="dropzone-status">Uploads start automatically · mixed lists welcome</p>
             <input id="input-file-native" type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="file-input-hidden" tabindex="-1" aria-hidden="true">
@@ -88,10 +88,10 @@
           <div class="validation-error" id="fileError" aria-live="polite" aria-atomic="true"></div>
         </form>
 
-        {% if input_files %}
+        {{ if .InputFiles }}
         <div class="lib-subhead-row">
-          <h3 class="lib-subhead">Uploaded files <span class="ws-count">({{ input_files | length }})</span></h3>
-          {% if input_files | length > 2 %}
+          <h3 class="lib-subhead">Uploaded files <span class="ws-count">({{ len .InputFiles }})</span></h3>
+          {{ if gt (len .InputFiles) 2 }}
           <div class="searchbox">
             <svg class="searchbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="11" cy="11" r="7"></circle>
@@ -99,51 +99,51 @@
             </svg>
             <input type="text" id="file-search" placeholder="Search files" autocomplete="off" aria-label="Search uploaded files">
           </div>
-          {% endif %}
+          {{ end }}
         </div>
 
         <div class="ws-files" id="ws-files">
-          {% for file in input_files %}
-          <div class="filecard" data-filename="{{ file.name }}" data-size="{{ file.size }}" data-uploaded="{{ file.uploaded }}" data-breakdown='{{ {"total": file.breakdown_total, "types": file.breakdown_chips} | tojson }}'>
+          {{ range $i, $file := .InputFiles }}
+          <div class="filecard" data-filename="{{ $file.Name }}" data-size="{{ $file.Size }}" data-uploaded="{{ $file.Uploaded }}" {{ $file.BreakdownAttr }}>
             <div class="fc-top">
-              <input class="fc-radio" type="radio" name="input_file" form="queue-job-form" value="{{ file.name }}" id="file-radio-{{ loop.index }}" required aria-label="Select {{ file.name }}">
-              <label class="fc-name" for="file-radio-{{ loop.index }}">
+              <input class="fc-radio" type="radio" name="input_file" form="queue-job-form" value="{{ $file.Name }}" id="file-radio-{{ inc $i }}" required aria-label="Select {{ $file.Name }}">
+              <label class="fc-name" for="file-radio-{{ inc $i }}">
                 <svg class="fc-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                   <path d="M14 2v6h6"></path>
                 </svg>
-                <span class="nm" title="{{ file.name }}">{{ file.name }}</span>
+                <span class="nm" title="{{ $file.Name }}">{{ $file.Name }}</span>
               </label>
               <span class="fc-actions">
-                <button class="icon-action js-rename-input" type="button" data-filename="{{ file.name }}" aria-label="Rename {{ file.name }}" title="Rename">
+                <button class="icon-action js-rename-input" type="button" data-filename="{{ $file.Name }}" aria-label="Rename {{ $file.Name }}" title="Rename">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path>
                   </svg>
                 </button>
-                <a class="icon-action" href="/files/download/inputs/{{ file.name }}" aria-label="Download {{ file.name }}" title="Download">
-                  <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#download"></use></svg>
+                <a class="icon-action" href="/files/download/inputs/{{ $file.Name }}" aria-label="Download {{ $file.Name }}" title="Download">
+                  <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#download"></use></svg>
                 </a>
-                <button class="icon-action danger js-delete-input" type="button" data-filename="{{ file.name }}" aria-label="Delete {{ file.name }}" title="Delete">
-                  <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                <button class="icon-action danger js-delete-input" type="button" data-filename="{{ $file.Name }}" aria-label="Delete {{ $file.Name }}" title="Delete">
+                  <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                 </button>
               </span>
             </div>
             <div class="fc-meta-row">
-              {% if file.breakdown_chips %}
-              <span class="comp-bar" title="Detected composition" aria-label="{{ file.breakdown_label }}">
-                {% for chip in file.breakdown_chips %}
-                <span class="comp-seg {{ chip.seg }}" data-pct="{{ chip.pct }}"></span>
-                {% endfor %}
+              {{ if $file.BreakdownChips }}
+              <span class="comp-bar" title="Detected composition" aria-label="{{ $file.BreakdownLabel }}">
+                {{ range $file.BreakdownChips }}
+                <span class="comp-seg {{ .Seg }}" data-pct="{{ .Pct }}"></span>
+                {{ end }}
               </span>
-              <span class="metanum"><strong>{{ file.breakdown_total }}</strong> rows</span>
-              {% for chip in file.breakdown_chips %}
-              <span class="tchip"><span class="tdot {{ chip.seg }}"></span>{{ chip.label }} <b>{{ chip.count }}</b></span>
-              {% endfor %}
-              {% endif %}
-              <span class="metanum"><span class="meta-sep">·</span> {{ file.size }} <span class="meta-sep">·</span> {{ file.uploaded }}</span>
+              <span class="metanum"><strong>{{ $file.BreakdownTotal }}</strong> rows</span>
+              {{ range $file.BreakdownChips }}
+              <span class="tchip"><span class="tdot {{ .Seg }}"></span>{{ .Label }} <b>{{ .Count }}</b></span>
+              {{ end }}
+              {{ end }}
+              <span class="metanum"><span class="meta-sep">·</span> {{ $file.Size }} <span class="meta-sep">·</span> {{ $file.Uploaded }}</span>
             </div>
           </div>
-          {% endfor %}
+          {{ end }}
         </div>
         <p class="empty-state lib-empty" id="files-no-match" hidden>No files match your search.</p>
 
@@ -154,12 +154,12 @@
           <span class="tchip"><span class="tdot seg-ctv"></span>CTV channels</span>
         </div>
 
-        {% else %}
+        {{ else }}
         <p class="empty-state lib-empty">No files yet — upload one above to get started.</p>
-        {% endif %}
+        {{ end }}
       </section>
 
-      <!-- ── Ready to analyze ─────────────────────────────────────── -->
+      {{ comment "── Ready to analyze ───────────────────────────────────────" }}
       <section class="panel panel-ready">
         <h2>Ready to analyze</h2>
 
@@ -193,14 +193,14 @@
               <div class="run-advanced-body">
                 <label class="run-advanced-field">
                   <span class="run-advanced-label">Classification model</span>
-                  <select name="llm_model" id="llm-model-select" data-previous-defaults="{{ previous_recommended_models | join(',') }}">
-                    {% set recommended_classify = model_catalog.classify | selectattr('id', 'equalto', recommended_model) | first %}
-                    <option value="{{ recommended_model }}" selected>{{ recommended_classify.label if recommended_classify else 'OpenAI: GPT Luna Latest' }} — recommended</option>
-                    {% for option in model_catalog.classify %}
-                    {% if option.id != recommended_model %}
-                    <option value="{{ option.id }}">{{ option.label }}</option>
-                    {% endif %}
-                    {% endfor %}
+                  <select name="llm_model" id="llm-model-select" data-previous-defaults="{{ .PreviousRecommendedModels }}">
+                    {{/* recommended label resolved in Go */}}
+                    <option value="{{ .RecommendedModel }}" selected>{{ .RecommendedClassifyLabel }} — recommended</option>
+                    {{ range .Catalog.Classify }}
+                    {{ if ne .ID $.RecommendedModel }}
+                    <option value="{{ .ID }}">{{ .Label }}</option>
+                    {{ end }}
+                    {{ end }}
                   </select>
                   <span class="caption">Only cost-effective models are listed — classification doesn't benefit from frontier-priced models. “Latest” aliases track each vendor's current release automatically.</span>
                 </label>
@@ -222,14 +222,14 @@
                 </label>
                 <label class="run-advanced-field" id="research-model-field">
                   <span class="run-advanced-label">Research model</span>
-                  <select name="research_model" id="research-model-select" data-previous-defaults="{{ previous_recommended_research_models | join(',') }}">
-                    {% set recommended_option = model_catalog.research | selectattr('id', 'equalto', recommended_research_model) | first %}
-                    <option value="{{ recommended_research_model }}" selected>{{ recommended_option.label if recommended_option else 'Perplexity Sonar' }} — recommended</option>
-                    {% for option in model_catalog.research %}
-                    {% if option.id != recommended_research_model %}
-                    <option value="{{ option.id }}">{{ option.label }}</option>
-                    {% endif %}
-                    {% endfor %}
+                  <select name="research_model" id="research-model-select" data-previous-defaults="{{ .PreviousRecommendedResearchModels }}">
+                    {{/* recommended label resolved in Go */}}
+                    <option value="{{ .RecommendedResearchModel }}" selected>{{ .RecommendedResearchLabel }} — recommended</option>
+                    {{ range .Catalog.Research }}
+                    {{ if ne .ID $.RecommendedResearchModel }}
+                    <option value="{{ .ID }}">{{ .Label }}</option>
+                    {{ end }}
+                    {{ end }}
                   </select>
                   <span class="caption">Used for website research fallback and all CTV research. All listed models have built-in web search.</span>
                 </label>
@@ -247,13 +247,13 @@
                   <label class="run-advanced-field">
                     <span class="run-advanced-label">Decision model</span>
                     <select name="decision_model" id="decision-model-select">
-                      {% set recommended_decision = model_catalog.decision | selectattr('id', 'equalto', recommended_decision_model) | first %}
-                      <option value="{{ recommended_decision_model }}" selected>{{ recommended_decision.label if recommended_decision else 'TypeSafe: Jev Latest' }} — recommended</option>
-                      {% for option in model_catalog.decision %}
-                      {% if option.id != recommended_decision_model %}
-                      <option value="{{ option.id }}">{{ option.label }}</option>
-                      {% endif %}
-                      {% endfor %}
+                      {{/* recommended label resolved in Go */}}
+                      <option value="{{ .RecommendedDecisionModel }}" selected>{{ .RecommendedDecisionLabel }} — recommended</option>
+                      {{ range .Catalog.Decision }}
+                      {{ if ne .ID $.RecommendedDecisionModel }}
+                      <option value="{{ .ID }}">{{ .Label }}</option>
+                      {{ end }}
+                      {{ end }}
                     </select>
                     <span class="caption">Decision models return typed answers with probabilities, not prose. Output tokens are free. Jev returns a probability for every choice option; some other models return only the selected option, leaving those columns blank.</span>
                   </label>
@@ -274,10 +274,10 @@
         </div>
       </section>
 
-      <!-- ── Runs ─────────────────────────────────────────────────── -->
+      {{ comment "── Runs ───────────────────────────────────────────────────" }}
       <section class="panel panel-runs">
         <h2>Runs</h2>
-        {% if runs %}
+        {{ if .Runs }}
         <div class="table-wrap">
           <table>
             <thead>
@@ -291,100 +291,100 @@
               </tr>
             </thead>
             <tbody>
-              {% for run in runs %}
-              <tr data-job-id="{{ run.id }}" data-status="{{ run.status }}">
+              {{ range .Runs }}
+              <tr data-job-id="{{ .ID }}" data-status="{{ .Status }}">
                 <td data-label="Run">
-                  <span class="run-title" title="{{ run.title }}">{{ run.title }}</span>
-                  {% if run.input_file %}<span class="caption run-input" title="{{ run.input_file }}">{{ run.input_file }}</span>{% endif %}
-                  {% if run.settings_summary %}<span class="caption run-settings" title="{{ run.settings_summary }}">{{ run.settings_summary }}</span>{% endif %}
+                  <span class="run-title" title="{{ .Title }}">{{ .Title }}</span>
+                  {{ if .InputFile }}<span class="caption run-input" title="{{ .InputFile }}">{{ .InputFile }}</span>{{ end }}
+                  {{ if .SettingsSummary }}<span class="caption run-settings" title="{{ .SettingsSummary }}">{{ .SettingsSummary }}</span>{{ end }}
                 </td>
                 <td data-label="Started">
-                  {% if run.created_at_iso %}
-                  <time class="js-local-timestamp" datetime="{{ run.created_at_iso }}" data-utc-timestamp="{{ run.created_at_iso }}">{{ run.created_at_display }}</time>
-                  {% else %}{{ run.created_at_display }}{% endif %}
+                  {{ if .CreatedAtISO }}
+                  <time class="js-local-timestamp" datetime="{{ .CreatedAtISO }}" data-utc-timestamp="{{ .CreatedAtISO }}">{{ .CreatedAtDisplay }}</time>
+                  {{ else }}{{ .CreatedAtDisplay }}{{ end }}
                 </td>
-                <td data-label="Status"><span class="status-badge status-{{ run.status }}"><span class="status-dot"></span>{{ run.status }}</span></td>
+                <td data-label="Status"><span class="status-badge status-{{ .Status }}"><span class="status-dot"></span>{{ .Status }}</span></td>
                 <td data-label="Progress">
                   <div class="queue-progress">
                     <div class="queue-progress-bar" title="green: classified · amber: queued for retry · red: failed">
-                      <span class="bar-seg bar-seg--ok" data-pct="{{ run.progress.ok_pct }}"></span>
-                      <span class="bar-seg bar-seg--retry" data-pct="{{ run.progress.retry_pct }}"></span>
-                      <span class="bar-seg bar-seg--fail" data-pct="{{ run.progress.fail_pct }}"></span>
+                      <span class="bar-seg bar-seg--ok" data-pct="{{ .Progress.OKPct }}"></span>
+                      <span class="bar-seg bar-seg--retry" data-pct="{{ .Progress.RetryPct }}"></span>
+                      <span class="bar-seg bar-seg--fail" data-pct="{{ .Progress.FailPct }}"></span>
                     </div>
                     <div class="queue-progress-meta">
-                      <span class="queue-progress-text">{{ run.progress.text }}</span>
-                      <span class="queue-progress-eta">{{ run.progress.eta }}</span>
-                      <span class="queue-progress-cost" title="{{ run.progress.cost_title }}">{{ run.progress.cost_text }}</span>
+                      <span class="queue-progress-text">{{ .Progress.Text }}</span>
+                      <span class="queue-progress-eta">{{ .Progress.ETA }}</span>
+                      <span class="queue-progress-cost" title="{{ .Progress.CostTitle }}">{{ .Progress.CostText }}</span>
                     </div>
                   </div>
                 </td>
                 <td data-label="Results">
                   <span class="input-file-actions">
-                    {% if run.output_file %}
-                    <a class="icon-action" href="/files/download/outputs/{{ run.output_file }}" aria-label="Download results for {{ run.title }}" title="Download results (CSV)">
-                      <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#download"></use></svg>
+                    {{ if .OutputFile }}
+                    <a class="icon-action" href="/files/download/outputs/{{ .OutputFile }}" aria-label="Download results for {{ .Title }}" title="Download results (CSV)">
+                      <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#download"></use></svg>
                     </a>
-                    {% endif %}
-                    {% if run.category_file %}
-                    <a class="btn btn-ghost" href="/files/download/outputs/{{ run.category_file }}" title="Download custom category definitions (JSON)">Categories</a>
-                    {% endif %}
-                    {% if run.log_file %}
-                    <a class="icon-action subtle" href="/files/download/outputs/{{ run.log_file }}" aria-label="Download log for {{ run.title }}" title="Download log">
+                    {{ end }}
+                    {{ if .CategoryFile }}
+                    <a class="btn btn-ghost" href="/files/download/outputs/{{ .CategoryFile }}" title="Download custom category definitions (JSON)">Categories</a>
+                    {{ end }}
+                    {{ if .LogFile }}
+                    <a class="icon-action subtle" href="/files/download/outputs/{{ .LogFile }}" aria-label="Download log for {{ .Title }}" title="Download log">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <path d="M14 2v6h6"></path>
                         <path d="M9 13h6M9 17h6"></path>
                       </svg>
                     </a>
-                    {% endif %}
+                    {{ end }}
                   </span>
                 </td>
                 <td data-label="Actions">
                   <span class="input-file-actions">
-                    {% if not run.is_archived %}
-                    <button type="button" class="icon-action js-view-job" data-job-id="{{ run.id }}" data-job-name="{{ run.title if run.has_name else '' }}" aria-label="Watch {{ run.title }} live" title="Watch live">
+                    {{ if not .IsArchived }}
+                    <button type="button" class="icon-action js-view-job" data-job-id="{{ .ID }}" data-job-name="{{ if .HasName }}{{ .Title }}{{ end }}" aria-label="Watch {{ .Title }} live" title="Watch live">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
                         <circle cx="12" cy="12" r="3"></circle>
                       </svg>
                     </button>
-                    {% endif %}
-                    {% if run.is_active %}
-                    <form method="post" action="/jobs/{{ run.id }}/cancel" class="js-confirm-cancel" data-job-id="{{ run.title }}">
-                      <button class="icon-action danger" type="submit" aria-label="Cancel {{ run.title }}" title="Cancel">
+                    {{ end }}
+                    {{ if .IsActive }}
+                    <form method="post" action="/jobs/{{ .ID }}/cancel" class="js-confirm-cancel" data-job-id="{{ .Title }}">
+                      <button class="icon-action danger" type="submit" aria-label="Cancel {{ .Title }}" title="Cancel">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
                         </svg>
                       </button>
                     </form>
-                    {% elif run.is_archived %}
-                    <form method="post" action="/files/batch-delete" class="js-confirm-job-delete" data-job-id="{{ run.title }}">
+                    {{ else if .IsArchived }}
+                    <form method="post" action="/files/batch-delete" class="js-confirm-job-delete" data-job-id="{{ .Title }}">
                       <input type="hidden" name="destination" value="outputs">
-                      {% if run.output_file %}<input type="hidden" name="filenames" value="{{ run.output_file }}">{% endif %}
-                      {% if run.progress_file %}<input type="hidden" name="filenames" value="{{ run.progress_file }}">{% endif %}
-                      {% if run.log_file %}<input type="hidden" name="filenames" value="{{ run.log_file }}">{% endif %}
-                      {% if run.category_file %}<input type="hidden" name="filenames" value="{{ run.category_file }}">{% endif %}
-                      <button class="icon-action danger" type="submit" aria-label="Delete artifacts for {{ run.title }}" title="Delete run and results">
-                        <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                      {{ if .OutputFile }}<input type="hidden" name="filenames" value="{{ .OutputFile }}">{{ end }}
+                      {{ if .ProgressFile }}<input type="hidden" name="filenames" value="{{ .ProgressFile }}">{{ end }}
+                      {{ if .LogFile }}<input type="hidden" name="filenames" value="{{ .LogFile }}">{{ end }}
+                      {{ if .CategoryFile }}<input type="hidden" name="filenames" value="{{ .CategoryFile }}">{{ end }}
+                      <button class="icon-action danger" type="submit" aria-label="Delete artifacts for {{ .Title }}" title="Delete run and results">
+                        <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                       </button>
                     </form>
-                    {% else %}
-                    <form method="post" action="/jobs/{{ run.id }}/delete" class="js-confirm-job-delete" data-job-id="{{ run.title }}">
-                      <button class="icon-action danger" type="submit" aria-label="Delete {{ run.title }}" title="Delete run and results">
-                        <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#trash"></use></svg>
+                    {{ else }}
+                    <form method="post" action="/jobs/{{ .ID }}/delete" class="js-confirm-job-delete" data-job-id="{{ .Title }}">
+                      <button class="icon-action danger" type="submit" aria-label="Delete {{ .Title }}" title="Delete run and results">
+                        <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                       </button>
                     </form>
-                    {% endif %}
+                    {{ end }}
                   </span>
                 </td>
               </tr>
-              {% endfor %}
+              {{ end }}
             </tbody>
           </table>
         </div>
-        {% else %}
+        {{ else }}
         <p class="empty-state">No runs yet. Select a file above and hit Analyze.</p>
-        {% endif %}
+        {{ end }}
       </section>
     </main>
 
@@ -410,7 +410,7 @@
           <div class="monitor-modal-actions">
             <span class="status-badge" id="monitor-job-status"><span class="status-dot"></span>idle</span>
             <button type="button" class="icon-action" id="monitor-modal-close" aria-label="Close live view">
-              <svg aria-hidden="true"><use href="{{ static_url('design-system/icons/core-icons.svg') }}#close"></use></svg>
+              <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#close"></use></svg>
             </button>
           </div>
         </div>
@@ -446,7 +446,7 @@
       </form>
     </dialog>
   </div>
-  <script src="{{ static_url('main.js') }}"></script>
-  <script src="{{ static_url('custom-categories.js') }}"></script>
+  <script src="{{ static_url "main.js" }}"></script>
+  <script src="{{ static_url "custom-categories.js" }}"></script>
 </body>
 </html>

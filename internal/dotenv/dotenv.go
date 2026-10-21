@@ -65,7 +65,7 @@ func readText(r io.Reader) (string, error) {
 // pairsFromBindings keeps the bindings that carry a key, warning about the
 // statements that failed to parse (with_warn_for_invalid_lines).
 func pairsFromBindings(bindings []Binding) []Pair {
-	var out []Pair
+	out := make([]Pair, 0, len(bindings))
 	for _, b := range bindings {
 		if b.Error {
 			log.Warn(fmt.Sprintf("python-dotenv could not parse statement starting at line %d", b.Original.Line))

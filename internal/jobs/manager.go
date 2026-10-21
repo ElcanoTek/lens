@@ -170,6 +170,10 @@ type Manager struct {
 	// ValidateCategories re-validates persisted definitions on load; a job
 	// whose saved definitions no longer validate is marked failed.
 	ValidateCategories func(json.RawMessage) (json.RawMessage, error)
+	// FormatCategories renders the <output>.categories.json sidecar the job
+	// subprocess reads (and users download); nil means indented JSON. The
+	// web server sets it to the Python release's json.dumps(indent=2) form.
+	FormatCategories func(json.RawMessage) ([]byte, error)
 	// Now is the clock (tests).
 	Now func() time.Time
 
@@ -620,7 +624,11 @@ func (m *Manager) runJob(id string) {
 	if snapshot.HasCategories() {
 		path := filepath.Join(m.Dirs.Outputs, snapshot.ID+"_output.csv.categories.json")
 		var pretty json.RawMessage = snapshot.CustomCategories
-		if indented, err := json.MarshalIndent(snapshot.CustomCategories, "", "  "); err == nil {
+		if m.FormatCategories != nil {
+			if formatted, err := m.FormatCategories(snapshot.CustomCategories); err == nil {
+				pretty = formatted
+			}
+		} else if indented, err := json.MarshalIndent(snapshot.CustomCategories, "", "  "); err == nil {
 			pretty = indented
 		}
 		if err := os.WriteFile(path, pretty, 0o644); err != nil { //nolint:gosec // downloadable artifact

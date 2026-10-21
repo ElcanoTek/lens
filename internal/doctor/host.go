@@ -106,7 +106,7 @@ func ExecRunner(ctx context.Context, opts RunOptions, name string, args ...strin
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
+	cmd := exec.CommandContext(ctx, name, args...) //nolint:gosec // fixed diagnostic commands; argv, never a shell
 	cmd.Dir = opts.Dir
 	// A killed command's grandchildren can hold the stdout pipe open; stop
 	// waiting for them shortly after the kill.

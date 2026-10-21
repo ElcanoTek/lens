@@ -47,9 +47,6 @@ linters:
           # httptest.NewRequest is idiomatic in tests; there is no
           # cancellation to thread through a synthetic request.
           - noctx
-      - text: 'shadow: declaration of "err"'
-        linters:
-          - govet
 
 formatters:
   enable:

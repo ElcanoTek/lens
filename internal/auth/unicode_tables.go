@@ -1312,4 +1312,3 @@ var caseFoldTable = map[rune]string{
 	0x1e91c: "\U0001e93e", 0x1e91d: "\U0001e93f", 0x1e91e: "\U0001e940", 0x1e91f: "\U0001e941",
 	0x1e920: "\U0001e942", 0x1e921: "\U0001e943",
 }
-

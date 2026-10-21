@@ -128,7 +128,7 @@ func TestParseVariables(t *testing.T) {
 		{"$a ${a:b}", []Atom{lit("$a ${a:b}")}},
 	}
 	for _, tc := range cases {
-		if got := ParseVariables(tc.in); !reflect.DeepEqual(got, tc.want) {
+		if got := ParseVariables(tc.in); (len(got) > 0 || len(tc.want) > 0) && !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("ParseVariables(%q) = %+v, want %+v", tc.in, got, tc.want)
 		}
 	}

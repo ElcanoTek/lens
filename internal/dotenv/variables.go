@@ -24,9 +24,10 @@ type Atom struct {
 
 // ParseVariables splits value into literal and ${...} atoms.
 func ParseVariables(value string) []Atom {
-	var atoms []Atom
+	matches := posixVariable.FindAllStringSubmatchIndex(value, -1)
+	atoms := make([]Atom, 0, 2*len(matches)+1)
 	cursor := 0
-	for _, m := range posixVariable.FindAllStringSubmatchIndex(value, -1) {
+	for _, m := range matches {
 		start, end := m[0], m[1]
 		if start > cursor {
 			atoms = append(atoms, Atom{Literal: value[cursor:start]})
