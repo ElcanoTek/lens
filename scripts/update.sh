@@ -18,7 +18,12 @@ set -euo pipefail
 SRC_DIR="${SRC_DIR:-${LENS_SRC_DIR:-/opt/lens-src}}"
 APP_DIR="${APP_DIR:-${LENS_APP_DIR:-/opt/lens}}"
 APP_USER="${APP_USER:-lens}"
-CLI_TARGET="/usr/local/bin/lens"
+CLI_TARGET="${LENS_CLI_TARGET:-/usr/local/bin/lens}"
+# Host locations. The overrides exist for internal/deploytest, which runs
+# this script end to end against a scratch tree with stub tools.
+UNIT_DIR="${LENS_UNIT_DIR:-/etc/systemd/system}"
+STATE_DIR="${LENS_STATE_DIR:-/var/lib/lens}"
+MOTD_FILE="${LENS_MOTD_FILE:-/etc/motd}"
 SERVICE="lens.service"
 for arg in "$@"; do
   case "$arg" in
@@ -42,7 +47,7 @@ ok()   { printf '%s✓ %s%s\n' "$c_green" "$*" "$c_reset"; }
 warn() { printf '%s! %s%s\n' "$c_yellow" "$*" "$c_reset" >&2; }
 die()  { printf '%s✗ %s%s\n' "$c_red" "$*" "$c_reset" >&2; exit 1; }
 
-[[ $EUID -eq 0 ]] || die "run as root: sudo lens update"
+[[ $EUID -eq 0 || "${LENS_UPDATE_TEST_NONROOT:-0}" == 1 ]] || die "run as root: sudo lens update"
 [[ -d "$SRC_DIR/.git" ]] || die "no source checkout at $SRC_DIR"
 [[ -d "$APP_DIR" ]]      || die "no existing install at $APP_DIR"
 lens_lock "$@"
@@ -227,7 +232,7 @@ rsync -a "${LENS_STATE_EXCLUDES[@]}" "$APP_DIR/" "$BACKUP/"
 # A Python release (first migration) also needs its interpreter back on
 # rollback; a Go release has no venv and the binary is already in bin/.
 if [[ -d "$APP_DIR/.venv" ]]; then cp -a "$APP_DIR/.venv" "$BACKUP/.venv"; fi
-install -m 0644 /etc/systemd/system/lens.service "$BACKUP/lens.service.previous"
+install -m 0644 "$UNIT_DIR/lens.service" "$BACKUP/lens.service.previous"
 # The CLI as it is: a copied bash script (Python) or a symlink (Go).
 if [[ -e "$CLI_TARGET" || -L "$CLI_TARGET" ]]; then cp -a "$CLI_TARGET" "$BACKUP/lens-cli.previous"; fi
 # Any failure after stopping restores the actual deployed code AND runtime.
@@ -237,7 +242,7 @@ rollback() {
   if [[ "$status" != 0 ]]; then
     warn "deploy failed — restoring $BACKUP"
     systemctl stop "$SERVICE" || true
-    if lens_restore_release "$APP_DIR" "$BACKUP" /etc/systemd/system/lens.service "$CLI_TARGET"; then
+    if lens_restore_release "$APP_DIR" "$BACKUP" "$UNIT_DIR/lens.service" "$CLI_TARGET"; then
       if command -v restorecon >/dev/null 2>&1; then
         for d in "$APP_DIR/bin" "$APP_DIR/.venv"; do
           if [[ -d "$d" ]]; then restorecon -RF "$d" >/dev/null 2>&1 || true; fi
@@ -258,12 +263,12 @@ rollback() {
 }
 trap rollback EXIT
 systemctl stop "$SERVICE"
-# Persistent auth state lives in /var/lib/lens, outside the release tree.
+# Persistent auth state lives in $STATE_DIR (/var/lib/lens), outside the release tree.
 # Stopped first so no session or allowlist write lands between the online
 # backup and the restart on the new database.
 if ! "$STAGING/bin/lens" migrate-access-db \
   --legacy "$APP_DIR/data/access.db" \
-  --target /var/lib/lens/access.db \
+  --target "$STATE_DIR/access.db" \
   --env-file "$APP_DIR/.env" \
   --owner "$APP_USER"; then
   systemctl start "$SERVICE" 2>/dev/null || true
@@ -281,10 +286,9 @@ if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi
 
-install -m 0644 "$APP_DIR/deploy/lens.service" /etc/systemd/system/
-# The operator CLI is the binary itself. rm first: on a Python box this path
-# is a copied bash script, and ln -sfn onto it would be fine, but an install
-# or cp onto an existing symlink would write through into bin/lens.
+install -m 0644 "$APP_DIR/deploy/lens.service" "$UNIT_DIR/"
+# The operator CLI is the binary itself: a symlink, replacing the copied bash
+# script a Python release installed here.
 rm -f "$CLI_TARGET"
 ln -s "$APP_DIR/bin/lens" "$CLI_TARGET"
 
@@ -295,7 +299,7 @@ ln -s "$APP_DIR/bin/lens" "$CLI_TARGET"
 # the unit, containers, volumes and images; the deep crawler's Chrome image
 # stays. Idempotent: does nothing once the stack is gone.
 remove_firecrawl() {
-  local unit=/etc/systemd/system/firecrawl.service removed=0
+  local unit="$UNIT_DIR/firecrawl.service" removed=0
   if [[ -f "$unit" ]]; then
     systemctl disable --now firecrawl.service >/dev/null 2>&1 || true
     rm -f "$unit"
@@ -329,8 +333,8 @@ remove_firecrawl() {
 remove_firecrawl
 # Keep /etc/motd in sync with deploy/motd — boxes bootstrapped before the
 # banner existed never got one, and this heals drift on every update.
-if [[ -f "$APP_DIR/deploy/motd" ]] && ! cmp -s "$APP_DIR/deploy/motd" /etc/motd; then
-  install -m 0644 "$APP_DIR/deploy/motd" /etc/motd
+if [[ -f "$APP_DIR/deploy/motd" ]] && ! cmp -s "$APP_DIR/deploy/motd" "$MOTD_FILE"; then
+  install -m 0644 "$APP_DIR/deploy/motd" "$MOTD_FILE"
   ok "motd installed/refreshed"
 fi
 systemctl daemon-reload

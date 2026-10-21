@@ -539,23 +539,58 @@ func TestPagingWalksTheRows(t *testing.T) {
 func TestResultsWhileRunningAndMissingOutput(t *testing.T) {
 	h := newHarness(t)
 	raw := h.token()
+	exe := filepath.Join(h.home, "fake-lens")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	h.manager.Executable = exe
+	ctx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { h.manager.Run(ctx); close(done) }()
+	defer func() { stop(); <-done }()
 	job := h.queued()
-	h.patchJob(job.ID, map[string]any{"status": "running", "started_at": time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)})
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if j, _ := h.manager.Get(job.ID); j.Status == "running" && j.LogFile != "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job never started")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	if got := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID+"/results", raw, nil).json(t); got["code"] != "no_results_yet" {
 		t.Fatalf("got %v", got)
 	}
-	h.finish(job.ID, rows[:1])
-	h.patchJob(job.ID, map[string]any{"status": "running"})
+	out := h.manager.Dirs.Outputs
+	_ = os.WriteFile(filepath.Join(out, job.ID+"_output.csv"), []byte("Domain,Quality\nexample.com,Premium\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(out, job.ID+".log"), []byte("started\nworking\n"), 0o600)
+	_ = os.WriteFile(filepath.Join(out, job.ID+"_progress.json"), []byte(`{"total_domains": 4, "processed_domains": {"example.com": {}}}`), 0o600)
 	running := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID+"/results", raw, nil).json(t)
 	if running["complete"] != false || !strings.Contains(running["note"].(string), "rows written so far") {
 		t.Fatalf("running = %v", running)
 	}
 	detail := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID, raw, nil).json(t)
-	if !reflect.DeepEqual(detail["log_tail"], []any{"started", "finished"}) {
+	if !reflect.DeepEqual(detail["log_tail"], []any{"started", "working"}) || detail["progress"].(map[string]any)["percent"] != 25.0 {
 		t.Fatalf("detail = %v", detail)
 	}
-	h.patchJob(job.ID, map[string]any{"status": "failed"})
-	if err := os.Remove(filepath.Join(h.manager.Dirs.Outputs, job.ID+"_output.csv")); err != nil {
+	if _, ok := detail["eta_seconds"]; !ok {
+		t.Fatalf("detail = %v", detail)
+	}
+	cancelled := h.do(http.MethodPost, "/api/v1/jobs/"+job.ID+"/cancel", raw, nil).json(t)
+	if cancelled["status"] != "cancelling" {
+		t.Fatalf("cancel = %v", cancelled)
+	}
+	for {
+		if j, _ := h.manager.Get(job.ID); j.Status == "cancelled" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("job never stopped")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if err := os.Remove(filepath.Join(out, job.ID+"_output.csv")); err != nil {
 		t.Fatal(err)
 	}
 	missing := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID+"/results", raw, nil)

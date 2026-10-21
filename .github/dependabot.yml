@@ -1,12 +1,12 @@
-# Dependabot proposes updates for Lens's two dependency surfaces: the pip
-# locks (requirements.in → requirements.txt / requirements-dev.txt, which
-# Dependabot recompiles with pip-compile) and the GitHub Actions the workflows
-# use. Modelled on fleet's .github/dependabot.yml.
+# Dependabot proposes updates for Lens's two dependency surfaces: the Go
+# modules in go.mod / go.sum and the GitHub Actions the workflows use.
+# Modelled on fleet's .github/dependabot.yml.
 #
 # Dependabot PROPOSES; a human merges a bump only when it earns it — a security
 # fix whose code path Lens uses, or a specific upstream commit we need (see
-# "Dependencies and in-housed code" in AGENTS.md). In-housed code (html_dom.py,
-# webdriver_client.py, _vendor/) is ours and is not tracked here.
+# "Dependencies and in-housed code" in AGENTS.md). In-housed code (the HTML
+# DOM, the WebDriver client, the dotenv parser) is ours and is not tracked
+# here.
 #
 # Daily polling with a supply-chain cooldown of 7 days (3 for patch releases):
 # a freshly published release is not proposed until it is that old, so a
@@ -16,13 +16,14 @@
 # There are no `ignore` rules; if one is ever needed, say which upstream
 # constraint forces it and what would let it go.
 #
-# Not covered: the Python interpreter (.python-version, the 3.11 floor in
-# test-classification.yml and pyproject.toml) and the selenium/standalone-chrome
-# image Lens pulls at runtime (config deep_scrape_image). There is no
-# Containerfile in this repo, so there is no docker entry.
+# Not covered: the Go toolchain itself (go.mod's `go` line, which also moves
+# the golangci-lint pin — see .golangci.yml; govulncheck flags a stale
+# toolchain) and the selenium/standalone-chrome image Lens pulls at runtime
+# (config deep_scrape_image). There is no Containerfile in this repo, so there
+# is no docker entry.
 version: 2
 updates:
-  - package-ecosystem: pip
+  - package-ecosystem: gomod
     directory: "/"
     schedule:
       interval: daily
@@ -34,11 +35,11 @@ updates:
       semver-patch-days: 3
     labels:
       - dependencies
-      - python
+      - go
     commit-message:
-      prefix: "deps(pip)"
+      prefix: "deps(go)"
     groups:
-      pip-minor-patch:
+      gomod-minor-patch:
         update-types:
           - minor
           - patch

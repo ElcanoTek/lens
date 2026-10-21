@@ -6,6 +6,7 @@ package detect
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"os"
 	"testing"
 
@@ -18,6 +19,9 @@ import (
 // (detect_content_type, _looks_processable, spreadsheet_cell) over ~1,700
 // generated and hand-picked identifiers.
 func TestGoldenAgainstPython(t *testing.T) {
+	// Python's `$` also matches before a trailing newline, so its segment
+	// regex accepted "b\n" as a package segment. Not reproduced.
+	quirks := map[string]bool{"a.b\n.c": true}
 	fh, err := os.Open("testdata/content_types.jsonl")
 	if err != nil {
 		t.Fatal(err)
@@ -31,6 +35,9 @@ func TestGoldenAgainstPython(t *testing.T) {
 			t.Fatal(err)
 		}
 		v := rec[0].(string)
+		if quirks[v] {
+			continue
+		}
 		if got := ContentType(v); string(got) != rec[1].(string) {
 			t.Errorf("ContentType(%q) = %s, Python %s", v, got, rec[1])
 		}
@@ -146,7 +153,7 @@ func TestHelperFunctions(t *testing.T) {
 	}
 	for v, want := range map[string]bool{
 		"com.example.app": true, "org.mozilla.firefox": true, "com.company.my_app": true,
-		"example.com": true, // valid format, just short
+		"example.com":     true, // valid format, just short
 		"com-example-app": false, "com.example/app": false, "com": false, "": false,
 	} {
 		if got := isValidAndroidPackage(v); got != want {
@@ -219,9 +226,9 @@ func TestInputColumn(t *testing.T) {
 		want string
 	}{
 		{[]string{"Domain"}, "Domain"},
-		{[]string{"Notes", "url", "pageURL"}, "pageURL"},     // exact, candidate order
-		{[]string{"Notes", "PAGEURL", "DOMAIN"}, "PAGEURL"},  // case-insensitive, candidate order
-		{[]string{"x", "Domain ", "y"}, "Domain "},           // partial
+		{[]string{"Notes", "url", "pageURL"}, "pageURL"},    // exact, candidate order
+		{[]string{"Notes", "PAGEURL", "DOMAIN"}, "PAGEURL"}, // case-insensitive, candidate order
+		{[]string{"x", "Domain ", "y"}, "Domain "},          // partial
 		{[]string{"Ad Unit", "Package Names"}, "Package Names"},
 		{[]string{"rank", "notes"}, ""},
 		{[]string{"URL", "url"}, "url"}, // exact "url" precedes "URL" in the candidates
@@ -262,8 +269,8 @@ func TestBatchType(t *testing.T) {
 	if ct, ok := BatchType(vals); !ok || ct != item.IOSApp {
 		t.Errorf("90%% iOS = %s %v", ct, ok)
 	}
-	if _, ok := BatchType(vals[1:]); !ok {
-		t.Error("all-but-one iOS should still dominate")
+	if _, ok := BatchType(vals[1:]); ok {
+		t.Error("8 of 9 (89%) should not dominate")
 	}
 	if _, ok := BatchType([]string{"1", "a.com"}); ok {
 		t.Error("mixed batch reported as homogeneous")
@@ -285,10 +292,10 @@ func TestAnalyze(t *testing.T) {
 	if got := a.ItemsOfType(item.IOSApp); len(got) != 1 || got[0] != "333903271" {
 		t.Errorf("ItemsOfType = %q", got)
 	}
-	if _, err := Analyze(frame([]string{"pageURL"}, []string{"", "NA"})); err != ErrNoValues { //nolint:errorlint // sentinel returned unwrapped
+	if _, err := Analyze(frame([]string{"pageURL"}, []string{"", "NA"})); !errors.Is(err, ErrNoValues) {
 		t.Errorf("err = %v", err)
 	}
-	if _, err := Analyze(frame([]string{"x"}, []string{"hello"})); err != ErrNoInputColumn { //nolint:errorlint // sentinel returned unwrapped
+	if _, err := Analyze(frame([]string{"x"}, []string{"hello"})); !errors.Is(err, ErrNoInputColumn) {
 		t.Errorf("err = %v", err)
 	}
 }

@@ -300,7 +300,7 @@
                 </td>
                 <td data-label="Started">
                   {{ if .CreatedAtISO }}
-                  <time class="js-local-timestamp" datetime="{{ .CreatedAtISO }}" data-utc-timestamp="{{ .CreatedAtISO }}">{{ .CreatedAtDisplay }}</time>
+                  <time class="js-local-timestamp" {{ jattr "datetime" .CreatedAtISO }} {{ jattr "data-utc-timestamp" .CreatedAtISO }}>{{ .CreatedAtDisplay }}</time>
                   {{ else }}{{ .CreatedAtDisplay }}{{ end }}
                 </td>
                 <td data-label="Status"><span class="status-badge status-{{ .Status }}"><span class="status-dot"></span>{{ .Status }}</span></td>
@@ -314,7 +314,7 @@
                     <div class="queue-progress-meta">
                       <span class="queue-progress-text">{{ .Progress.Text }}</span>
                       <span class="queue-progress-eta">{{ .Progress.ETA }}</span>
-                      <span class="queue-progress-cost" title="{{ .Progress.CostTitle }}">{{ .Progress.CostText }}</span>
+                      <span class="queue-progress-cost" title="{{ .Progress.CostTitle }}">{{ jtext .Progress.CostText }}</span>
                     </div>
                   </div>
                 </td>

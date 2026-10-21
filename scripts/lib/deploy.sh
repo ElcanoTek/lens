@@ -38,8 +38,8 @@ lens_lock() {
 }
 
 lens_health() {
-  local _attempt
-  for _attempt in {1..15}; do
+  local _attempt attempts="${LENS_HEALTH_ATTEMPTS:-15}"
+  for (( _attempt = 0; _attempt < attempts; _attempt++ )); do
     if [[ "$(curl -s --connect-timeout 2 --max-time 3 -o /dev/null -w '%{http_code}' \
         http://127.0.0.1:8808/health)" == 200 ]]; then return 0; fi
     sleep 1

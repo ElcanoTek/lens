@@ -276,7 +276,7 @@ var typeColumnCandidates = map[string]bool{
 var contentTypeHints = map[string]item.ContentType{
 	"ios": item.IOSApp, "ios_app": item.IOSApp, "iosapp": item.IOSApp, "iphone": item.IOSApp,
 	"ipad": item.IOSApp, "apple": item.IOSApp, "app store": item.IOSApp, "appstore": item.IOSApp,
-	"itunes": item.IOSApp,
+	"itunes":  item.IOSApp,
 	"android": item.AndroidApp, "android_app": item.AndroidApp, "androidapp": item.AndroidApp,
 	"google play": item.AndroidApp, "googleplay": item.AndroidApp, "play store": item.AndroidApp,
 	"playstore": item.AndroidApp, "gplay": item.AndroidApp,

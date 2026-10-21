@@ -111,7 +111,7 @@ func csvRows(path string, header func([]string), fn func(map[string]string) bool
 		if err != nil {
 			// A malformed tail (a running job mid-write) ends the scan
 			// rather than failing the whole call.
-			return nil //nolint:nilerr // see above
+			return nil
 		}
 		rec = clean(rec)
 		row := make(map[string]string, len(fields))

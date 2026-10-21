@@ -62,8 +62,19 @@ type xlsxReader struct {
 	b     *budget
 }
 
+// partKey normalises a part name for lookup: OPC part names are
+// case-insensitive, and some generators write backslashes.
+func partKey(name string) string {
+	return strings.ToLower(strings.TrimPrefix(strings.ReplaceAll(name, `\`, "/"), "/"))
+}
+
+func (x *xlsxReader) has(name string) bool {
+	_, ok := x.files[partKey(name)]
+	return ok
+}
+
 func (x *xlsxReader) open(name string) (io.ReadCloser, error) {
-	f, ok := x.files[name]
+	f, ok := x.files[partKey(name)]
 	if !ok {
 		return nil, fmt.Errorf("xlsx: missing part %s", name)
 	}
@@ -129,7 +140,7 @@ type rel struct{ typ, target string }
 // against base (the directory of the part the relationships belong to).
 func (x *xlsxReader) rels(name, base string) map[string]rel {
 	out := map[string]rel{}
-	if _, ok := x.files[name]; !ok {
+	if !x.has(name) {
 		return out
 	}
 	_ = x.decode(name, func(tok xml.Token) error {
@@ -213,7 +224,7 @@ func (x *xlsxReader) workbook() (workbookInfo, error) {
 	if info.sheet == "" {
 		// No usable relationship: fall back to the conventional name.
 		info.sheet = path.Join(base, "worksheets/sheet1.xml")
-		if _, ok := x.files[info.sheet]; !ok {
+		if !x.has(info.sheet) {
 			return info, errors.New("xlsx: workbook has no worksheet")
 		}
 	}
@@ -236,11 +247,20 @@ func unescapeOOXML(s string) string {
 		return s
 	}
 	return escapedChar.ReplaceAllStringFunc(s, func(m string) string {
-		n, err := strconv.ParseUint(m[2:6], 16, 32)
-		if err != nil {
-			return m
+		var r rune
+		for _, h := range []byte(m[2:6]) {
+			var d byte
+			switch {
+			case h >= '0' && h <= '9':
+				d = h - '0'
+			case h >= 'a' && h <= 'f':
+				d = h - 'a' + 10
+			default: // 'A'..'F'; the regexp admits nothing else
+				d = h - 'A' + 10
+			}
+			r = r<<4 | rune(d)
 		}
-		return string(rune(n))
+		return string(r)
 	})
 }
 
@@ -278,7 +298,7 @@ func (s *stringItem) token(tok xml.Token) {
 func (s *stringItem) text() string { return unescapeOOXML(s.b.String()) }
 
 func (x *xlsxReader) sharedStrings(name string) ([]string, error) {
-	if _, ok := x.files[name]; !ok {
+	if !x.has(name) {
 		return nil, nil
 	}
 	var (
@@ -336,7 +356,7 @@ func isDateFormat(code string) bool {
 // styles returns, per cell style index (the s attribute), whether the
 // style's number format shows a date.
 func (x *xlsxReader) styles(name string) []bool {
-	if _, ok := x.files[name]; !ok {
+	if !x.has(name) {
 		return nil
 	}
 	custom := map[int]bool{}
@@ -624,7 +644,7 @@ func (x *xlsxReader) sheet(info workbookInfo, shared []string, dateStyles []bool
 func readXLSX(zr *zip.Reader) (*Frame, error) {
 	x := &xlsxReader{files: make(map[string]*zip.File, len(zr.File)), b: &budget{left: maxXLSXUncompressed}}
 	for _, f := range zr.File {
-		x.files[strings.TrimPrefix(f.Name, "/")] = f
+		x.files[partKey(f.Name)] = f
 	}
 	info, err := x.workbook()
 	if err != nil {

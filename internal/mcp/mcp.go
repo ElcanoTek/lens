@@ -266,9 +266,8 @@ func describe(v any) string {
 }
 
 func (s *Server) callTool(r *http.Request, token *apitoken.Token, params map[string]any) (map[string]any, error) {
-	name, _ := params["name"].(string)
 	var tool *toolDef
-	if _, isString := params["name"].(string); isString {
+	if name, isString := params["name"].(string); isString {
 		tool = findTool(name)
 	}
 	if tool == nil || !token.Allows(tool.Scope) {

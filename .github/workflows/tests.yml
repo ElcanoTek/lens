@@ -59,6 +59,17 @@ jobs:
       - name: go test -race
         run: go test -race -count=1 ./...
 
+      # The first-migration path for real: a Python-era update.sh
+      # (internal/deploytest/testdata/python-release) fetches the Go release
+      # and re-execs the new update.sh. That old script insists on root and
+      # has no override, so run just this test as root — from a test binary
+      # built as the runner user, so no root-owned files land in its caches.
+      - name: Python → Go update path (as root)
+        run: |
+          go test -c -o "$RUNNER_TEMP/deploytest.test" ./internal/deploytest
+          cd internal/deploytest
+          sudo "$RUNNER_TEMP/deploytest.test" -test.count=1 -test.v -test.run 'TestPythonEraUpdateReexecsIntoTheGoUpdate'
+
       # Call-graph-aware scan of the dependency tree and the stdlib for known
       # vulnerabilities reachable from Lens. The advisory database is live on
       # purpose: this step can turn red with no commit involved, and that is
@@ -135,9 +146,9 @@ jobs:
           APP_DIR="$(mktemp -d "$RUNNER_TEMP/lens-go.XXXXXX")"
           # Unprivileged stand-in for /var/cache/lens-build.
           export LENS_BUILD_CACHE="$APP_DIR/cache"
-          # setup-go exports GOTOOLCHAIN=local for the requested version;
-          # the deploy path must not depend on that, so drop it and let
-          # lens_build/the Makefile choose (auto).
+          # Whatever GOTOOLCHAIN the runner image or setup-go left in the
+          # environment, the deploy path must not depend on it: drop it and
+          # let lens_build / the Makefile choose (auto), as on a Fedora box.
           unset GOTOOLCHAIN
           sha="$(git rev-parse HEAD)"
           mkdir "$APP_DIR/staging"

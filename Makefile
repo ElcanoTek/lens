@@ -34,7 +34,7 @@ LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$
 
 # The deploy scripts ShellCheck lints (CI's shell job runs this target).
 SHELL_SCRIPTS := install.sh scripts/bootstrap.sh scripts/update.sh scripts/host.sh \
-	scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh
+	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh
 
 all: build
 

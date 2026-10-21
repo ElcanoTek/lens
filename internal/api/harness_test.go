@@ -38,7 +38,7 @@ func fakeBreakdown(path string) (map[string]int, error) {
 	if !strings.HasSuffix(strings.ToLower(path), ".csv") {
 		return out, nil
 	}
-	f, err := os.Open(path) //nolint:gosec // test file
+	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func fakeBreakdown(path string) (map[string]int, error) {
 	r.FieldsPerRecord = -1
 	rows, err := r.ReadAll()
 	if err != nil || len(rows) == 0 {
-		return out, nil //nolint:nilerr // unreadable means nothing to classify
+		return out, nil
 	}
 	col, ctv := -1, false
 	for i, h := range rows[0] {
@@ -224,7 +224,7 @@ func (h *harness) finish(id string, data [][]string) {
 func (h *harness) patchJob(id string, fields map[string]any) {
 	h.t.Helper()
 	path := h.manager.Dirs.StatePath()
-	raw, err := os.ReadFile(path) //nolint:gosec // test file
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		h.t.Fatal(err)
 	}

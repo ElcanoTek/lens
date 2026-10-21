@@ -248,7 +248,7 @@ func BreakdownFrame(f *tabular.Frame) map[string]int {
 	// CTV is recognised by its column headers, not per row, so the whole
 	// file is CTV when it matches. Blank cells are not channels.
 	if IsCTVInputFile(f) {
-		cols := DetectCTVColumns(f)
+		cols := CTVColumns(f)
 		column := cols.BundleID
 		if column == "" {
 			column = cols.AppName

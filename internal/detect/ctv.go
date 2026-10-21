@@ -85,8 +85,8 @@ func IsCTVInputFile(f *tabular.Frame) bool {
 	return false
 }
 
-// CTVColumns names the frame's columns for each CTV field ("" = absent).
-type CTVColumns struct {
+// CTVFieldColumns names the frame's columns for each CTV field ("" = absent).
+type CTVFieldColumns struct {
 	AppName   string
 	BundleID  string
 	SSP       string
@@ -104,12 +104,12 @@ func firstPresent(ix lowerIndex, candidates ...string) string {
 	return ""
 }
 
-// DetectCTVColumns maps CTV fields to the frame's columns by
+// CTVColumns maps CTV fields to the frame's columns by
 // (case-insensitive) name.
-func DetectCTVColumns(f *tabular.Frame) CTVColumns {
+func CTVColumns(f *tabular.Frame) CTVFieldColumns {
 	columns := f.Columns()
 	ix := newLowerIndex(columns, true)
-	var out CTVColumns
+	var out CTVFieldColumns
 
 	out.AppName = firstPresent(ix, "app_name", "appname", "app name", "app", "name", "channel_name",
 		"channelname", "channel name", "ctv_app", "ctvapp", "ctv app", "app, account or network name")
@@ -184,7 +184,7 @@ func CTVPlatform(bundleID string) string {
 // research step can quote. Rows without a platform get one from the bundle
 // id when its shape gives it away.
 func ParseCTVWorkItems(f *tabular.Frame) []item.CTVWorkItem {
-	cols := DetectCTVColumns(f)
+	cols := CTVColumns(f)
 	if cols.AppName == "" {
 		log.Warn("No app_name column found in CTV input file")
 		if f.NumColumns() == 0 {

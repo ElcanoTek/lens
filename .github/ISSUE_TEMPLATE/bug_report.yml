@@ -14,7 +14,7 @@ body:
     attributes:
       label: Steps to reproduce
       placeholder: |
-        1. Run `python main.py --input-csv …`
+        1. Run `lens run --input-csv …`
         2. …
   - type: input
     id: version
@@ -25,7 +25,7 @@ body:
     id: area
     attributes:
       label: Area
-      options: [CLI pipeline (main.py), Web dashboard, Crawl ladder / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
+      options: [CLI pipeline (lens run), Web dashboard, Crawl ladder / deep scrape, Classification / LLM output, App store metadata, CTV pipeline, Deployment scripts, Docs]
   - type: textarea
     id: logs
     attributes:

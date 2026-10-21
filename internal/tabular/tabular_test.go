@@ -501,3 +501,14 @@ func TestFrameAccessors(t *testing.T) {
 		t.Errorf("Column = %q", f.Column(0))
 	}
 }
+
+func TestXLSXPartNamesAreCaseInsensitive(t *testing.T) {
+	data := workbook(t, map[string]string{
+		"xl/SharedStrings.xml":       sstXML(`<si><t>Domain</t></si>`, `<si><t>a.com</t></si>`),
+		"xl\\worksheets\\Sheet1.xml": sheetXML(`<row><c t="s"><v>0</v></c></row><row><c t="s"><v>1</v></c></row>`),
+	})
+	f := mustParseXLSX(t, data)
+	if !reflect.DeepEqual(f.Columns(), []string{"Domain"}) || f.Cell(0, 0) != "a.com" {
+		t.Errorf("got %q %q", f.Columns(), grid(f))
+	}
+}

@@ -4,8 +4,9 @@
 
 ## Checklist
 
-- [ ] `ruff format --check . && ruff check .` pass
-- [ ] `python -m pytest -q` passes, hermetically (no key, no network)
+- [ ] `make fmt-check && make vet && make lint` pass
+- [ ] `make test-race` passes, hermetically (no key, no network)
+- [ ] `make shellcheck` passes when deploy scripts changed
 - [ ] `config.json.example` / `.env.example` / `docs/DEPLOYMENT.md` updated for any new setting
 - [ ] Docs updated where behaviour changed
 - [ ] New source files carry the SPDX header
