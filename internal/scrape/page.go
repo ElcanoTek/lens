@@ -5,6 +5,7 @@ package scrape
 
 import (
 	"fmt"
+	"golang.org/x/text/encoding/htmlindex"
 	"mime"
 	"strings"
 	"time"
@@ -125,6 +126,16 @@ func DecodeBody(raw []byte, contentType string) string {
 			}
 		}
 		return b.String()
+	}
+	if charset != "" && charset != "utf-8" && charset != "utf8" {
+		// Every other declared charset (Shift_JIS, GBK, EUC-KR, KOI8-R...)
+		// goes through the WHATWG encoding registry, as a browser would.
+		// Undecodable bytes are dropped, like errors="ignore".
+		if enc, err := htmlindex.Get(charset); err == nil {
+			if decoded, err := enc.NewDecoder().Bytes(raw); err == nil {
+				return strings.ToValidUTF8(strings.ReplaceAll(string(decoded), "\uFFFD", ""), "")
+			}
+		}
 	}
 	return strings.ToValidUTF8(string(raw), "")
 }
