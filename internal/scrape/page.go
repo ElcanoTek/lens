@@ -5,11 +5,12 @@ package scrape
 
 import (
 	"fmt"
-	"golang.org/x/text/encoding/htmlindex"
 	"mime"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	"golang.org/x/text/encoding/htmlindex"
 
 	"github.com/ElcanoTek/lens/internal/htmldom"
 )

@@ -228,3 +228,16 @@ func TestMain(m *testing.M) {
 	logx.SetOutput(io.Discard, slog.LevelDebug)
 	os.Exit(m.Run())
 }
+
+func waitStatus(t *testing.T, h *harness, id, want string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if j, ok := h.srv.Manager().Get(id); ok && j.Status == want {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	j, _ := h.srv.Manager().Get(id)
+	t.Fatalf("job %s is %q, want %q", id, j.Status, want)
+}
