@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -394,5 +395,32 @@ func TestTLSStatusFindsEitherSiteLocation(t *testing.T) {
 	h.Main("tls", []string{"reload"})
 	if got := strings.Join(h.lastExec(t).argv, " "); got != sudoPrefix+" caddy reload --config /etc/caddy/Caddyfile" {
 		t.Fatalf("exec = %s", got)
+	}
+}
+
+// Values with backslashes and quotes must read back unchanged through the
+// dotenv parser the service uses (secrets can contain both).
+func TestSetKeyRoundTripsBackslashesAndQuotes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	values := []string{`a\\b`, `ends\`, `it's`, `mix\'d\\'`, `plain`}
+	for i, v := range values {
+		if err := SetKey(path, fmt.Sprintf("K%d", i), v); err != nil {
+			t.Fatal(err)
+		}
+	}
+	pairs, err := dotenv.ValuesFile(path, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, p := range pairs {
+		if p.Value != nil {
+			got[p.Key] = *p.Value
+		}
+	}
+	for i, v := range values {
+		if k := fmt.Sprintf("K%d", i); got[k] != v {
+			t.Errorf("%s = %q, want %q", k, got[k], v)
+		}
 	}
 }

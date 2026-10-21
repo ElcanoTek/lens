@@ -284,3 +284,18 @@ func TestUnsavedTransitionsAreRefused(t *testing.T) {
 }
 
 func exists(path string) bool { _, err := os.Stat(path); return err == nil }
+
+// Names the Python release stored keep working after the upgrade: _jobs.json
+// entries are re-sanitized on load and must still match the library file.
+func TestSafeFilenameKeepsDotRuns(t *testing.T) {
+	for _, name := range []string{"sites..csv", "q1...final.xlsx", "a.b..c.csv"} {
+		if got, err := SafeFilename(name); err != nil || got != name {
+			t.Errorf("SafeFilename(%q) = %q, %v; want it unchanged", name, got, err)
+		}
+	}
+	for _, bad := range []string{"..", "...", "../x.csv", `..\x.csv`} {
+		if got, err := SafeFilename(bad); err == nil {
+			t.Errorf("SafeFilename(%q) = %q, want an error", bad, got)
+		}
+	}
+}

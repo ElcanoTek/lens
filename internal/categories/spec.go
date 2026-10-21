@@ -27,6 +27,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/ElcanoTek/lens/internal/categories/pyjson"
+	"github.com/ElcanoTek/lens/internal/pystr"
 )
 
 // Limits shared with the dashboard form and documented in
@@ -130,22 +131,9 @@ func pyIsSpace(r rune) bool { return unicode.IsSpace(r) || (r >= 0x1c && r <= 0x
 
 func pyStrip(s string) string { return strings.TrimFunc(s, pyIsSpace) }
 
-// foldKey approximates Python's str.casefold for uniqueness checks.
-func foldKey(s string) string {
-	s = strings.ReplaceAll(s, "ß", "ss")
-	var b strings.Builder
-	for _, r := range s {
-		// The smallest rune of the simple case-folding orbit is a stable key.
-		lowest := r
-		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
-			if f < lowest {
-				lowest = f
-			}
-		}
-		b.WriteRune(lowest)
-	}
-	return b.String()
-}
+// foldKey is Python's str.casefold, which the uniqueness checks use: full
+// folding, so "ẞ"/"ss" or "ﬀ"/"ff" count as the same label.
+func foldKey(s string) string { return pystr.CaseFold(s) }
 
 // Validate returns the normalised spec for a decoded JSON value (the result
 // of json.Unmarshal into any, or a pyjson value). A *Spec or Spec is

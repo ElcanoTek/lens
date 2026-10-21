@@ -3,7 +3,7 @@
 
 // Code generated from Python 3.13.16 unicodedata (Unicode 15.1.0); DO NOT EDIT.
 //
-// The tables let NormalizeEmail reproduce Python's
+// The tables reproduce Python's
 // unicodedata.normalize("NFC", s).strip().casefold() and its category-C
 // check exactly, so allowlist entries written by the Python release keep
 // matching. They were produced by a one-off script that walked every code
@@ -11,10 +11,10 @@
 // point canonical decompositions that survive NFC), combining classes,
 // str.isspace, str.casefold and general category C*.
 
-package auth
+package pystr
 
-// unicodeVersion is the Unicode release these tables were generated from.
-const unicodeVersion = "15.1.0"
+// UnicodeVersion is the Unicode release these tables were generated from.
+const UnicodeVersion = "15.1.0"
 
 // controlRanges: code points whose general category starts with C (Cc, Cf, Cs, Co, Cn).
 var controlRanges = []runeRange{

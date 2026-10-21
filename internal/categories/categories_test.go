@@ -742,3 +742,15 @@ func TestLegacyColumnNames(t *testing.T) {
 		t.Error("nil spec has columns")
 	}
 }
+
+// Python's casefold folds multi-rune expansions, so these are duplicates.
+func TestChoiceUniquenessUsesFullCaseFolding(t *testing.T) {
+	for _, pair := range [][2]string{{"ẞ", "ss"}, {"ﬀ", "ff"}, {"Straße", "STRASSE"}} {
+		spec := map[string]any{"categories": []any{map[string]any{
+			"name": "Kind", "type": "choice", "question": "Which?", "options": []any{pair[0], pair[1]},
+		}}}
+		if _, err := Validate(spec); err == nil || err.Error() != "Choice options must be unique." {
+			t.Errorf("options %q accepted: %v", pair, err)
+		}
+	}
+}

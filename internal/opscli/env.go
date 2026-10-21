@@ -181,9 +181,9 @@ func (c *CLI) envSet(path string, keys []string) int {
 
 // SetKey writes key=value into the .env at path the way python-dotenv's
 // set_key(quote_mode="always") did for the Python bootstrap: every existing
-// binding of key is replaced in place by KEY='value' (single quotes escaped as
-// \'), every other line is kept byte for byte, and a missing key is appended,
-// after a newline when the file did not end with one. A missing file is
+// binding of key is replaced in place by KEY='value' (backslashes and single
+// quotes escaped as \\ and \'), every other line is kept byte for byte, and a
+// missing key is appended, after a newline when the file did not end with one. A missing file is
 // created. The rewrite goes through a temporary file in the same directory
 // and a rename, with mode 0600.
 func SetKey(path, key, value string) error {
@@ -191,7 +191,11 @@ func SetKey(path, key, value string) error {
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	lineOut := key + "='" + strings.ReplaceAll(value, "'", `\'`) + "'\n"
+	// The single-quoted dotenv value decodes \\ and \', so escape the
+	// backslashes first, then the quotes; otherwise "a\\b" or a trailing "\"
+	// (which would escape the closing quote) would not survive a re-read.
+	escaped := strings.ReplaceAll(strings.ReplaceAll(value, `\`, `\\`), "'", `\'`)
+	lineOut := key + "='" + escaped + "'\n"
 	var out strings.Builder
 	replaced := false
 	lines := splitKeepNewline(string(raw))

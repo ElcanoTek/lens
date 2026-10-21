@@ -67,12 +67,34 @@ func TestReleaseBinaryIsNeverOwnedByTheServiceUser(t *testing.T) {
 				t.Errorf("%s hands bin/ to the service user: %s", script, strings.TrimSpace(line))
 			}
 		}
-		if !strings.Contains(src, `chown -R root:root "$APP_DIR/bin"`) && !strings.Contains(src, `chown -R "$BIN_OWNER" "$APP_DIR/bin"`) {
+		if !strings.Contains(src, `install -d -o root -g root -m 0755 "$PRIV_DIR/bin"`) && !strings.Contains(src, `chown -R "$BIN_OWNER" "$APP_DIR/bin"`) {
 			t.Errorf("%s does not give bin/ to root", script)
 		}
 	}
 	if !strings.Contains(read(t, "scripts/update.sh"), `BIN_OWNER="${LENS_BIN_OWNER:-root:root}"`) {
 		t.Error("update.sh's bin/ owner no longer defaults to root:root")
+	}
+}
+
+// Bootstrap must never compile in, or copy root's binary out of, the
+// service-owned $APP_DIR: a bootstrap re-run happens with the service up.
+func TestBootstrapBuildsOutsideTheServiceTree(t *testing.T) {
+	src := read(t, "scripts/bootstrap.sh")
+	for _, want := range []string{
+		`lens_build "$PRIV_DIR/tree"`,
+		`install -o root -g root -m 0755 "$PRIV_DIR/tree/bin/lens" "$PRIV_DIR/lens"`,
+		`mv -T "$PRIV_DIR/bin" "$APP_DIR/bin"`,
+		`LENS_BIN="$PRIV_DIR/lens"`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("bootstrap.sh lost %q", want)
+		}
+	}
+	if strings.Contains(src, `lens_build "$APP_DIR"`) || strings.Contains(src, `"$APP_DIR/bin/lens" "$PRIV_DIR`) {
+		t.Error("bootstrap.sh builds in, or copies root's binary from, the service-owned tree")
+	}
+	if build, chown := strings.Index(src, `lens_build "$PRIV_DIR/tree"`), strings.Index(src, `chown -R "$APP_USER:$APP_USER" "$APP_DIR"`+"\n# bin/"); build < 0 || chown < build {
+		t.Error("bootstrap.sh hands $APP_DIR to the service user before building root's binary")
 	}
 }
 

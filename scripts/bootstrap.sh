@@ -184,28 +184,35 @@ if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
   # .git is needed for subsequent updates, but local instance data is not.
   rsync -a "$SRC_DIR/.git/" "$INSTALL_SRC_DIR/.git/"
 fi
+
+step "3/7  Building bin/lens"
+deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
+deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
+# Build in a root-only tree, never in $APP_DIR: that tree belongs to the
+# service user, and on a bootstrap re-run the service is still running, so
+# it could swap sources or bin/ while root builds. Root executes this binary
+# below (env helpers, migrate-access-db) and installs it as the CLI.
+rm -rf "${APP_DIR}".deploybin.* 2>/dev/null || true
+PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
+trap 'rm -rf "$PRIV_DIR"' EXIT
+rsync -a "${LENS_STATE_EXCLUDES[@]}" "$INSTALL_SRC_DIR/" "$PRIV_DIR/tree/"
+lens_build "$PRIV_DIR/tree" "$deploy_sha" "$deploy_describe" || die "build failed"
+install -o root -g root -m 0755 "$PRIV_DIR/tree/bin/lens" "$PRIV_DIR/lens"
+
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
 # (managed-files), the legacy auth DB during its one-time migration (data),
 # and rootless podman's storage/config under the service user's home
 # (.local/.config/.cache hold the pre-seeded Chrome image).
 rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" \
   "$INSTALL_SRC_DIR/" "$APP_DIR/"
-
-step "3/7  Building bin/lens"
-deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
-deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
-# Built as root before the tree is handed to the service user, so a running
-# service (a bootstrap re-run) cannot change what root compiles.
-lens_build "$APP_DIR" "$deploy_sha" "$deploy_describe" || die "build failed"
-# Root executes the binary below (env helpers, migrate-access-db) and installs
-# it as the CLI: take a root-only copy before $APP_DIR becomes service-owned.
-rm -rf "${APP_DIR}".deploybin.* 2>/dev/null || true
-PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
-trap 'rm -rf "$PRIV_DIR"' EXIT
-install -o root -g root -m 0755 "$APP_DIR/bin/lens" "$PRIV_DIR/lens"
 chown -R "$APP_USER:$APP_USER" "$APP_DIR"
-# bin/ stays root:root: the service only needs to execute it.
-chown -R root:root "$APP_DIR/bin"
+# bin/ is root:root (the service only executes it). It is assembled in the
+# root-only directory and renamed into place: a rename onto anything the
+# service user planted at that name fails instead of writing through it.
+install -d -o root -g root -m 0755 "$PRIV_DIR/bin"
+install -o root -g root -m 0755 "$PRIV_DIR/lens" "$PRIV_DIR/bin/lens"
+rm -rf "${APP_DIR:?}/bin"
+mv -T "$PRIV_DIR/bin" "$APP_DIR/bin" || die "could not install $APP_DIR/bin"
 if command -v restorecon >/dev/null 2>&1; then
   restorecon -RF "$APP_DIR/bin" || warn "restorecon failed for $APP_DIR/bin"
 fi
