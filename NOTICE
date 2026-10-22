@@ -112,8 +112,10 @@ the dashboard.
 
 The design tokens, theme controller, icon sprite and logo files under
 static/design-system/ are vendored byte-for-byte from Flag, which is licensed
-under the MIT License; flag.lock records the Flag commit and the hash of each
-file. The fonts in the same tree keep their own licences (section 4).
+under the MIT License. Flag's licence text travels with them at
+static/design-system/FLAG-LICENSE (vendored from Flag's design-system/LICENSE),
+as the MIT License requires; flag.lock records the Flag commit and the hash of
+each file. The fonts in the same tree keep their own licences (section 4).
 
   static/design-system/logos/*
 

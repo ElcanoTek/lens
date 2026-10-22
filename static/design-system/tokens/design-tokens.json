@@ -41,13 +41,20 @@
     "black": "#000000",
     "success": "#50FA7B",
     "warning": "#FF8847",
-    "danger": "#FF5555",
-    "info": "#8A8BC0",
+    "danger": "#FF5757",
+    "info": "#8E8EC2",
     "onSuccess": "#000000",
+    "primaryFill": "#7171A9",
+    "primaryFillHover": "#656598",
+    "onPrimary": "#FFFFFF",
+    "onPrimaryFill": "#FFFFFF",
+    "secondaryFill": "#586F7C",
+    "secondaryFillHover": "#4F6470",
     "background": "#1A0B1E",
     "surface": {
       "default": "#241B31",
-      "elevated": "#2F2741"
+      "elevated": "#2F2741",
+      "inset": "rgba(0, 0, 0, 0.4)"
     },
     "border": {
       "default": "rgba(114, 114, 171, 0.35)",
@@ -100,6 +107,11 @@
         "bg": "rgba(80, 250, 123, 0.14)",
         "border": "rgba(80, 250, 123, 0.6)"
       },
+      "warning": {
+        "fg": "#FFD2A1",
+        "bg": "rgba(255, 136, 71, 0.2)",
+        "border": "rgba(255, 136, 71, 0.62)"
+      },
       "error": {
         "fg": "#FFD2D2",
         "bg": "rgba(255, 85, 85, 0.14)",
@@ -110,6 +122,16 @@
         "bg": "rgba(108, 118, 130, 0.16)",
         "border": "rgba(108, 118, 130, 0.48)"
       }
+    },
+    "syntax": {
+      "keyword": "#C49BFF",
+      "string": "#8FE7B8",
+      "number": "#F1A976",
+      "comment": "#8C8C8C",
+      "function": "#F1D976",
+      "builtin": "#7FC7FF",
+      "operator": "#D2D9DE",
+      "punctuation": "#BEB6CD"
     },
     "picker": {
       "accentStrong": "#5956d5",
@@ -154,7 +176,9 @@
     "action": {
       "primary": "linear-gradient(140deg, #7272ab, #586f7c)",
       "success": "linear-gradient(155deg, rgba(44, 78, 59, 0.82), rgba(32, 53, 41, 0.9))",
-      "disabled": "linear-gradient(150deg, rgba(69, 74, 86, 0.5), rgba(54, 59, 70, 0.38))"
+      "disabled": "linear-gradient(150deg, rgba(69, 74, 86, 0.5), rgba(54, 59, 70, 0.38))",
+      "fill": "linear-gradient(140deg, var(--color-primary-fill), var(--color-secondary-fill))",
+      "fillHover": "linear-gradient(140deg, var(--color-primary-fill-hover), var(--color-secondary-fill-hover))"
     },
     "featured": {
       "topAccent": "linear-gradient(90deg, rgba(200, 201, 237, 0.95), rgba(114, 114, 171, 0.45))",
@@ -206,6 +230,11 @@
       "xl": "1280px"
     }
   },
+  "transition": {
+    "fast": "140ms ease",
+    "base": "200ms ease"
+  },
+  "focusRing": "0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent)",
   "themes": {
     "contract": {
       "rootSelector": "html[data-theme='<mode>']",
@@ -227,6 +256,7 @@
       "color": {
         "background": "#F4F6FB",
         "primaryHover": "#5F5F97",
+        "accent": "#5A64B8",
         "success": "#1E7A3F",
         "warning": "#8F3E10",
         "danger": "#B3261E",
@@ -234,7 +264,8 @@
         "onSuccess": "#FFFFFF",
         "surface": {
           "default": "#FFFFFF",
-          "elevated": "#E9EEFC"
+          "elevated": "#E9EEFC",
+          "inset": "rgba(38, 55, 92, 0.045)"
         },
         "border": {
           "default": "rgba(38, 55, 92, 0.2)",
@@ -298,10 +329,20 @@
             "border": "rgba(255, 85, 85, 0.44)"
           },
           "cancelled": {
-            "fg": "#59657A",
+            "fg": "#556074",
             "bg": "rgba(108, 118, 130, 0.16)",
             "border": "rgba(108, 118, 130, 0.34)"
           }
+        },
+        "syntax": {
+          "keyword": "#7B39EB",
+          "string": "#0E7539",
+          "number": "#9B5300",
+          "comment": "#5F6572",
+          "function": "#845F00",
+          "builtin": "#0369A1",
+          "operator": "#33415F",
+          "punctuation": "#586682"
         },
         "picker": {
           "accentStrong": "#6262a0",
@@ -342,6 +383,10 @@
           "card": "linear-gradient(145deg, #ffffff, #eef3ff)",
           "elevated": "linear-gradient(150deg, #ffffff, #e8efff)"
         },
+        "action": {
+          "fill": "linear-gradient(140deg, var(--color-primary-fill-hover), var(--color-secondary-fill-hover))",
+          "fillHover": "linear-gradient(140deg, #5b5b89, #475a64)"
+        },
         "featured": {
           "topAccent": "linear-gradient(90deg, rgba(114, 114, 171, 0.42), rgba(88, 111, 124, 0.22))",
           "topAccentSelected": "linear-gradient(90deg, rgba(114, 114, 171, 0.78), rgba(88, 111, 124, 0.42))"
@@ -353,8 +398,7 @@
         "lg": "0 16px 34px rgba(38, 55, 92, 0.2)",
         "section": "0 4px 10px rgba(40, 52, 86, 0.08)",
         "popover": "0 24px 60px -22px rgba(36, 27, 49, 0.2)",
-        "switchKnob": "0 1px 2px rgba(26, 11, 30, 0.28)",
-        "focusRingPicker": "0 0 0 2px var(--color-white), 0 0 0 4px var(--color-accent-strong)"
+        "switchKnob": "0 1px 2px rgba(26, 11, 30, 0.28)"
       },
       "focusRing": "0 0 0 2px var(--color-white), 0 0 0 4px var(--color-accent)"
     }
