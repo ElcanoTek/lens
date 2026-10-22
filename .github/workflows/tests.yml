@@ -127,8 +127,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The pinned release from the Makefile (sha256-verified), the same one
+      # the cloud-session hook installs, not the runner's distro package.
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: |
+          make shellcheck-install TOOLS_BIN="$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       # bash -n + shellcheck -x -S warning over install.sh, scripts/*.sh and
       # scripts/lib/*.sh (the list lives in the Makefile).
       - name: Check deployment scripts

@@ -32,4 +32,11 @@ if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qsF "$gobin" "$CLAUDE_ENV_FILE"; the
   echo "export PATH=\"$gobin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
 fi
 
-command -v shellcheck >/dev/null || echo "session-start: shellcheck missing; make shellcheck will fail" >&2
+# ShellCheck at the release CI pins (Makefile SHELLCHECK_VERSION, sha256
+# verified). Under set -e a failed download or checksum fails the hook rather
+# than leaving `make shellcheck` to break later.
+toolsbin="$HOME/.local/bin"
+make -s shellcheck-install TOOLS_BIN="$toolsbin"
+if [ -n "${CLAUDE_ENV_FILE:-}" ] && ! grep -qsF "$toolsbin" "$CLAUDE_ENV_FILE"; then
+  echo "export PATH=\"$toolsbin:\$PATH\"" >> "$CLAUDE_ENV_FILE"
+fi

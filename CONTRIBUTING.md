@@ -92,6 +92,7 @@ make vet          # go vet ./...
 make lint         # golangci-lint run (.golangci.yml)
 make govulncheck  # known vulnerabilities reachable from Lens
 make shellcheck   # bash -n + shellcheck the deploy scripts
+make shellcheck-install  # the ShellCheck release CI pins, into ~/.local/bin (Linux x86_64)
 make stack-check  # Elcano frontend standard: AGENTS.md block, flag.lock, no CDNs
 make ci           # everything CI's go + shell jobs run
 ```
