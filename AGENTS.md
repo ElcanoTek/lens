@@ -7,8 +7,8 @@ Orientation for anyone (human or agent) making changes here. Companion docs: [`C
 // Copyright (c) 2026 ElcanoTek, Inc.
 ```
 
-<!-- BEGIN:elcano-frontend-standard v1 (shared verbatim by every Elcano repo; scripts/stack-check.sh pins its hash; change it everywhere or nowhere) -->
-## Elcano frontend standard (v1)
+<!-- BEGIN:elcano-frontend-standard v2 (shared verbatim by every Elcano repo; scripts/stack-check.sh pins its hash; change it everywhere or nowhere) -->
+## Elcano frontend standard (v2)
 
 Every Elcano web product follows one of two tiers. `stack.conf` at the repo
 root declares which, and `scripts/stack-check.sh` (run by CI) enforces it.
@@ -24,14 +24,21 @@ terminates TLS and reverse-proxies to Go.
 CSS that reads Flag tokens, and small plain-JavaScript modules (no framework,
 no bundler, no transpiler, no npm runtime dependencies). npm may appear only
 as a dev dependency for browser tests (Playwright, axe). Pick Tier A unless the
-page is a long-lived, state-heavy application.
+page is a long-lived, state-heavy application. Components use Flag's CSS
+component classes, which mirror the names and states of Flag's shadcn/ui
+components so both tiers look and behave alike.
 
 **Tier B — interactive app.** React + TypeScript built by Vite into a static
 bundle that the Go server embeds and serves (same origin, so no CORS). No
 server-side rendering, no Next.js, no runtime server code in TypeScript; data
-comes from the Go JSON API. Keep runtime npm dependencies few and justified in
-AGENTS.md. Use Tier B only when Tier A would mean re-implementing a client-side
-state framework by hand (streaming chat, multi-step builders).
+comes from the Go JSON API. Base UI components come from Flag's shadcn/ui
+registry (React + Radix + Tailwind, themed by Flag tokens; registry URL in
+Flag's README): `npx shadcn add` copies them into the app, where they live and
+are reviewed like our own code. Build a component by hand only when the
+registry lacks it, then upstream it to Flag. Keep other runtime npm
+dependencies few and justified in AGENTS.md. Use Tier B only when Tier A would
+mean re-implementing a client-side state framework by hand (streaming chat,
+multi-step builders).
 
 **Both tiers:**
 

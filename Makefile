@@ -95,8 +95,17 @@ fmt-check:
 # The scanner stays @latest on purpose (upstream's documented invocation): its
 # advisory database is live anyway, and a pin nobody bumps silently loses
 # reachability-analysis improvements.
+#
+# The scanner must be built with at least go.mod's Go: one built with an
+# older toolchain refuses every package ("package requires newer Go version").
+# Under GOTOOLCHAIN=auto, `go run pkg@latest` picks the newer of the local Go
+# and the scanner's own minimum — not go.mod's — so a box whose Go is older
+# than the pin (a cloud session, a distro Go) failed here while CI passed.
+# `<go.mod version>+auto` sets that floor; an explicit GOTOOLCHAIN is kept.
+GO_MOD_TOOLCHAIN := go$(shell sed -n 's/^go //p' go.mod)
 govulncheck:
-	$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	GOTOOLCHAIN=$(if $(filter auto,$(GOTOOLCHAIN)),$(GO_MOD_TOOLCHAIN)+auto,$(GOTOOLCHAIN)) \
+		$(GO) run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
 shellcheck:
 	@for s in $(SHELL_SCRIPTS); do bash -n "$$s" || exit 1; done

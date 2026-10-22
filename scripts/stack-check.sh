@@ -16,8 +16,8 @@
 #   4. npm trees: no server frameworks (next, express, ...); Tier A has no runtime deps.
 set -euo pipefail
 
-STACK_CHECK_VERSION=2
-STANDARD_SHA=686c0e22ef25ce4783a4d7da70c43ac80899f529cddebdf6b6efc7bd91bd75d8
+STACK_CHECK_VERSION=5
+STANDARD_SHA=5b3a1c9dab098277570a37d58366b0802d4378370f9717d48743c386b194bdbb
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CONF="$ROOT/stack.conf"
 fail=0
@@ -54,22 +54,35 @@ else
 fi
 
 # 3. Third-party hosts in served files. Links (<a href>, rel=canonical) are
-# fine; loading a script, stylesheet, font, icon or import from elsewhere is not.
-host='[[:space:]]*["'"'"'(]?[[:space:]]*(https?:)?//'
+# fine; loading a script, stylesheet, font, icon or module from elsewhere is
+# not. Perl reads each file whole, so tags split across lines and whitespace
+# around "=" are caught too.
+# shellcheck disable=SC2016 # the perl program is single-quoted on purpose
 for d in $web; do
   [ -d "$ROOT/$d" ] || { err "stack.conf: web dir $d does not exist"; continue; }
   while IFS= read -r hit; do
     err "remote asset in served file: ${hit#"$ROOT"/}"
-  done < <(grep -rEnoi --include='*.html' --include='*.tmpl' --include='*.gohtml' --include='*.css' --include='*.js' --include='*.mjs' --include='*.tsx' --include='*.ts' --include='*.jinja' --include='*.j2' \
-           --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=test --exclude-dir=tests --exclude-dir=e2e --exclude-dir=testdata \
-           "<script[^>]*[[:space:]]src=$host|<link[^>]*>|@import$host|url\($host|\bimport[[:space:]]*\($host|\bfrom$host" "$ROOT/$d" \
-         | grep -Ei "<script|@import|url\(|\bimport[[:space:]]*\(|\bfrom[[:space:]]*[\"']|rel=[\"']?(stylesheet|preload|modulepreload|icon|shortcut icon|apple-touch-icon|manifest)" \
-         | grep -Ei "(src|href)=[\"']?(https?:)?//|@import|url\(|\bimport[[:space:]]*\(|\bfrom[[:space:]]*[\"']" \
-         | grep -Ei "(https?:)?//" \
-         | grep -viE '//(localhost|127\.0\.0\.1)' || true)
+  done < <(find "$ROOT/$d" \( -name node_modules -o -name dist -o -name test -o -name tests -o -name e2e -o -name testdata \) -prune -o -type f \
+             \( -name '*.html' -o -name '*.tmpl' -o -name '*.gohtml' -o -name '*.css' -o -name '*.js' -o -name '*.mjs' -o -name '*.ts' -o -name '*.tsx' -o -name '*.jinja' -o -name '*.j2' \) -print0 \
+           | xargs -0 -r perl -0777 -ne '
+               my $f = $ARGV; my $remote = qr{["'"'"'(]?\s*(?:https?:)?//(?!localhost\b|127\.0\.0\.1\b)[^\s"'"'"')>]+}i;
+               while (/<script\b[^>]*?\bsrc\s*=\s*$remote/gis) { (my $m = $&) =~ s/\s+/ /g; print "$f: $m\n"; }
+               while (/(<link\b[^>]*>)/gis) { my $t = $1;
+                 if ($t =~ /\brel\s*=\s*["'"'"']?[^"'"'"'>]*\b(?:stylesheet|preload|modulepreload|icon|apple-touch-icon|manifest)\b/i && $t =~ /\bhref\s*=\s*$remote/i) {
+                   (my $one = $t) =~ s/\s+/ /g; print "$f: $one\n"; } }
+               while (/(?:\@import\s*(?:url\()?|\burl\(|\bimport\s*\(|\bfrom)\s*$remote/gi) { (my $m = $&) =~ s/\s+/ /g; print "$f: $m\n"; }
+             ' || true)
 done
 
-# 4. npm trees.
+# 4. npm trees. Every package.json must be declared in stack.conf, so adding
+# one cannot slip past these rules (recorded fixtures under testdata/ or
+# fixtures/ are data, not npm trees).
+while IFS= read -r pj; do
+  rel="$(dirname "${pj#"$ROOT"/}")"; [ "$rel" = "$ROOT" ] && rel=.
+  [ "$pj" = "$ROOT/package.json" ] && rel=.
+  case " $npm " in *" $rel "*) ;; *) err "$rel/package.json is not declared in stack.conf npm=" ;; esac
+done < <(find "$ROOT" \( -name node_modules -o -name .git -o -name .flag -o -name dist -o -name testdata -o -name fixtures \) -prune -o -name package.json -type f -print)
+
 servers='"(next|express|koa|fastify|@hapi/hapi|@remix-run/[a-z-]+|nuxt|@sveltejs/kit|astro|hono)"[[:space:]]*:'
 for d in $npm; do
   pj="$ROOT/$d/package.json"
@@ -80,5 +93,5 @@ for d in $npm; do
   fi
 done
 
-if [ "$fail" -ne 0 ]; then echo "stack-check: FAILED (frontend standard v1, tier $tier)" >&2; exit 1; fi
-echo "stack-check v$STACK_CHECK_VERSION: ok (frontend standard v1, tier $tier, backend ${backend:-go})"
+if [ "$fail" -ne 0 ]; then echo "stack-check: FAILED (frontend standard v2, tier $tier)" >&2; exit 1; fi
+echo "stack-check v$STACK_CHECK_VERSION: ok (frontend standard v2, tier $tier, backend ${backend:-go})"
