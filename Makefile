@@ -5,7 +5,7 @@
 # scripts/bootstrap.sh and scripts/update.sh run `make build`, and CI runs the
 # same targets, so a fix to how Lens is built lands in one place.
 
-.PHONY: all build compile test test-race test-cover vet lint fmt fmt-check govulncheck shellcheck version ci clean help
+.PHONY: all build compile test test-race test-cover vet lint fmt fmt-check govulncheck shellcheck stack-check version ci clean help
 
 # GOTOOLCHAIN=auto: the operator does NOT have to hand-install the Go release
 # go.mod pins. That pin moves with every Go security release (govulncheck
@@ -32,9 +32,11 @@ COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
 VERSION_PKG := github.com/ElcanoTek/lens/internal/version
 LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT)
 
-# The deploy scripts ShellCheck lints (CI's shell job runs this target).
+# The shell scripts ShellCheck lints (CI's shell job runs this target): the
+# deploy scripts, the shared frontend-standard tooling and the cloud-session hook.
 SHELL_SCRIPTS := install.sh scripts/bootstrap.sh scripts/update.sh scripts/host.sh \
-	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh
+	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh \
+	scripts/flag-sync.sh scripts/stack-check.sh .claude/hooks/session-start.sh
 
 all: build
 
@@ -51,6 +53,7 @@ help:
 	@echo "  make fmt-check    fail when any file needs gofmt"
 	@echo "  make govulncheck  known-vulnerability scan (CI's go job)"
 	@echo "  make shellcheck   bash -n + shellcheck the deploy scripts"
+	@echo "  make stack-check  frontend standard: AGENTS.md block, flag.lock, no CDNs"
 	@echo "  make version      print what a build from this tree calls itself"
 	@echo "  make ci           everything CI's go + shell jobs run"
 
@@ -99,7 +102,14 @@ shellcheck:
 	@for s in $(SHELL_SCRIPTS); do bash -n "$$s" || exit 1; done
 	shellcheck -x -S warning $(SHELL_SCRIPTS)
 
-ci: fmt-check build vet lint test-race govulncheck shellcheck
+# The Elcano frontend standard (AGENTS.md): the shared block is intact,
+# static/design-system matches flag.lock, and nothing loads from a CDN.
+# Offline; no flag checkout needed. scripts/flag-sync.sh and
+# scripts/stack-check.sh are shared verbatim across Elcano repos.
+stack-check:
+	scripts/stack-check.sh
+
+ci: stack-check fmt-check build vet lint test-race govulncheck shellcheck
 
 clean:
 	rm -rf bin coverage.out

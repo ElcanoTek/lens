@@ -7,6 +7,48 @@ Orientation for anyone (human or agent) making changes here. Companion docs: [`C
 // Copyright (c) 2026 ElcanoTek, Inc.
 ```
 
+<!-- BEGIN:elcano-frontend-standard v1 (shared verbatim by every Elcano repo; scripts/stack-check.sh pins its hash; change it everywhere or nowhere) -->
+## Elcano frontend standard (v1)
+
+Every Elcano web product follows one of two tiers. `stack.conf` at the repo
+root declares which, and `scripts/stack-check.sh` (run by CI) enforces it.
+
+**The server is Go and serves everything.** The browser talks to one origin:
+the Go binary serves the HTML, the static assets and the JSON API, and it owns
+sign-in (the `elcano_auth` cookie from the auth service), sessions, CSRF and
+security headers. There is no Node, Python or other JavaScript server in
+production. Static files ship inside the binary with `go:embed`; Caddy only
+terminates TLS and reverse-proxies to Go.
+
+**Tier A — server-rendered (the default).** Go `html/template` pages, plain
+CSS that reads Flag tokens, and small plain-JavaScript modules (no framework,
+no bundler, no transpiler, no npm runtime dependencies). npm may appear only
+as a dev dependency for browser tests (Playwright, axe). Pick Tier A unless the
+page is a long-lived, state-heavy application.
+
+**Tier B — interactive app.** React + TypeScript built by Vite into a static
+bundle that the Go server embeds and serves (same origin, so no CORS). No
+server-side rendering, no Next.js, no runtime server code in TypeScript; data
+comes from the Go JSON API. Keep runtime npm dependencies few and justified in
+AGENTS.md. Use Tier B only when Tier A would mean re-implementing a client-side
+state framework by hand (streaming chat, multi-step builders).
+
+**Both tiers:**
+
+- Design comes from Flag (`ElcanoTek/flag`). Vendored Flag files are listed in
+  `flag.lock` with their hashes; `scripts/flag-sync.sh check` fails CI on any
+  hand edit. Update with `scripts/flag-sync.sh sync`, never by editing in place.
+  Product styling lives outside the vendored directories and reads tokens.
+- No third-party CDNs: every script, stylesheet and font is served by our own
+  binary. Fonts are Flag's Nebula Sans and Hack only.
+- A strict Content-Security-Policy (no `unsafe-inline` scripts, no remote
+  script hosts), `X-Content-Type-Options: nosniff`, and `frame-ancestors`.
+- Hashed or versioned asset URLs with long-lived caching; HTML is `no-cache`.
+- Accessibility is tested (Playwright + axe where a browser suite exists).
+- Exceptions (a non-Go backend, an extra runtime dependency) are written down
+  in this repo's AGENTS.md with the reason, not left implicit.
+<!-- END:elcano-frontend-standard -->
+
 ## Project Overview
 
 Elcano Lens is a concurrent content analysis pipeline that classifies **websites**, **iOS apps**, **Android apps**, and **CTV (Connected TV) apps** into advertising quality tiers using LLM classification via OpenRouter. It outputs CSV with IAB content taxonomy categories, quality ratings, and metadata.
@@ -19,7 +61,12 @@ It is one Go binary, `lens` (`./cmd/lens`, built with `make build` → `bin/lens
 make build                    # bin/lens, version-stamped from git
 make test                     # go test ./...  (make test-race is what CI runs)
 make lint                     # golangci-lint v2.14.0
-make ci                       # fmt-check build vet lint test-race govulncheck shellcheck
+make stack-check              # frontend standard: AGENTS.md block, flag.lock, no CDNs (offline)
+make ci                       # stack-check fmt-check build vet lint test-race govulncheck shellcheck
+
+# Vendored Flag design system (needs a flag checkout; ../flag by default)
+scripts/flag-sync.sh status   # is static/design-system behind flag?
+scripts/flag-sync.sh sync     # re-copy every locked file from flag, rewrite flag.lock
 
 # Run website analysis (auto mode, input.csv → output.csv)
 ./bin/lens run
@@ -90,6 +137,8 @@ The web service (`lens serve`) runs each job as a `lens run` subprocess of its o
 |---|---|
 | `cmd/lens` | The single binary: dispatches `run`, `serve`, `manage`, `token`, `access`, `submit`, `migrate-access-db` and the operator commands |
 | `assets.go` (package `lens`) | `go:embed` of `static/`, `templates/`, `content_taxonomy.tsv` and `iana_tlds.txt` — the binary carries all of them |
+| `static/`, `templates/` | The dashboard frontend (Tier A): product CSS/JS at the top of `static/`, vendored Flag files in `static/design-system/` (see `flag.lock`) |
+| `scripts/flag-sync.sh`, `scripts/stack-check.sh`, `stack.conf`, `flag.lock` | The Elcano frontend standard's shared tooling and this repo's declaration; see [Frontend](#frontend-tier-a-and-the-vendored-flag-design-system) |
 | `internal/pipeline` | `lens run` flags (`cli.go`) and `lens manage` (`manage.go`); the orchestrator (input loading, type detection, concurrent processing, auto-mode passes, signal handling, de-duplication); the website, app and CTV processors behind small interfaces so tests drive them with fakes |
 | `internal/config` | Defaults → `config.json` → environment; legacy-key and dead-model upgrades; `LoadDotenv` |
 | `internal/dotenv` | `.env` reading/writing, a port of python-dotenv 1.2.3 (BSD-3, `internal/dotenv/LICENSE`) |
@@ -184,9 +233,13 @@ Scraping the hardened sites through a residential proxy is not currently support
 
 The direct pass reads the body to EOF under a size cap (`readBody` in `internal/scrape`: `io.ReadAll(io.LimitReader(...))`). Never replace that with a single `Read` call: a single read returns whatever is buffered (the Python release's `aiohttp` `read(n)` returned the first 128 KiB chunk), which silently truncated modern pages to their `<head>` and made real sites fail validation as "content too short".
 
-### The vendored Flag design system
+### Frontend: Tier A, and the vendored Flag design system
 
-`static/design-system/` is a **copy** of `ElcanoTek/flag`'s `design-system/` directory, not a package — there is no npm dependency and nothing syncs it automatically. Re-vendor by copying from the flag repo, and never hand-edit a file under it: the next copy silently reverts the edit. Product styling belongs in `static/styles.css`, which reads design tokens and never names a family, colour or radius itself. The tree is embedded in the binary (`assets.go`), so a change needs a rebuild.
+Lens is **Tier A** of the Elcano frontend standard above (`stack.conf`: `tier=A`, `web=static templates`, `backend=go`): two `html/template` pages (`templates/index.html`, `templates/signed_out.html`), plain CSS (`static/styles.css`) and two plain-JS files (`static/main.js`, `static/custom-categories.js`). There is no npm tree, bundler or framework. `internal/web` serves it all from the embedded tree: every asset URL goes through the `static_url` template helper, which appends `?v=<content hash of static/>` (`StaticVersion`), and `headerPolicy` (`internal/web/middleware.go`) sets the security headers and cache policy on every response — pages get a per-response nonce CSP (`script-src 'self' 'nonce-…'`, `style-src 'self'`, `frame-ancestors 'none'`; the one inline script is the nonce'd theme bootstrap, and there are no inline handlers or `style` attributes), everything else the closed `default-src 'none'` policy; `nosniff` and `X-Frame-Options: DENY` everywhere; versioned assets `immutable` for a year, unversioned ones `no-cache`, HTML and JSON `no-store`. `TestEveryResponseCarriesTheFrontendStandardHeaders` pins that.
+
+`static/design-system/` is a **vendored copy** of files from `ElcanoTek/flag`'s `design-system/` directory, not a package. `flag.lock` lists every vendored file with its sha256 and the flag commit it came from: whole `fonts/`, `tokens/`, `theme/` and `icons/` directories, plus the two logos Lens uses (`logos/lens-favicon.svg`, `logos/elcano-mark-primary.svg`). `scripts/flag-sync.sh check` (part of `make stack-check`, run in CI) fails on any hand edit or on an unlocked file inside a locked directory. **Never edit a file under `static/design-system/`**: to update, check out flag next to this repo (`../flag`, or pass its path / set `FLAG_DIR`), run `scripts/flag-sync.sh status` to see what changed, `scripts/flag-sync.sh sync` to re-copy every locked file (locked directories are mirrored: files flag added appear, files it removed go) and rewrite the lock, then run `make test` — `TestTemplatesReferenceOnlyShippedAssetsAndIcons` fails if a template names an asset or a `core-icons.svg#id` symbol that no longer ships — and render the dashboard to check nothing moved. CI checks this two ways: the PR gate is `make stack-check` (offline: hash and hand-edit detection, no flag checkout), and the weekly `Flag drift` workflow (`.github/workflows/flag-drift.yml`, shared verbatim across repos apart from the pinned checkout action) checks out flag `main` into `.flag/` and runs `scripts/flag-sync.sh status` against it, so a red run there means upstream moved, not that this repo is broken — fix it with a `sync` PR. To vendor another flag file, `scripts/flag-sync.sh add <flag-path> static/design-system/<flag-path>`. If Lens needs something flag lacks or gets wrong, the fix goes into flag first; do not patch the copy. `scripts/flag-sync.sh` and `scripts/stack-check.sh` (and `.github/workflows/flag-drift.yml`) are shared verbatim by every Elcano repo — don't fork them here, and don't add an SPDX header to them or to the generated `flag.lock`; a bug in them is fixed in every repo at once.
+
+Product styling belongs in `static/styles.css`, which reads design tokens and never names a family, colour or radius itself. The tree is embedded in the binary (`assets.go`), so a change needs a rebuild. Flag is MIT-licensed (listed in `NOTICE`); the logos remain ElcanoTek trademarks.
 
 Elcano ships exactly **two typefaces**, everywhere: **Nebula Sans** (SIL OFL 1.1) for UI, body and headings, and **Hack** (MIT) for code, logs and tabular output. `static/design-system/fonts/fonts.css` is the one font sheet — it declares every `@font-face` and sets `--font-brand` / `--font-code-brand` / `--font-code-ui-brand`, which `tokens/design-tokens.css` reads. Both licences require the licence text to travel with the binaries, so `fonts/nebula-sans/OFL.txt` and `fonts/hack/LICENSE.md` must be copied with the font files and stay listed in `NOTICE`. Nothing is CDN-loaded; there is no Google Fonts request in the dashboard. `TestBundledFontsAreTheTwoBrandFaces` (`internal/web/server_test.go`) fails if a third face, a dead `url()`, a missing licence or a CDN host appears.
 
@@ -289,13 +342,15 @@ from Python's `html.entities.html5`.
 ## Testing
 
 - **Framework**: the standard `testing` package; `httptest` servers stand in for OpenRouter, the stores, WebDriver and Auth. No third-party test libraries.
-- **CI** (`.github/workflows/tests.yml`): `go` job — `make fmt-check`, `go build ./...`, `make build` + `./bin/lens --version` (must name `HEAD`), `go vet`, `go test -race -count=1 ./...`, the Python → Go update-path test as root, `make govulncheck`; `lint` job — golangci-lint v2.14.0 (full gate); `shell` job — `make shellcheck`; `deploy-build` job — `lens_build` from `scripts/lib/deploy.sh` with Go 1.24 and stable (`GOTOOLCHAIN=auto` must fetch the pin), then the relocated binary must run from `/`.
+- **CI** (`.github/workflows/tests.yml`): `stack` job — `make stack-check` (frontend standard, offline); `go` job — `make fmt-check`, `go build ./...`, `make build` + `./bin/lens --version` (must name `HEAD`), `go vet`, `go test -race -count=1 ./...`, the Python → Go update-path test as root, `make govulncheck`; `lint` job — golangci-lint v2.14.0 (full gate); `shell` job — `make shellcheck`; `deploy-build` job — `lens_build` from `scripts/lib/deploy.sh` with Go 1.24 and stable (`GOTOOLCHAIN=auto` must fetch the pin), then the relocated binary must run from `/`.
 - **Classification smoke** (`.github/workflows/test-classification.yml`): three parallel jobs (test-urls, test-apps, test-ctv) run `./bin/lens run --scrape-mode direct --quiet` (plus `--ctv`) on 10 sample items each, on push/PR to main/master. They need the `OPENROUTER_API_KEY` secret and self-skip without it (Dependabot PRs); the build still runs.
 - **CodeQL** (`codeql.yml`): Go and Actions, on PRs and weekly.
+- **Flag drift** (`flag-drift.yml`): weekly (and on demand) `scripts/flag-sync.sh status` against flag `main`; reports upstream changes, never gates a PR.
 - **No key needed**: nothing reads `OPENROUTER_API_KEY` at package load; tests that need it call `t.Setenv`.
 - **CTV tests**: the two-step pipeline with fakes; platform detection, news routing, markdown stripping, research truncation (`internal/openrouter/ctv_test.go`, `internal/pipeline`).
 - **Golden fixtures** (`testdata/` in `htmldom`, `detect`, `openrouter`, `tabular`, and inline expectations elsewhere) were recorded from the Python release — HTML trees, detection results, prompts and request bodies, spreadsheet parsing — and pin cross-release compatibility.
 - **Filesystem isolation is by construction**: no package keeps a path global. The Lens home is an argument (`web.Options{Home}`, `jobs.NewManager(home)`) or `LENS_HOME`, and `lens run` resolves its relative defaults against the working directory, so tests build everything under `t.TempDir()` and pass it in, or use `t.Setenv("LENS_HOME", …)` / `t.Chdir(t.TempDir())`. A test therefore cannot write into a developer's gitignored `managed-files/`, `.env` or `config.json` — the failure mode that once let a Python test silently replace a real operator's job history. Keep new tests that way; never default to the repository's working directory. This is prevention, not detection: do not replace it with a check that inspects `managed-files/` afterwards (that reports damage instead of stopping it, and false-positives whenever a local dev server is running).
+- **Claude Code cloud sessions**: `.claude/hooks/session-start.sh` (registered in `.claude/settings.json`, runs only when `CLAUDE_CODE_REMOTE=true`) downloads the modules, pre-builds, and installs golangci-lint v2.14.0 into `$(go env GOPATH)/bin` (put first on `PATH`), so `make test`, `make lint`, `make shellcheck` and `make stack-check` work out of the box.
 - **Deploy scripts**: `internal/deploytest` sources and runs `install.sh`, `scripts/*.sh` and `scripts/lib/*.sh` in a scratch tree with stub `dnf`/`systemctl`/`podman`/… on `PATH`, including a full `update.sh` run and the first Python → Go migration.
 
 ## Deployment

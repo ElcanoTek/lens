@@ -92,6 +92,7 @@ make vet          # go vet ./...
 make lint         # golangci-lint run (.golangci.yml)
 make govulncheck  # known vulnerabilities reachable from Lens
 make shellcheck   # bash -n + shellcheck the deploy scripts
+make stack-check  # Elcano frontend standard: AGENTS.md block, flag.lock, no CDNs
 make ci           # everything CI's go + shell jobs run
 ```
 
@@ -169,7 +170,7 @@ A good PR:
   `docs/DEPLOYMENT.md` for anything operational, `config.json.example` and
   `.env.example` for any new setting (the examples are meant to document
   *every* key the code reads).
-- Leaves `make fmt-check vet lint test-race` green (and `make shellcheck`
+- Leaves `make stack-check fmt-check vet lint test-race` green (and `make shellcheck`
   when it touches the deploy scripts).
 
 ### Things that need extra care
@@ -182,6 +183,10 @@ A good PR:
   risk without helping, and have been deliberately removed before.
 - **`deploy/` and `scripts/`** — these run as root on real hosts. Keep them
   re-runnable, and update `docs/DEPLOYMENT.md` in the same PR.
+- **`static/design-system/`** — vendored from the Flag design system and
+  locked by hash in `flag.lock`. Never edit it in place; update it with
+  `scripts/flag-sync.sh sync` against a flag checkout (see "Frontend" in
+  [`AGENTS.md`](AGENTS.md)). Product styling goes in `static/styles.css`.
 - **`content_taxonomy.tsv`** — third-party reference data (IAB Tech Lab).
   Don't hand-edit rows; replace the file from upstream.
 - **Never commit** `config.json`, `output.csv`, `progress.json`, `.env`,

@@ -354,6 +354,99 @@ func TestBundledFontsAreTheTwoBrandFaces(t *testing.T) {
 	}
 }
 
+// The Elcano frontend standard's header rules (AGENTS.md): every response —
+// pages, JSON, assets, errors — carries a CSP with frame-ancestors and no
+// unsafe-inline script, nosniff, and the cache policy that matches it (HTML
+// and API never stored, versioned assets immutable, unversioned revalidated).
+func TestEveryResponseCarriesTheFrontendStandardHeaders(t *testing.T) {
+	h := newHarness(t, false)
+	version := h.srv.StaticVersion()
+	sprite := "/static/design-system/icons/core-icons.svg"
+	for _, tc := range []struct {
+		path   string
+		status int
+		page   bool
+		cache  string
+	}{
+		{"/", 200, true, "no-store"},
+		{"/signed-out", 200, true, "no-store"},
+		{"/health", 200, false, "no-store"},
+		{"/api/jobs/live", 200, false, "no-store"},
+		{"/nope", 404, false, "no-store"},
+		{sprite + "?v=" + version, 200, false, "public, max-age=31536000, immutable"},
+		{sprite, 200, false, "no-cache"},
+		{"/static/nope.js?v=" + version, 404, false, "public, max-age=31536000, immutable"},
+	} {
+		resp, _ := h.get(tc.path)
+		csp := resp.Header.Get("Content-Security-Policy")
+		if resp.StatusCode != tc.status {
+			t.Errorf("%s: status %d", tc.path, resp.StatusCode)
+		}
+		if !strings.Contains(csp, "frame-ancestors 'none'") || strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
+			t.Errorf("%s: csp %q", tc.path, csp)
+		}
+		if tc.page {
+			if !regexp.MustCompile(`script-src 'self' 'nonce-[A-Za-z0-9_-]+';`).MatchString(csp) {
+				t.Errorf("%s: page csp %q", tc.path, csp)
+			}
+		} else if csp != CSPNonPage {
+			t.Errorf("%s: non-page csp %q", tc.path, csp)
+		}
+		if resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("X-Frame-Options") != "DENY" {
+			t.Errorf("%s: %v", tc.path, resp.Header)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != tc.cache {
+			t.Errorf("%s: Cache-Control %q, want %q", tc.path, got, tc.cache)
+		}
+	}
+}
+
+// Every asset a template or product script names must ship, and every
+// <use href="…core-icons.svg#id"> must name a symbol in the vendored sprite —
+// a Flag re-sync (scripts/flag-sync.sh sync) that renames or drops an icon
+// fails here instead of rendering an empty box.
+func TestTemplatesReferenceOnlyShippedAssetsAndIcons(t *testing.T) {
+	static, _ := fs.Sub(lens.Static, "static")
+	spriteBytes, err := fs.ReadFile(static, "design-system/icons/core-icons.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbols := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<symbol[^>]*\sid="([^"]+)"`).FindAllStringSubmatch(string(spriteBytes), -1) {
+		symbols[m[1]] = true
+	}
+	sources := map[string]string{}
+	tmpls, _ := fs.Glob(lens.Templates, "templates/*.html")
+	for _, p := range tmpls {
+		b, _ := fs.ReadFile(lens.Templates, p)
+		sources[p] = string(b)
+	}
+	scripts, _ := fs.Glob(static, "*.js")
+	for _, p := range scripts {
+		b, _ := fs.ReadFile(static, p)
+		sources[p] = string(b)
+	}
+	assetRe := regexp.MustCompile(`static_url "([^"]+)"`)
+	iconRe := regexp.MustCompile(`core-icons\.svg(?:" }})?#([A-Za-z0-9_-]+)`)
+	icons := 0
+	for p, text := range sources {
+		for _, m := range assetRe.FindAllStringSubmatch(text, -1) {
+			if st, err := fs.Stat(static, m[1]); err != nil || st.IsDir() {
+				t.Errorf("%s: static_url %q is not shipped", p, m[1])
+			}
+		}
+		for _, m := range iconRe.FindAllStringSubmatch(text, -1) {
+			icons++
+			if !symbols[m[1]] {
+				t.Errorf("%s: icon #%s is not in core-icons.svg", p, m[1])
+			}
+		}
+	}
+	if icons == 0 {
+		t.Fatal("no icon references found; the pattern is stale")
+	}
+}
+
 func TestNumericReadoutsRequestTabularFigures(t *testing.T) {
 	css, _ := fs.ReadFile(lens.Static, "static/styles.css")
 	if bytes.Contains(css, []byte("proportional-nums")) {

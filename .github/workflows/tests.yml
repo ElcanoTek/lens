@@ -18,6 +18,20 @@ permissions:
   contents: read
 
 jobs:
+  # The Elcano frontend standard (AGENTS.md): the shared block is intact,
+  # static/design-system matches flag.lock byte for byte, and no served file
+  # loads from another host. Offline and seconds long; no flag checkout.
+  stack:
+    name: frontend standard (stack-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: make stack-check
+        run: make stack-check
+
   go:
     name: go build + vet + test
     runs-on: ubuntu-latest

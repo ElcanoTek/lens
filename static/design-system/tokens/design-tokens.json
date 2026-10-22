@@ -17,6 +17,7 @@
       "title": "1.75rem",
       "subtitle": "1.125rem",
       "bodyLarge": "1.0625rem",
+      "bodyMedium": "0.9375rem",
       "body": "1rem",
       "caption": "0.8125rem",
       "overline": "0.75rem"
@@ -109,6 +110,34 @@
         "bg": "rgba(108, 118, 130, 0.16)",
         "border": "rgba(108, 118, 130, 0.48)"
       }
+    },
+    "picker": {
+      "accentStrong": "#5956d5",
+      "onAccentStrong": "#eef0ff",
+      "textSubtle": "#9c96ae",
+      "divider": "#3a3147",
+      "selectedBg": "rgba(89, 86, 213, 0.2)",
+      "selectedBorder": "rgba(157, 167, 239, 0.4)",
+      "rowActiveBorder": "#9da7ef",
+      "pillBorder": "rgba(255, 255, 255, 0.14)",
+      "pillHoverBg": "rgba(255, 255, 255, 0.06)",
+      "switchTrackOn": "var(--color-accent-strong)",
+      "switchTrackOff": "#7a7392",
+      "switchKnob": "#f4f5f9",
+      "matchBg": "rgba(157, 167, 239, 0.22)",
+      "stateOk": "#4ecb8f",
+      "stateWarn": "#e0a94a",
+      "stateDeny": "#e08aa3",
+      "panelOkBg": "rgba(78, 203, 143, 0.12)",
+      "panelOkBorder": "rgba(78, 203, 143, 0.3)",
+      "panelWarnBg": "rgba(224, 169, 74, 0.12)",
+      "panelWarnBorder": "rgba(224, 169, 74, 0.32)",
+      "panelDenyBg": "rgba(224, 138, 163, 0.12)",
+      "panelDenyBorder": "rgba(224, 138, 163, 0.32)",
+      "iconTile": "rgba(157, 167, 239, 0.14)",
+      "railBg": "rgba(0, 0, 0, 0.16)",
+      "scrim": "rgba(26, 11, 30, 0.55)",
+      "link": "#9da7ef"
     }
   },
   "gradient": {
@@ -160,7 +189,10 @@
     "md": "0 12px 24px rgba(0, 0, 0, 0.34)",
     "lg": "0 22px 54px rgba(0, 0, 0, 0.52)",
     "section": "0 6px 16px rgba(0, 0, 0, 0.22)",
-    "controlSelected": "0 0 0 2px var(--color-status-running-border)"
+    "controlSelected": "0 0 0 2px var(--color-status-running-border)",
+    "popover": "0 24px 60px -22px rgba(0, 0, 0, 0.55)",
+    "switchKnob": "none",
+    "focusRingPicker": "0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent)"
   },
   "layout": {
     "container": {
@@ -270,6 +302,33 @@
             "bg": "rgba(108, 118, 130, 0.16)",
             "border": "rgba(108, 118, 130, 0.34)"
           }
+        },
+        "picker": {
+          "accentStrong": "#6262a0",
+          "onAccentStrong": "#ffffff",
+          "textSubtle": "#586f7c",
+          "divider": "#d9deec",
+          "selectedBg": "#eaedf5",
+          "selectedBorder": "#c7cbec",
+          "rowActiveBorder": "#6262a0",
+          "pillBorder": "#d7d5e6",
+          "pillHoverBg": "#f1f2f8",
+          "switchTrackOff": "#80829e",
+          "switchKnob": "#ffffff",
+          "matchBg": "#9da7ef",
+          "stateOk": "#1b7950",
+          "stateWarn": "#8e611e",
+          "stateDeny": "#9c546a",
+          "panelOkBg": "#f0f9f4",
+          "panelOkBorder": "#cfe8da",
+          "panelWarnBg": "#fcf5e8",
+          "panelWarnBorder": "#f0debe",
+          "panelDenyBg": "rgba(178, 96, 121, 0.12)",
+          "panelDenyBorder": "rgba(178, 96, 121, 0.32)",
+          "iconTile": "#eef0fb",
+          "railBg": "#fafafd",
+          "scrim": "rgba(252, 252, 253, 0.55)",
+          "link": "#5f5f97"
         }
       },
       "gradient": {
@@ -292,7 +351,10 @@
         "sm": "0 6px 14px rgba(40, 52, 86, 0.12)",
         "md": "0 10px 18px rgba(38, 55, 92, 0.16)",
         "lg": "0 16px 34px rgba(38, 55, 92, 0.2)",
-        "section": "0 4px 10px rgba(40, 52, 86, 0.08)"
+        "section": "0 4px 10px rgba(40, 52, 86, 0.08)",
+        "popover": "0 24px 60px -22px rgba(36, 27, 49, 0.2)",
+        "switchKnob": "0 1px 2px rgba(26, 11, 30, 0.28)",
+        "focusRingPicker": "0 0 0 2px var(--color-white), 0 0 0 4px var(--color-accent-strong)"
       },
       "focusRing": "0 0 0 2px var(--color-white), 0 0 0 4px var(--color-accent)"
     }
