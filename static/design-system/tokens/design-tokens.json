@@ -59,7 +59,8 @@
     "border": {
       "default": "rgba(114, 114, 171, 0.35)",
       "strong": "rgba(114, 114, 171, 0.55)",
-      "subtle": "rgba(255, 255, 255, 0.14)"
+      "subtle": "rgba(255, 255, 255, 0.14)",
+      "control": "#7A7392"
     },
     "text": {
       "primary": "#FFFFFF",
@@ -143,8 +144,8 @@
       "rowActiveBorder": "#9da7ef",
       "pillBorder": "rgba(255, 255, 255, 0.14)",
       "pillHoverBg": "rgba(255, 255, 255, 0.06)",
-      "switchTrackOn": "var(--color-accent-strong)",
-      "switchTrackOff": "#7a7392",
+      "switchTrackOn": "#7976dd",
+      "switchTrackOff": "#837d9a",
       "switchKnob": "#f4f5f9",
       "matchBg": "rgba(157, 167, 239, 0.22)",
       "stateOk": "#4ecb8f",
@@ -235,6 +236,9 @@
     "base": "200ms ease"
   },
   "focusRing": "0 0 0 2px var(--color-bg), 0 0 0 4px var(--color-accent)",
+  "focusRingDay": "inset 0 0 0 2px var(--color-accent)",
+  "focusRingDayOnFill": "inset 0 0 0 2px var(--color-on-primary-fill)",
+  "focusRingDayOnRange": "inset 0 0 0 2px var(--color-on-accent-strong)",
   "themes": {
     "contract": {
       "rootSelector": "html[data-theme='<mode>']",
@@ -265,12 +269,13 @@
         "surface": {
           "default": "#FFFFFF",
           "elevated": "#E9EEFC",
-          "inset": "rgba(38, 55, 92, 0.045)"
+          "inset": "#EEF1F2"
         },
         "border": {
           "default": "rgba(38, 55, 92, 0.2)",
           "strong": "rgba(38, 55, 92, 0.32)",
-          "subtle": "rgba(38, 55, 92, 0.18)"
+          "subtle": "rgba(38, 55, 92, 0.18)",
+          "control": "#586F7C"
         },
         "text": {
           "primary": "#141824",
@@ -354,6 +359,7 @@
           "rowActiveBorder": "#6262a0",
           "pillBorder": "#d7d5e6",
           "pillHoverBg": "#f1f2f8",
+          "switchTrackOn": "var(--color-accent-strong)",
           "switchTrackOff": "#80829e",
           "switchKnob": "#ffffff",
           "matchBg": "#9da7ef",

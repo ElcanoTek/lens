@@ -250,7 +250,7 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		u := ref[1]
-		if !strings.Contains(u, "?v="+version) {
+		if !strings.HasPrefix(u, "/static/"+version+"/") {
 			t.Errorf("%s is unversioned", u)
 		}
 		if seen[u] {
@@ -265,6 +265,11 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	}
 	for _, tc := range []struct{ path, cache string }{
 		{"/static/main.js", "no-cache"},
+		{"/static/" + version + "/main.js", "public, max-age=31536000, immutable"},
+		// Another version's URL (a page cached before a deploy) serves the
+		// current bytes, so it must revalidate.
+		{"/static/0123456789ab/main.js", "no-cache"},
+		// The older query form still works.
 		{"/static/main.js?v=oldhash123", "no-cache"},
 		{"/static/main.js?v=" + version, "public, max-age=31536000, immutable"},
 	} {
@@ -284,6 +289,23 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	for _, p := range []string{"/static/", "/static/nope.js", "/static/design-system", "/static/..%2fgo.mod"} {
 		if resp, _ := h.get(p); resp.StatusCode != 404 {
 			t.Errorf("%s: %d", p, resp.StatusCode)
+		}
+	}
+	// Assets a stylesheet loads by relative url() inherit the version
+	// segment, so the font files are versioned and immutable too.
+	css := "/static/" + version + "/design-system/fonts/fonts.css"
+	_, sheet := h.get(css)
+	fontURLs := regexp.MustCompile(`url\(\s*"([^"]+\.woff2)"`).FindAllStringSubmatch(sheet, -1)
+	if len(fontURLs) == 0 {
+		t.Fatal("fonts.css names no woff2 files")
+	}
+	for _, m := range fontURLs {
+		ref, _ := url.Parse(m[1])
+		abs := (&url.URL{Path: css}).ResolveReference(ref).Path
+		resp, _ := h.get(abs)
+		if !strings.HasPrefix(abs, "/static/"+version+"/") || resp.StatusCode != 200 ||
+			resp.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" || resp.Header.Get("Content-Type") != "font/woff2" {
+			t.Errorf("font %s: %d %v", abs, resp.StatusCode, resp.Header)
 		}
 	}
 	// The version is content-derived: one byte changes it.
@@ -373,9 +395,13 @@ func TestEveryResponseCarriesTheFrontendStandardHeaders(t *testing.T) {
 		{"/health", 200, false, "no-store"},
 		{"/api/jobs/live", 200, false, "no-store"},
 		{"/nope", 404, false, "no-store"},
+		{"/static/" + version + sprite[len("/static"):], 200, false, "public, max-age=31536000, immutable"},
 		{sprite + "?v=" + version, 200, false, "public, max-age=31536000, immutable"},
 		{sprite, 200, false, "no-cache"},
-		{"/static/nope.js?v=" + version, 404, false, "public, max-age=31536000, immutable"},
+		// Errors on asset URLs are never immutable, versioned or not.
+		{"/static/" + version + "/nope.js", 404, false, "no-cache"},
+		{"/static/nope.js?v=" + version, 404, false, "no-cache"},
+		{"/static/nope.js", 404, false, "no-cache"},
 	} {
 		resp, _ := h.get(tc.path)
 		csp := resp.Header.Get("Content-Security-Policy")
@@ -398,6 +424,16 @@ func TestEveryResponseCarriesTheFrontendStandardHeaders(t *testing.T) {
 		if got := resp.Header.Get("Cache-Control"); got != tc.cache {
 			t.Errorf("%s: Cache-Control %q, want %q", tc.path, got, tc.cache)
 		}
+	}
+	// A wrong method on a real, versioned asset is an error too: no-cache.
+	if resp, _ := h.send(http.MethodPost, "/static/"+version+sprite[len("/static"):], nil, ""); resp.StatusCode != 405 || resp.Header.Get("Cache-Control") != "no-cache" {
+		t.Errorf("POST versioned asset: %d %q", resp.StatusCode, resp.Header.Get("Cache-Control"))
+	}
+	// A range of a versioned asset is still the immutable asset.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, h.ts.URL+"/static/"+version+sprite[len("/static"):], nil)
+	req.Header.Set("Range", "bytes=0-9")
+	if part, _ := roundTrip(t, h.client, req); part.StatusCode != http.StatusPartialContent || part.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Errorf("range of versioned asset: %d %q", part.StatusCode, part.Header.Get("Cache-Control"))
 	}
 }
 
