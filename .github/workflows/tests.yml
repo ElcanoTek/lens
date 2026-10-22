@@ -18,6 +18,20 @@ permissions:
   contents: read
 
 jobs:
+  # The Elcano frontend standard (AGENTS.md): the shared block is intact,
+  # static/design-system matches flag.lock byte for byte, and no served file
+  # loads from another host. Offline and seconds long; no flag checkout.
+  stack:
+    name: frontend standard (stack-check)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: make stack-check
+        run: make stack-check
+
   go:
     name: go build + vet + test
     runs-on: ubuntu-latest
@@ -113,8 +127,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # The pinned release from the Makefile (sha256-verified), the same one
+      # the cloud-session hook installs, not the runner's distro package.
       - name: Install ShellCheck
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: |
+          make shellcheck-install TOOLS_BIN="$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
       # bash -n + shellcheck -x -S warning over install.sh, scripts/*.sh and
       # scripts/lib/*.sh (the list lives in the Makefile).
       - name: Check deployment scripts

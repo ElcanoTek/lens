@@ -114,10 +114,11 @@ func lastToken(header string) string {
 }
 
 // hookWriter runs before() once, just before the status line goes out, so
-// header policy can depend on what the handler set (Content-Type).
+// header policy can depend on what the handler set (Content-Type) and on the
+// status code.
 type hookWriter struct {
 	http.ResponseWriter
-	before func(http.Header)
+	before func(h http.Header, status int)
 	wrote  bool
 }
 
@@ -128,7 +129,7 @@ func (w *hookWriter) WriteHeader(code int) {
 	}
 	if !w.wrote {
 		w.wrote = true
-		w.before(w.Header())
+		w.before(w.Header(), code)
 	}
 	w.ResponseWriter.WriteHeader(code)
 }
@@ -156,9 +157,15 @@ func (w *hookWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 // the cache policy on every response.
 //
 // Cache policy, backing the versioned asset URLs:
-//   - versioned /static URLs (?v=<content-hash>): immutable, cached for a
-//     year; a deploy changes the hash, which is a brand-new URL
-//   - unversioned /static URLs: always revalidate (defends direct links)
+//   - versioned /static URLs (/static/<content-hash>/…, or the older
+//     ?v=<content-hash>) at the current version that resolve (200, a 206
+//     range, or 304 on revalidation): immutable, cached for a year; a deploy
+//     changes the hash, which is a brand-new URL. An error on a versioned URL
+//     (404 for a missing asset, 405) is never immutable — it gets no-cache
+//     like any unversioned asset, so a fixed asset or a rollback is picked up.
+//   - unversioned /static URLs, and ones naming another (older) version,
+//     which serve the current bytes: always revalidate (defends direct
+//     links and pages cached before a deploy)
 //   - everything else (HTML, API): never stored, so the page that carries
 //     the asset versions is itself always fresh
 func headerPolicy(staticVersion string, next http.Handler) http.Handler {
@@ -168,11 +175,13 @@ func headerPolicy(staticVersion string, next http.Handler) http.Handler {
 		static := strings.HasPrefix(r.URL.Path, "/static")
 		versioned := false
 		if static {
-			if v := r.URL.Query()["v"]; len(v) > 0 && v[len(v)-1] == staticVersion {
+			if v, _ := splitStaticVersion(strings.TrimPrefix(r.URL.Path, "/static/")); v == staticVersion {
+				versioned = true
+			} else if v := r.URL.Query()["v"]; len(v) > 0 && v[len(v)-1] == staticVersion {
 				versioned = true
 			}
 		}
-		hw := &hookWriter{ResponseWriter: w, before: func(h http.Header) {
+		hw := &hookWriter{ResponseWriter: w, before: func(h http.Header, status int) {
 			if strings.HasPrefix(h.Get("Content-Type"), "text/html") {
 				h.Set("Content-Security-Policy", cspForPage(nonce))
 			} else if h.Get("Content-Security-Policy") == "" {
@@ -182,7 +191,7 @@ func headerPolicy(staticVersion string, next http.Handler) http.Handler {
 			setDefault(h, "X-Frame-Options", "DENY")
 			setDefault(h, "Referrer-Policy", "strict-origin-when-cross-origin")
 			switch {
-			case versioned:
+			case versioned && (status == http.StatusOK || status == http.StatusPartialContent || status == http.StatusNotModified):
 				h.Set("Cache-Control", "public, max-age=31536000, immutable")
 			case static:
 				h.Set("Cache-Control", "no-cache")

@@ -250,7 +250,7 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		u := ref[1]
-		if !strings.Contains(u, "?v="+version) {
+		if !strings.HasPrefix(u, "/static/"+version+"/") {
 			t.Errorf("%s is unversioned", u)
 		}
 		if seen[u] {
@@ -265,6 +265,11 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	}
 	for _, tc := range []struct{ path, cache string }{
 		{"/static/main.js", "no-cache"},
+		{"/static/" + version + "/main.js", "public, max-age=31536000, immutable"},
+		// Another version's URL (a page cached before a deploy) serves the
+		// current bytes, so it must revalidate.
+		{"/static/0123456789ab/main.js", "no-cache"},
+		// The older query form still works.
 		{"/static/main.js?v=oldhash123", "no-cache"},
 		{"/static/main.js?v=" + version, "public, max-age=31536000, immutable"},
 	} {
@@ -284,6 +289,23 @@ func TestStaticAssetsAreVersionedCachedAndResolve(t *testing.T) {
 	for _, p := range []string{"/static/", "/static/nope.js", "/static/design-system", "/static/..%2fgo.mod"} {
 		if resp, _ := h.get(p); resp.StatusCode != 404 {
 			t.Errorf("%s: %d", p, resp.StatusCode)
+		}
+	}
+	// Assets a stylesheet loads by relative url() inherit the version
+	// segment, so the font files are versioned and immutable too.
+	css := "/static/" + version + "/design-system/fonts/fonts.css"
+	_, sheet := h.get(css)
+	fontURLs := regexp.MustCompile(`url\(\s*"([^"]+\.woff2)"`).FindAllStringSubmatch(sheet, -1)
+	if len(fontURLs) == 0 {
+		t.Fatal("fonts.css names no woff2 files")
+	}
+	for _, m := range fontURLs {
+		ref, _ := url.Parse(m[1])
+		abs := (&url.URL{Path: css}).ResolveReference(ref).Path
+		resp, _ := h.get(abs)
+		if !strings.HasPrefix(abs, "/static/"+version+"/") || resp.StatusCode != 200 ||
+			resp.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" || resp.Header.Get("Content-Type") != "font/woff2" {
+			t.Errorf("font %s: %d %v", abs, resp.StatusCode, resp.Header)
 		}
 	}
 	// The version is content-derived: one byte changes it.
@@ -351,6 +373,113 @@ func TestBundledFontsAreTheTwoBrandFaces(t *testing.T) {
 				t.Errorf("%s loads from %s", p, host)
 			}
 		}
+	}
+}
+
+// The Elcano frontend standard's header rules (AGENTS.md): every response —
+// pages, JSON, assets, errors — carries a CSP with frame-ancestors and no
+// unsafe-inline script, nosniff, and the cache policy that matches it (HTML
+// and API never stored, versioned assets immutable, unversioned revalidated).
+func TestEveryResponseCarriesTheFrontendStandardHeaders(t *testing.T) {
+	h := newHarness(t, false)
+	version := h.srv.StaticVersion()
+	sprite := "/static/design-system/icons/core-icons.svg"
+	for _, tc := range []struct {
+		path   string
+		status int
+		page   bool
+		cache  string
+	}{
+		{"/", 200, true, "no-store"},
+		{"/signed-out", 200, true, "no-store"},
+		{"/health", 200, false, "no-store"},
+		{"/api/jobs/live", 200, false, "no-store"},
+		{"/nope", 404, false, "no-store"},
+		{"/static/" + version + sprite[len("/static"):], 200, false, "public, max-age=31536000, immutable"},
+		{sprite + "?v=" + version, 200, false, "public, max-age=31536000, immutable"},
+		{sprite, 200, false, "no-cache"},
+		// Errors on asset URLs are never immutable, versioned or not.
+		{"/static/" + version + "/nope.js", 404, false, "no-cache"},
+		{"/static/nope.js?v=" + version, 404, false, "no-cache"},
+		{"/static/nope.js", 404, false, "no-cache"},
+	} {
+		resp, _ := h.get(tc.path)
+		csp := resp.Header.Get("Content-Security-Policy")
+		if resp.StatusCode != tc.status {
+			t.Errorf("%s: status %d", tc.path, resp.StatusCode)
+		}
+		if !strings.Contains(csp, "frame-ancestors 'none'") || strings.Contains(csp, "unsafe-inline") || strings.Contains(csp, "unsafe-eval") {
+			t.Errorf("%s: csp %q", tc.path, csp)
+		}
+		if tc.page {
+			if !regexp.MustCompile(`script-src 'self' 'nonce-[A-Za-z0-9_-]+';`).MatchString(csp) {
+				t.Errorf("%s: page csp %q", tc.path, csp)
+			}
+		} else if csp != CSPNonPage {
+			t.Errorf("%s: non-page csp %q", tc.path, csp)
+		}
+		if resp.Header.Get("X-Content-Type-Options") != "nosniff" || resp.Header.Get("X-Frame-Options") != "DENY" {
+			t.Errorf("%s: %v", tc.path, resp.Header)
+		}
+		if got := resp.Header.Get("Cache-Control"); got != tc.cache {
+			t.Errorf("%s: Cache-Control %q, want %q", tc.path, got, tc.cache)
+		}
+	}
+	// A wrong method on a real, versioned asset is an error too: no-cache.
+	if resp, _ := h.send(http.MethodPost, "/static/"+version+sprite[len("/static"):], nil, ""); resp.StatusCode != 405 || resp.Header.Get("Cache-Control") != "no-cache" {
+		t.Errorf("POST versioned asset: %d %q", resp.StatusCode, resp.Header.Get("Cache-Control"))
+	}
+	// A range of a versioned asset is still the immutable asset.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, h.ts.URL+"/static/"+version+sprite[len("/static"):], nil)
+	req.Header.Set("Range", "bytes=0-9")
+	if part, _ := roundTrip(t, h.client, req); part.StatusCode != http.StatusPartialContent || part.Header.Get("Cache-Control") != "public, max-age=31536000, immutable" {
+		t.Errorf("range of versioned asset: %d %q", part.StatusCode, part.Header.Get("Cache-Control"))
+	}
+}
+
+// Every asset a template or product script names must ship, and every
+// <use href="…core-icons.svg#id"> must name a symbol in the vendored sprite —
+// a Flag re-sync (scripts/flag-sync.sh sync) that renames or drops an icon
+// fails here instead of rendering an empty box.
+func TestTemplatesReferenceOnlyShippedAssetsAndIcons(t *testing.T) {
+	static, _ := fs.Sub(lens.Static, "static")
+	spriteBytes, err := fs.ReadFile(static, "design-system/icons/core-icons.svg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbols := map[string]bool{}
+	for _, m := range regexp.MustCompile(`<symbol[^>]*\sid="([^"]+)"`).FindAllStringSubmatch(string(spriteBytes), -1) {
+		symbols[m[1]] = true
+	}
+	sources := map[string]string{}
+	tmpls, _ := fs.Glob(lens.Templates, "templates/*.html")
+	for _, p := range tmpls {
+		b, _ := fs.ReadFile(lens.Templates, p)
+		sources[p] = string(b)
+	}
+	scripts, _ := fs.Glob(static, "*.js")
+	for _, p := range scripts {
+		b, _ := fs.ReadFile(static, p)
+		sources[p] = string(b)
+	}
+	assetRe := regexp.MustCompile(`static_url "([^"]+)"`)
+	iconRe := regexp.MustCompile(`core-icons\.svg(?:" }})?#([A-Za-z0-9_-]+)`)
+	icons := 0
+	for p, text := range sources {
+		for _, m := range assetRe.FindAllStringSubmatch(text, -1) {
+			if st, err := fs.Stat(static, m[1]); err != nil || st.IsDir() {
+				t.Errorf("%s: static_url %q is not shipped", p, m[1])
+			}
+		}
+		for _, m := range iconRe.FindAllStringSubmatch(text, -1) {
+			icons++
+			if !symbols[m[1]] {
+				t.Errorf("%s: icon #%s is not in core-icons.svg", p, m[1])
+			}
+		}
+	}
+	if icons == 0 {
+		t.Fatal("no icon references found; the pattern is stale")
 	}
 }
 

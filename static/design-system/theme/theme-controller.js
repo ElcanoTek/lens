@@ -43,12 +43,22 @@
 
   applyTheme(resolveTheme());
 
-  document.addEventListener("DOMContentLoaded", function () {
+  // Loaded in <head> (the recommended placement, so data-theme is set before
+  // first paint), the applyTheme() above runs before any toggle exists. Once
+  // the document is parsed, bind the toggles and give them their aria state.
+  function bindToggles() {
     var toggles = document.querySelectorAll("[data-flag-theme-toggle]");
     toggles.forEach(function (toggle) {
       toggle.addEventListener("click", toggleTheme);
     });
-  });
+    applyTheme(root.getAttribute("data-theme") || resolveTheme());
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", bindToggles);
+  } else {
+    bindToggles();
+  }
 
   if (media) {
     media.addEventListener("change", function () {

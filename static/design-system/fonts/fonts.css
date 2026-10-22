@@ -26,7 +26,7 @@
  * Both licences REQUIRE the licence text to travel with the binaries. Copy
  * ./nebula-sans/OFL.txt and ./hack/LICENSE.md wherever you copy the fonts.
  *
- * See ../FONTS.md for the policy and ../TOKENS.md for the type scale.
+ * See Flag's design-system/FONTS.md for the policy and design-system/TOKENS.md for the type scale.
  */
 
 /* ── Nebula Sans ─────────────────────────────────────────────────────────
@@ -89,7 +89,7 @@
  *
  * These are the FULL builds (1548 codepoints, incl. Greek and Cyrillic), not
  * the `-subset` files also present in the upstream package (386 codepoints,
- * no Greek or Cyrillic). See ../FONTS.md "Font files must be complete".
+ * no Greek or Cyrillic). See Flag's design-system/FONTS.md "Font files must be complete".
  */
 
 @font-face {

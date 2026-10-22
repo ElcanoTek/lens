@@ -89,7 +89,7 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeDetail(w, http.StatusMethodNotAllowed, "")
 		return
 	}
-	name := strings.TrimPrefix(r.URL.Path, "/static/")
+	_, name := splitStaticVersion(strings.TrimPrefix(r.URL.Path, "/static/"))
 	name = path.Clean("/" + name)[1:]
 	if name == "" || !fs.ValidPath(name) {
 		writeDetail(w, http.StatusNotFound, "")
@@ -112,10 +112,32 @@ func (h *staticHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // staticURLFunc returns the static_url() template helper: the versioned URL
-// for an asset. Every template resolves assets through it, so no reference
-// can be left unversioned by accident.
+// for an asset, /static/<version>/<path>. Every template resolves assets
+// through it, so no reference can be left unversioned by accident.
+//
+// The version is a path segment, not a query string, so that URLs an asset
+// resolves relative to itself inherit it: fonts.css's url(./nebula-sans/…)
+// and any sprite or image a stylesheet names are versioned (and cached as
+// immutable) too. A ?v= query would be dropped by every relative reference.
 func staticURLFunc(version string) func(string) string {
 	return func(p string) string {
-		return "/static/" + strings.TrimLeft(p, "/") + "?v=" + version
+		return "/static/" + version + "/" + strings.TrimLeft(p, "/")
 	}
+}
+
+// splitStaticVersion splits the path under /static/ into its version
+// segment (12 lowercase hex characters, as StaticVersion makes) and the
+// asset path. A path without one returns an empty version. No shipped
+// top-level static entry has such a name, so this cannot shadow an asset.
+func splitStaticVersion(p string) (version, rest string) {
+	seg, rest, ok := strings.Cut(p, "/")
+	if !ok || len(seg) != 12 {
+		return "", p
+	}
+	for _, c := range seg {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return "", p
+		}
+	}
+	return seg, rest
 }
