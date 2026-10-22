@@ -25,7 +25,7 @@ set -f # stack.conf values are words, never globs
 unset CDPATH
 export LC_ALL=C
 
-STACK_CHECK_VERSION=25
+STACK_CHECK_VERSION=26
 STANDARD_SHA=5b3a1c9dab098277570a37d58366b0802d4378370f9717d48743c386b194bdbb
 ROOT="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 CONF="$ROOT/stack.conf"
@@ -185,7 +185,8 @@ sub tags { my ($t, $html) = @_;
       $name =~ s/^[^:]*://;
       my %a; while ($as =~ /$nattr/g) { my ($n, $v) = (lc $1, $2 // ""); $v =~ s/^"(.*)"$/$1/s or $v =~ s/^\x27(.*)\x27$/$1/s; push @{$a{$n}}, $v; }
       my $bad = 0;
-      for my $n (qw(src poster background data-src lowsrc dynsrc)) { $bad ||= grep { remote_val($_, $html) } @{$a{$n} || []}; }
+      # xml:base rebases every relative reference beneath it onto its host.
+      for my $n (qw(src poster background data-src lowsrc dynsrc xml:base)) { $bad ||= grep { remote_val($_, $html) } @{$a{$n} || []}; }
       for my $n (qw(srcset data-srcset imagesrcset)) { $bad ||= grep { remote_srcset($_, $html) } @{$a{$n} || []}; }
       $bad ||= grep { remote_val($_, $html) } @{$a{data} || []} if $name eq "object";
       if ($refel{$name}) { for my $n (grep { /^(?:[^:]*:)?href$|^xlinkhref$/ } keys %a) { $bad ||= grep { remote_val($_, $html) } @{$a{$n}}; } }
