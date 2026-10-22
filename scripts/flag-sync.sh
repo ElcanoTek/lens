@@ -46,7 +46,7 @@ set -f # lock paths may contain glob characters ([ ] * ?); never expand them
 unset CDPATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 export LC_ALL=C GIT_LITERAL_PATHSPECS=1
 
-FLAG_SYNC_VERSION=18
+FLAG_SYNC_VERSION=19
 ROOT="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LOCK="$ROOT/flag.lock"
 
@@ -500,6 +500,11 @@ cmd_add() {
       # A locked dir mirrors exactly one Flag dir; a single file dropped inside
       # it would make the mirror ambiguous for every later status/sync.
       while read -r d; do case "$dest" in "$d"/*) die "$dest is inside locked dir $d; vendor it outside the mirrored dir (or add the whole dir)" ;; esac; done < "$dirs"
+      # An existing file at <repo-path> must be one this lock already vendored
+      # there; anything else is a product file and is never overwritten.
+      if { [ -e "$ROOT/$dest" ] || [ -L "$ROOT/$dest" ]; } && ! grep -qxF -- "$dest" "$dels"; then
+        die "$dest already exists and is not in flag.lock; move it or pick another destination"
+      fi
       need_blob "$E_MODE" "$src"; echo "$E_MODE $E_OID $src $dest" >> "$plan" ;;
   esac
   newtmp d
