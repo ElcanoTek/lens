@@ -117,6 +117,10 @@ static/design-system/FLAG-LICENSE (vendored from Flag's design-system/LICENSE),
 as the MIT License requires; flag.lock records the Flag commit and the hash of
 each file. The fonts in the same tree keep their own licences (section 4).
 
+Icons: some glyphs in Flag's core-icons.svg are drawn after Lucide
+(https://lucide.dev), ISC License — the full notice is retained at the top of
+the vendored sprite (static/design-system/icons/core-icons.svg).
+
   static/design-system/logos/*
 
 The ElcanoTek name, the Elcano mark and the product logos are trademarks and
