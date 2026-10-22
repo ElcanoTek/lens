@@ -46,7 +46,7 @@ set -f # lock paths may contain glob characters ([ ] * ?); never expand them
 unset CDPATH GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE
 export LC_ALL=C GIT_LITERAL_PATHSPECS=1
 
-FLAG_SYNC_VERSION=15
+FLAG_SYNC_VERSION=16
 ROOT="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 LOCK="$ROOT/flag.lock"
 
@@ -277,6 +277,9 @@ apply() {
   while read -r mode oid b c; do
     i=$((i + 1))
     dst="$ROOT/$c"
+    # A directory flag turned into a file: its files were deleted above, and
+    # need_plan_path vetted that nothing else but empty directories remain.
+    if [ -d "$dst" ] && [ ! -L "$dst" ]; then find "$dst" -depth -type d -empty -delete; fi
     need_repo_path "$c" file
     mkdir -p -- "$(dirname -- "$dst")"
     need_repo_path "$c" file
