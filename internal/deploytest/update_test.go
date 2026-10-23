@@ -298,3 +298,43 @@ func TestPythonEraUpdateReexecsIntoTheGoUpdate(t *testing.T) {
 	}
 	b.assertState(t)
 }
+
+// A box from before Firecrawl's removal: its container, image and compose
+// volume are removed, and nothing else of the lens user's podman storage is
+// (no blanket prune: an unrelated volume may hold job data).
+func TestUpdateRemovesOnlyFirecrawlsOwnContainersAndVolumes(t *testing.T) {
+	b := newUpdateBox(t)
+	podmanLog := filepath.Join(b.dir, "podman.log")
+	stub(t, b.stubs, "podman", `echo "$*" >> "`+podmanLog+`"
+case "$*" in
+  "ps -aq --filter name=elcano-firecrawl") echo c0ffee ;;
+  "images --format {{.Repository}}:{{.Tag}}") printf 'ghcr.io/firecrawl/firecrawl:latest\nselenium/standalone-chrome:latest\n' ;;
+  "volume ls -q") printf 'elcano-firecrawl_nuq-postgres-data\nlens-jobs-archive\n3f9a1b2c4d5e\n' ;;
+esac
+exit 0`)
+	r := b.run(t)
+	if r.code != 0 {
+		t.Fatalf("update failed (%d):\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	calls := readFile(t, podmanLog)
+	for _, want := range []string{"rm -f -v c0ffee", "volume rm elcano-firecrawl_nuq-postgres-data", "rmi -f ghcr.io/firecrawl/firecrawl:latest"} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("missing podman %q in:\n%s", want, calls)
+		}
+	}
+	// Only arguments are logged, so an unrelated name here means it was acted on.
+	for _, never := range []string{"volume prune", "lens-jobs-archive", "3f9a1b2c4d5e", "selenium"} {
+		if strings.Contains(calls, never) {
+			t.Errorf("podman touched %q:\n%s", never, calls)
+		}
+	}
+	if !strings.Contains(r.stdout, "removed the retired Firecrawl stack") {
+		t.Fatalf("no removal reported:\n%s", r.stdout)
+	}
+}
+
+func TestUpdateScriptNeverPrunesVolumes(t *testing.T) {
+	if strings.Contains(read(t, "scripts/update.sh"), "volume prune") {
+		t.Fatal("update.sh prunes every unused volume; remove only Firecrawl's own")
+	}
+}

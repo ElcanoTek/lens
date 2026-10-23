@@ -315,7 +315,11 @@ lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"
 # every run. Hosts installed before then still run firecrawl.service and hold
 # its images (many GB, plus an orphaned copy from every past update). Clear
 # the unit, containers, volumes and images; the deep crawler's Chrome image
-# stays. Idempotent: does nothing once the stack is gone.
+# stays. Only the stack's own volumes go: the anonymous ones its containers
+# declared (removed with them, `rm -v`) and the named ones its compose project
+# made (`elcano-firecrawl_*`). Never a blanket prune of volumes: another
+# unused volume of this user may hold data. Idempotent: does nothing once the stack
+# is gone.
 remove_firecrawl() {
   local unit="$UNIT_DIR/firecrawl.service" removed=0
   if [[ -f "$unit" ]]; then
@@ -327,25 +331,29 @@ remove_firecrawl() {
   if command -v podman >/dev/null 2>&1 && id -u "$APP_USER" >/dev/null 2>&1; then
     local app_uid; app_uid="$(id -u "$APP_USER")"
     local pod=(runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" podman)
-    local ids images
+    local ids images volumes
     ids="$(cd / && "${pod[@]}" ps -aq --filter name=elcano-firecrawl 2>/dev/null || true)"
     images="$(cd / && "${pod[@]}" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
       | grep -E '^ghcr\.io/firecrawl/|^docker\.io/library/(redis:alpine|rabbitmq:3-alpine)$' || true)"
-    if [[ -n "$ids" || -n "$images" ]]; then
+    volumes="$(cd / && "${pod[@]}" volume ls -q 2>/dev/null | grep -E '^elcano-firecrawl_[A-Za-z0-9_.-]+$' || true)"
+    if [[ -n "$ids" || -n "$images" || -n "$volumes" ]]; then
       (
         cd /
         # shellcheck disable=SC2086
-        [[ -n "$ids" ]] && "${pod[@]}" rm -f $ids
+        [[ -z "$ids" ]] || "${pod[@]}" rm -f -v $ids
         # shellcheck disable=SC2086
-        [[ -n "$images" ]] && "${pod[@]}" rmi -f $images
-        "${pod[@]}" volume prune -f
+        [[ -z "$volumes" ]] || "${pod[@]}" volume rm $volumes
+        # shellcheck disable=SC2086
+        [[ -z "$images" ]] || "${pod[@]}" rmi -f $images
+        # Dangling images only (untagged, used by no container): the orphaned
+        # copies past updates left. Re-pullable, never data.
         "${pod[@]}" image prune -f
-      ) >/dev/null 2>&1 || warn "could not remove every Firecrawl container/image"
+      ) >/dev/null 2>&1 || warn "could not remove every Firecrawl container, volume or image"
       removed=1
     fi
   fi
   rm -rf "$APP_DIR/firecrawl"
-  [[ "$removed" == "1" ]] && ok "removed the retired Firecrawl stack (service, containers, images)"
+  [[ "$removed" == "1" ]] && ok "removed the retired Firecrawl stack (service, containers, its volumes, images)"
   return 0
 }
 remove_firecrawl
