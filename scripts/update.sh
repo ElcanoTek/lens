@@ -314,14 +314,21 @@ lens_install_cli "$PRIV_DIR/lens" "$CLI_TARGET" "$BIN_OWNER"
 # Firecrawl was removed from Lens (2026-10): it rescued few sites and slowed
 # every run. Hosts installed before then still run firecrawl.service and hold
 # its images (many GB, plus an orphaned copy from every past update). Clear
-# the unit, containers, volumes and images; the deep crawler's Chrome image
-# stays. Only the stack's own volumes go: the anonymous ones its containers
-# declared (removed with them, `rm -v`) and the named ones its compose project
-# made (`elcano-firecrawl_*`). Never a blanket prune of volumes: another
-# unused volume of this user may hold data. Idempotent: does nothing once the stack
-# is gone.
+# the unit and exactly what its compose project (elcano-firecrawl) made:
+#   - its containers: those carrying the project's compose label AND named
+#     elcano-firecrawl_*/-*, removed with `rm -v` so the anonymous volumes
+#     they declared go with them;
+#   - its one named volume and its networks, by exact name;
+#   - its images, without -f: an image another container still uses (redis
+#     and rabbitmq are common) stays;
+#   - dangling images (untagged, used by no container): re-pullable.
+# Nothing else of this user's podman storage is touched (no prune of
+# volumes: an unused volume may hold data). A step that fails is reported.
+# Idempotent: does nothing once the stack is gone.
+FIRECRAWL_VOLUMES="elcano-firecrawl_nuq-postgres-data"
+FIRECRAWL_NETWORKS="elcano-firecrawl_backend elcano-firecrawl_default"
 remove_firecrawl() {
-  local unit="$UNIT_DIR/firecrawl.service" removed=0
+  local unit="$UNIT_DIR/firecrawl.service" removed=0 failed=0
   if [[ -f "$unit" ]]; then
     systemctl disable --now firecrawl.service >/dev/null 2>&1 || true
     rm -f "$unit"
@@ -331,29 +338,31 @@ remove_firecrawl() {
   if command -v podman >/dev/null 2>&1 && id -u "$APP_USER" >/dev/null 2>&1; then
     local app_uid; app_uid="$(id -u "$APP_USER")"
     local pod=(runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" podman)
-    local ids images volumes
-    ids="$(cd / && "${pod[@]}" ps -aq --filter name=elcano-firecrawl 2>/dev/null || true)"
+    local ids="" images volumes networks label item
+    for label in io.podman.compose.project com.docker.compose.project; do
+      ids+="$(cd / && "${pod[@]}" ps -a --filter "label=$label=elcano-firecrawl" --format '{{.ID}} {{.Names}}' 2>/dev/null \
+        | awk '$2 ~ /^elcano-firecrawl[_-]/ { print $1 }' || true)"$'\n'
+    done
+    ids="$(printf '%s' "$ids" | sed '/^$/d' | sort -u)"
     images="$(cd / && "${pod[@]}" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
       | grep -E '^ghcr\.io/firecrawl/|^docker\.io/library/(redis:alpine|rabbitmq:3-alpine)$' || true)"
-    volumes="$(cd / && "${pod[@]}" volume ls -q 2>/dev/null | grep -E '^elcano-firecrawl_[A-Za-z0-9_.-]+$' || true)"
-    if [[ -n "$ids" || -n "$images" || -n "$volumes" ]]; then
-      (
-        cd /
-        # shellcheck disable=SC2086
-        [[ -z "$ids" ]] || "${pod[@]}" rm -f -v $ids
-        # shellcheck disable=SC2086
-        [[ -z "$volumes" ]] || "${pod[@]}" volume rm $volumes
-        # shellcheck disable=SC2086
-        [[ -z "$images" ]] || "${pod[@]}" rmi -f $images
-        # Dangling images only (untagged, used by no container): the orphaned
-        # copies past updates left. Re-pullable, never data.
-        "${pod[@]}" image prune -f
-      ) >/dev/null 2>&1 || warn "could not remove every Firecrawl container, volume or image"
+    volumes="$(cd / && "${pod[@]}" volume ls -q 2>/dev/null | grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_VOLUMES") || true)"
+    networks="$(cd / && "${pod[@]}" network ls --format '{{.Name}}' 2>/dev/null | grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_NETWORKS") || true)"
+    if [[ -n "$ids$images$volumes$networks" ]]; then
       removed=1
+      for item in $ids; do (cd / && "${pod[@]}" rm -f -v "$item") >/dev/null 2>&1 || failed=1; done
+      for item in $volumes; do (cd / && "${pod[@]}" volume rm "$item") >/dev/null 2>&1 || failed=1; done
+      for item in $networks; do (cd / && "${pod[@]}" network rm "$item") >/dev/null 2>&1 || failed=1; done
+      for item in $images; do (cd / && "${pod[@]}" rmi "$item") >/dev/null 2>&1 || failed=1; done
+      (cd / && "${pod[@]}" image prune -f) >/dev/null 2>&1 || failed=1
     fi
   fi
   rm -rf "$APP_DIR/firecrawl"
-  [[ "$removed" == "1" ]] && ok "removed the retired Firecrawl stack (service, containers, its volumes, images)"
+  if [[ "$failed" == "1" ]]; then
+    warn "could not remove every Firecrawl container, volume, network or image (an image another container uses is kept); see 'podman ps -a', 'podman volume ls' and 'podman images' as $APP_USER"
+  elif [[ "$removed" == "1" ]]; then
+    ok "removed the retired Firecrawl stack (service, containers, its volumes, images)"
+  fi
   return 0
 }
 remove_firecrawl

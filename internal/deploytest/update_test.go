@@ -299,37 +299,69 @@ func TestPythonEraUpdateReexecsIntoTheGoUpdate(t *testing.T) {
 	b.assertState(t)
 }
 
-// A box from before Firecrawl's removal: its container, image and compose
-// volume are removed, and nothing else of the lens user's podman storage is
-// (no blanket prune: an unrelated volume may hold job data).
+// firecrawlPodman fakes the lens user's podman storage on a box from before
+// Firecrawl's removal, next to things that are not Firecrawl's: a labelled
+// container with a foreign name, a lookalike volume, an unrelated named and
+// anonymous volume, the Chrome image and podman's own network. FAIL_RMI makes
+// one image removal fail, as for an image another container still uses.
+const firecrawlPodman = `echo "$*" >> "$PODMAN_LOG"
+case "$*" in
+  "ps -a --filter label=io.podman.compose.project=elcano-firecrawl --format {{.ID}} {{.Names}}")
+    printf 'c0ffee elcano-firecrawl_api_1\nbad1 imposter\n' ;;
+  "ps -a --filter label=com.docker.compose.project=elcano-firecrawl --format {{.ID}} {{.Names}}")
+    echo 'c0ffee elcano-firecrawl_api_1' ;;
+  "images --format {{.Repository}}:{{.Tag}}")
+    printf 'ghcr.io/firecrawl/firecrawl:latest\ndocker.io/library/redis:alpine\nselenium/standalone-chrome:latest\n' ;;
+  "volume ls -q") printf 'elcano-firecrawl_nuq-postgres-data\nelcano-firecrawl_extra\nlens-jobs-archive\n3f9a1b2c4d5e\n' ;;
+  "network ls --format {{.Name}}") printf 'elcano-firecrawl_backend\npodman\n' ;;
+  "rmi docker.io/library/redis:alpine") [ -z "$FAIL_RMI" ] || exit 1 ;;
+esac
+exit 0`
+
+// Only what the retired compose project made is removed, and nothing is
+// forced past another container's use of it.
 func TestUpdateRemovesOnlyFirecrawlsOwnContainersAndVolumes(t *testing.T) {
 	b := newUpdateBox(t)
 	podmanLog := filepath.Join(b.dir, "podman.log")
-	stub(t, b.stubs, "podman", `echo "$*" >> "`+podmanLog+`"
-case "$*" in
-  "ps -aq --filter name=elcano-firecrawl") echo c0ffee ;;
-  "images --format {{.Repository}}:{{.Tag}}") printf 'ghcr.io/firecrawl/firecrawl:latest\nselenium/standalone-chrome:latest\n' ;;
-  "volume ls -q") printf 'elcano-firecrawl_nuq-postgres-data\nlens-jobs-archive\n3f9a1b2c4d5e\n' ;;
-esac
-exit 0`)
-	r := b.run(t)
+	stub(t, b.stubs, "podman", firecrawlPodman)
+	r := b.run(t, "PODMAN_LOG="+podmanLog)
 	if r.code != 0 {
 		t.Fatalf("update failed (%d):\n%s\n%s", r.code, r.stdout, r.stderr)
 	}
 	calls := readFile(t, podmanLog)
-	for _, want := range []string{"rm -f -v c0ffee", "volume rm elcano-firecrawl_nuq-postgres-data", "rmi -f ghcr.io/firecrawl/firecrawl:latest"} {
+	for _, want := range []string{"rm -f -v c0ffee", "volume rm elcano-firecrawl_nuq-postgres-data",
+		"network rm elcano-firecrawl_backend", "rmi ghcr.io/firecrawl/firecrawl:latest", "rmi docker.io/library/redis:alpine",
+		"image prune -f"} {
 		if !strings.Contains(calls, want) {
 			t.Errorf("missing podman %q in:\n%s", want, calls)
 		}
 	}
-	// Only arguments are logged, so an unrelated name here means it was acted on.
-	for _, never := range []string{"volume prune", "lens-jobs-archive", "3f9a1b2c4d5e", "selenium"} {
+	if strings.Count(calls, "rm -f -v c0ffee") != 1 {
+		t.Errorf("container removed more than once:\n%s", calls)
+	}
+	// Only arguments are logged, so any of these here means it was acted on.
+	for _, never := range []string{"bad1", "volume prune", "elcano-firecrawl_extra", "lens-jobs-archive", "3f9a1b2c4d5e",
+		"selenium", "rmi -f", "network rm podman"} {
 		if strings.Contains(calls, never) {
 			t.Errorf("podman touched %q:\n%s", never, calls)
 		}
 	}
 	if !strings.Contains(r.stdout, "removed the retired Firecrawl stack") {
 		t.Fatalf("no removal reported:\n%s", r.stdout)
+	}
+}
+
+func TestUpdateReportsAFirecrawlCleanupThatCouldNotFinish(t *testing.T) {
+	b := newUpdateBox(t)
+	stub(t, b.stubs, "podman", firecrawlPodman)
+	r := b.run(t, "PODMAN_LOG="+filepath.Join(b.dir, "podman.log"), "FAIL_RMI=1")
+	if r.code != 0 {
+		t.Fatalf("update failed (%d):\n%s\n%s", r.code, r.stdout, r.stderr)
+	}
+	out := r.stdout + r.stderr
+	if !strings.Contains(out, "could not remove every Firecrawl container, volume, network or image") ||
+		strings.Contains(out, "removed the retired Firecrawl stack") {
+		t.Fatalf("a partial cleanup was reported as complete:\n%s", out)
 	}
 }
 
