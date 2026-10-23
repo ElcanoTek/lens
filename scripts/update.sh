@@ -330,7 +330,7 @@ FIRECRAWL_NETWORKS="elcano-firecrawl_backend elcano-firecrawl_default"
 remove_firecrawl() {
   local unit="$UNIT_DIR/firecrawl.service" removed=0 failed=0
   if [[ -f "$unit" ]]; then
-    systemctl disable --now firecrawl.service >/dev/null 2>&1 || true
+    systemctl disable --now firecrawl.service >/dev/null 2>&1 || failed=1
     rm -f "$unit"
     systemctl daemon-reload
     removed=1
@@ -338,23 +338,28 @@ remove_firecrawl() {
   if command -v podman >/dev/null 2>&1 && id -u "$APP_USER" >/dev/null 2>&1; then
     local app_uid; app_uid="$(id -u "$APP_USER")"
     local pod=(runuser -u "$APP_USER" -- env "XDG_RUNTIME_DIR=/run/user/$app_uid" "HOME=$APP_DIR" podman)
-    local ids="" images volumes networks label item
+    local ids="" images volumes networks label item out
+    # A listing that fails is not an empty one: it counts as a failure, so
+    # the run never reports a cleanup it could not check.
+    list() { (cd / && "${pod[@]}" "$@") 2>/dev/null; }
     for label in io.podman.compose.project com.docker.compose.project; do
-      ids+="$(cd / && "${pod[@]}" ps -a --filter "label=$label=elcano-firecrawl" --format '{{.ID}} {{.Names}}' 2>/dev/null \
-        | awk '$2 ~ /^elcano-firecrawl[_-]/ { print $1 }' || true)"$'\n'
+      out="$(list ps -a --filter "label=$label=elcano-firecrawl" --format '{{.ID}} {{.Names}}')" || failed=1
+      ids+="$(awk '$2 ~ /^elcano-firecrawl[_-]/ { print $1 }' <<<"$out")"$'\n'
     done
     ids="$(printf '%s' "$ids" | sed '/^$/d' | sort -u)"
-    images="$(cd / && "${pod[@]}" images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null \
-      | grep -E '^ghcr\.io/firecrawl/|^docker\.io/library/(redis:alpine|rabbitmq:3-alpine)$' || true)"
-    volumes="$(cd / && "${pod[@]}" volume ls -q 2>/dev/null | grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_VOLUMES") || true)"
-    networks="$(cd / && "${pod[@]}" network ls --format '{{.Name}}' 2>/dev/null | grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_NETWORKS") || true)"
+    out="$(list images --format '{{.Repository}}:{{.Tag}}')" || failed=1
+    images="$(grep -E '^ghcr\.io/firecrawl/|^docker\.io/library/(redis:alpine|rabbitmq:3-alpine)$' <<<"$out" || true)"
+    out="$(list volume ls -q)" || failed=1
+    volumes="$(grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_VOLUMES") <<<"$out" || true)"
+    out="$(list network ls --format '{{.Name}}')" || failed=1
+    networks="$(grep -xF -f <(tr ' ' '\n' <<<"$FIRECRAWL_NETWORKS") <<<"$out" || true)"
     if [[ -n "$ids$images$volumes$networks" ]]; then
       removed=1
-      for item in $ids; do (cd / && "${pod[@]}" rm -f -v "$item") >/dev/null 2>&1 || failed=1; done
-      for item in $volumes; do (cd / && "${pod[@]}" volume rm "$item") >/dev/null 2>&1 || failed=1; done
-      for item in $networks; do (cd / && "${pod[@]}" network rm "$item") >/dev/null 2>&1 || failed=1; done
-      for item in $images; do (cd / && "${pod[@]}" rmi "$item") >/dev/null 2>&1 || failed=1; done
-      (cd / && "${pod[@]}" image prune -f) >/dev/null 2>&1 || failed=1
+      for item in $ids; do list rm -f -v "$item" >/dev/null || failed=1; done
+      for item in $volumes; do list volume rm "$item" >/dev/null || failed=1; done
+      for item in $networks; do list network rm "$item" >/dev/null || failed=1; done
+      for item in $images; do list rmi "$item" >/dev/null || failed=1; done
+      list image prune -f >/dev/null || failed=1
     fi
   fi
   rm -rf "$APP_DIR/firecrawl"

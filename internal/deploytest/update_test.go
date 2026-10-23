@@ -312,7 +312,8 @@ case "$*" in
     echo 'c0ffee elcano-firecrawl_api_1' ;;
   "images --format {{.Repository}}:{{.Tag}}")
     printf 'ghcr.io/firecrawl/firecrawl:latest\ndocker.io/library/redis:alpine\nselenium/standalone-chrome:latest\n' ;;
-  "volume ls -q") printf 'elcano-firecrawl_nuq-postgres-data\nelcano-firecrawl_extra\nlens-jobs-archive\n3f9a1b2c4d5e\n' ;;
+  "volume ls -q") [ -z "$FAIL_LIST" ] || exit 125
+    printf 'elcano-firecrawl_nuq-postgres-data\nelcano-firecrawl_extra\nlens-jobs-archive\n3f9a1b2c4d5e\n' ;;
   "network ls --format {{.Name}}") printf 'elcano-firecrawl_backend\npodman\n' ;;
   "rmi docker.io/library/redis:alpine") [ -z "$FAIL_RMI" ] || exit 1 ;;
 esac
@@ -362,6 +363,16 @@ func TestUpdateReportsAFirecrawlCleanupThatCouldNotFinish(t *testing.T) {
 	if !strings.Contains(out, "could not remove every Firecrawl container, volume, network or image") ||
 		strings.Contains(out, "removed the retired Firecrawl stack") {
 		t.Fatalf("a partial cleanup was reported as complete:\n%s", out)
+	}
+}
+
+func TestUpdateNeverCallsACleanupItCouldNotCheckComplete(t *testing.T) {
+	b := newUpdateBox(t)
+	stub(t, b.stubs, "podman", firecrawlPodman)
+	r := b.run(t, "PODMAN_LOG="+filepath.Join(b.dir, "podman.log"), "FAIL_LIST=1")
+	out := r.stdout + r.stderr
+	if r.code != 0 || !strings.Contains(out, "could not remove every Firecrawl") || strings.Contains(out, "removed the retired Firecrawl stack") {
+		t.Fatalf("a failed listing was read as nothing left (%d):\n%s", r.code, out)
 	}
 }
 
