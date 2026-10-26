@@ -115,7 +115,8 @@ step "1/7  Installing system dependencies via dnf"
 # packages by exporting LENS_BOOTSTRAP_SKIP_CHROME=1.
 # golang + make build bin/lens; any Go >= 1.21 will do because the Makefile
 # sets GOTOOLCHAIN=auto and Go fetches go.mod's pinned release itself.
-PKGS=(git curl jq golang make rsync openssl util-linux ca-certificates)
+# bind-utils: dig, for the public-DNS check before Let's Encrypt (step 7).
+PKGS=(git curl jq golang make rsync openssl util-linux ca-certificates bind-utils)
 [[ "${LENS_BOOTSTRAP_SKIP_CHROME:-0}" == "1" ]] || PKGS+=(chromium chromedriver)
 # podman drives the deep-scrape headless-Chrome container (auto mode's
 # fallback for sites that block the fast crawler).
@@ -337,15 +338,11 @@ fi
 # ── step 7: Caddy / TLS ─────────────────────────────────────────────────
 step "7/7  Reverse proxy / TLS"
 if [[ "$SETUP_CADDY" == "y" ]]; then
-  if command -v dig >/dev/null 2>&1; then resolved_ip=$(dig +short "$HOSTNAME_FOR_TLS" A 2>/dev/null | tail -n1 || true); else resolved_ip=""; fi
-  public_ip=$(curl -fsS --max-time 5 https://api.ipify.org 2>/dev/null || true)
-  if [[ -n "$resolved_ip" && -n "$public_ip" && "$resolved_ip" != "$public_ip" ]]; then
-    warn "DNS mismatch: $HOSTNAME_FOR_TLS → $resolved_ip, this box → $public_ip"
-  elif [[ -z "$resolved_ip" ]]; then
-    warn "$HOSTNAME_FOR_TLS doesn't resolve yet."
-  elif [[ "$resolved_ip" == "$public_ip" ]]; then
-    ok "DNS resolves correctly ($resolved_ip)"
-  fi
+  # Public DNS, not this box's resolver: /etc/hosts maps the hostname to
+  # 127.0.0.1 (lens_set_hostname), which is not what Let's Encrypt sees.
+  # shellcheck source=lib/dnscheck.sh
+  . "$SRC_DIR/scripts/lib/dnscheck.sh"
+  lens_dns_precheck "$HOSTNAME_FOR_TLS" || true
 
   dnf install -y caddy >/dev/null
   # Use a directory this Caddyfile already imports, including Fedora's default

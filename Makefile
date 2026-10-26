@@ -35,7 +35,7 @@ LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$
 # The shell scripts ShellCheck lints (CI's shell job runs this target): the
 # deploy scripts, the shared frontend-standard tooling and the cloud-session hook.
 SHELL_SCRIPTS := install.sh scripts/bootstrap.sh scripts/update.sh scripts/host.sh \
-	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh \
+	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh scripts/lib/dnscheck.sh \
 	scripts/flag-sync.sh scripts/stack-check.sh .claude/hooks/session-start.sh
 
 all: build
