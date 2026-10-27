@@ -65,7 +65,7 @@
           },
           "deep_retry": {
             "type": "boolean",
-            "description": "Retry failed sites with headless Chrome (default true; slow on big lists)."
+            "description": "Retry failed sites with headless Chrome (default false; slow on big lists)."
           },
           "llm_model": {
             "type": "string",

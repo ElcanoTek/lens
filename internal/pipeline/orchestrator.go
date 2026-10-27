@@ -286,10 +286,14 @@ func (o *Orchestrator) run(ctx context.Context) error {
 	if err := o.processAll(ctx, toProcess); err != nil {
 		return err
 	}
-	if o.autoMode {
+	if o.autoMode && ctx.Err() == nil {
 		dedupeOutputCSV(o.cfg.OutputCSVPath)
 	}
 	o.finishSummary(runStart)
+	if ctx.Err() != nil {
+		logger.Info("Site analysis paused; progress saved for resume")
+		return nil
+	}
 	logger.Info("Site analysis completed successfully!")
 	return nil
 }
@@ -309,16 +313,27 @@ func (o *Orchestrator) processAll(ctx context.Context, toProcess []item.WorkItem
 	defer o.teardownOutputFile()
 
 	o.deferWebsiteFailures = o.autoMode && o.hasWebsites && (o.deepCrawlAvailable() || o.researchFallbackAvailable())
-	o.processItems(ctx, toProcess)
+	firstPass := toProcess
+	if o.autoMode {
+		firstPass = make([]item.WorkItem, 0, len(toProcess))
+		for _, it := range toProcess {
+			if !o.progress.IsRetryPending(it.Identifier) {
+				firstPass = append(firstPass, it)
+			}
+		}
+	}
+	if len(firstPass) > 0 {
+		o.processItems(ctx, firstPass)
+	}
 	if o.autoMode && ctx.Err() == nil {
 		o.retryFailedWebsitesDeep(ctx, &stack, toProcess)
 	}
 	if o.autoMode && ctx.Err() == nil {
 		o.researchFailedWebsites(ctx, toProcess)
 	}
-	if o.autoMode {
-		// Anything still pending (deep crawler failed to start, run
-		// interrupted) becomes a terminal error so progress can reach 100%.
+	if o.autoMode && ctx.Err() == nil {
+		// Anything still pending (deep crawler failed to start, research
+		// fallback disabled) becomes a terminal error so progress can reach 100%.
 		_, _ = o.progress.FinalizePendingRetries()
 	}
 	return nil
@@ -685,7 +700,15 @@ func (o *Orchestrator) isAntibotFailure(domain string) bool {
 // retryFailedWebsitesDeep is auto mode's second pass: re-crawl failed
 // websites with headless Chrome.
 func (o *Orchestrator) retryFailedWebsitesDeep(ctx context.Context, stack *closers, items []item.WorkItem) {
-	retryItems := o.collectRetryItems(items)
+	var retryItems []item.WorkItem
+	for _, it := range o.collectRetryItems(items) {
+		if o.progress.IsRetryPending(it.Identifier) {
+			if _, mode := o.progress.FailureDetails(it.Identifier); mode == "deep" {
+				continue
+			}
+		}
+		retryItems = append(retryItems, it)
+	}
 	if len(retryItems) == 0 {
 		return
 	}
@@ -809,6 +832,10 @@ func (o *Orchestrator) runCTV(ctx context.Context) error {
 		return err
 	}
 	o.finishSummary(runStart)
+	if ctx.Err() != nil {
+		logger.Info("CTV analysis paused; progress saved for resume")
+		return nil
+	}
 	logger.Info("CTV analysis completed successfully!")
 	return nil
 }

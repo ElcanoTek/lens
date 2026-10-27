@@ -340,7 +340,7 @@ func (a *API) CreateJob(r *http.Request, token *apitoken.Token, args map[string]
 	if err != nil {
 		return nil, err
 	}
-	deepRetry, err := optionalBool(args["deep_retry"], "deep_retry", true)
+	deepRetry, err := optionalBool(args["deep_retry"], "deep_retry", a.cfg.DeepRetryEnabled)
 	if err != nil {
 		return nil, err
 	}

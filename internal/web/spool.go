@@ -50,10 +50,10 @@ func spoolModelID(request map[string]any, key string) (string, error) {
 	return jobs.CleanModelID(pyStr(v))
 }
 
-func spoolBool(request map[string]any, key string) bool {
+func spoolBool(request map[string]any, key string, def bool) bool {
 	v, ok := request[key]
 	if !ok {
-		return true
+		return def
 	}
 	return pyTruthy(v)
 }
@@ -156,8 +156,8 @@ func (s *Server) spoolJob(entry string) (*jobs.Job, string, error) {
 	s.dirs.Breakdown(filepath.Join(s.dirs.Inputs, stored))
 	job, err := s.manager.Create(jobs.NewJob{
 		InputFile: stored, Mode: mode, Name: jobName, LLMModel: llm, ResearchModel: research,
-		DecisionModel: decision, ResearchFallback: spoolBool(request, "research_fallback"),
-		DeepRetry: spoolBool(request, "deep_retry"), CustomCategories: cats,
+		DecisionModel: decision, ResearchFallback: spoolBool(request, "research_fallback", true),
+		DeepRetry: spoolBool(request, "deep_retry", false), CustomCategories: cats,
 	})
 	if err != nil {
 		return nil, "", err

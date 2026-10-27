@@ -84,7 +84,7 @@ func Main(args []string) int { return NewRunner().Main(args) }
 // options are the flags both halves share.
 type options struct {
 	name, categories, decisionModel, llmModel, researchModel string
-	noResearchFallback, noDeep, ctv                          bool
+	noResearchFallback, deep, noDeep, ctv                    bool
 	timeout                                                  float64
 	// client side only
 	entry, input string
@@ -111,7 +111,8 @@ func parseFlags(args []string, stderr io.Writer, client bool) (*options, []strin
 	modelFlag(fs, &o.llmModel, "llm-model", "classification model override")
 	modelFlag(fs, &o.researchModel, "research-model", "research model override")
 	fs.BoolVar(&o.noResearchFallback, "no-research-fallback", false, "turn the research rung off")
-	fs.BoolVar(&o.noDeep, "no-deep", false, "skip the headless-Chrome retry; research failures directly")
+	fs.BoolVar(&o.deep, "deep", false, "enable the headless-Chrome retry pass")
+	fs.BoolVar(&o.noDeep, "no-deep", false, "skip the headless-Chrome retry; research failures directly (default)")
 	fs.BoolVar(&o.ctv, "ctv", false, "force the CTV workflow")
 	fs.Float64Var(&o.timeout, "timeout", 30, "seconds to wait for the service")
 	if client {
@@ -138,7 +139,7 @@ func (o *options) forward() []string {
 	for _, f := range []struct {
 		flag string
 		on   bool
-	}{{"--no-research-fallback", o.noResearchFallback}, {"--no-deep", o.noDeep}, {"--ctv", o.ctv}} {
+	}{{"--no-research-fallback", o.noResearchFallback}, {"--deep", o.deep}, {"--no-deep", o.noDeep}, {"--ctv", o.ctv}} {
 		if f.on {
 			out = append(out, f.flag)
 		}
@@ -365,7 +366,7 @@ func (r *Runner) client(args []string) int {
 	req := request{
 		InputFile: clean, Mode: mode, Name: optional(opts.name), LLMModel: optional(opts.llmModel),
 		ResearchModel: optional(opts.researchModel), DecisionModel: optional(opts.decisionModel),
-		ResearchFallback: !opts.noResearchFallback, DeepRetry: !opts.noDeep,
+		ResearchFallback: !opts.noResearchFallback, DeepRetry: opts.deep && !opts.noDeep,
 	}
 	if opts.categories != "" {
 		spec, err := categories.Load(opts.categories)

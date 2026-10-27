@@ -822,6 +822,13 @@ applySegmentWidths(document);
         migratedModel = true;
       }
     }
+    const deepEpoch = "deep-off";
+    if (saved && typeof saved === "object" && saved.deepEpoch !== deepEpoch) {
+      if (saved.deep === true) {
+        delete saved.deep;
+        migratedModel = true;
+      }
+    }
     if (saved && typeof saved === "object") {
       restoreSelect(modelSelect, saved.model);
       restoreSelect(researchModelSelect, saved.researchModel);
@@ -840,7 +847,7 @@ applySegmentWidths(document);
         modelSelect.value !== modelSelect.options[0].value ||
         researchModelChanged ||
         !researchCheck.checked ||
-        (deepCheck && !deepCheck.checked)
+        (deepCheck && deepCheck.checked)
       ) {
         advanced.setAttribute("open", "");
       }
@@ -859,6 +866,7 @@ applySegmentWidths(document);
             researchModel: researchModelSelect ? researchModelSelect.value : undefined,
             modelEpoch,
             researchEpoch,
+            deepEpoch,
           })
         );
       } catch (error) {
