@@ -3,7 +3,8 @@
 # Modelled on fleet's .github/dependabot.yml.
 #
 # Dependabot PROPOSES; a human merges a bump only when it earns it — a security
-# fix whose code path Lens uses, or a specific upstream commit we need (see
+# fix whose code path Lens uses, a security scanner update (such as CodeQL), or
+# a specific upstream commit we need (see
 # "Dependencies and in-housed code" in AGENTS.md). In-housed code (the HTML
 # DOM, the WebDriver client, the dotenv parser) is ours and is not tracked
 # here.
