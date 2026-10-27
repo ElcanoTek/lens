@@ -891,6 +891,78 @@ func TestCancelStopsDispatchAndKeepsBookkeeping(t *testing.T) {
 	}
 }
 
+func TestPausePreservesRetryPendingAndResumesCleanly(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ConcurrentSessions = 1
+	writeFile(t, cfg.InputCSVPath, "Domain\nok1.com\nblocked.com\nok2.com\nok3.com\n")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	d1 := newRunDeps()
+	var directFirstRun []string
+	d1.scrapers.make = func(o ScraperOptions) *fakeScraper {
+		return &fakeScraper{mode: o.Mode, scrape: func(domain string) ScrapeResult {
+			directFirstRun = append(directFirstRun, domain)
+			if domain == "blocked.com" {
+				return ScrapeResult{Error: "Received HTTP status 403", Mode: o.Mode}
+			}
+			if domain == "ok2.com" {
+				cancel() // pause while ok2.com is in flight
+				return ScrapeResult{Error: "context canceled", Mode: o.Mode}
+			}
+			return goodPage(o.Mode)
+		}}
+	}
+	o1, err := New(Options{Config: cfg, Quiet: true, ScrapeMode: "auto", Deps: d1.deps(), Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o1.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// blocked.com must stay retry_pending (not finalized to error on pause).
+	s1 := o1.progress.Summary()
+	if s1.Successful != 1 || s1.Retrying != 1 || s1.Errors != 0 {
+		t.Fatalf("after pause summary = %+v", s1)
+	}
+
+	// Resume on a fresh Orchestrator: ok1.com (success) and blocked.com (retry_pending)
+	// are both skipped by the direct pass; ok2.com and ok3.com run in direct, and
+	// blocked.com is rescued by the research pass.
+	d2 := newRunDeps()
+	var directResumed []string
+	d2.scrapers.make = func(o ScraperOptions) *fakeScraper {
+		return &fakeScraper{mode: o.Mode, scrape: func(domain string) ScrapeResult {
+			directResumed = append(directResumed, domain)
+			return goodPage(o.Mode)
+		}}
+	}
+	d2.llm.researchSite = func(domain string, _ ResearchOptions) (Research, error) {
+		return Research{Success: true, ResearchContent: "Researched content for " + domain}, nil
+	}
+	o2, err := New(Options{Config: cfg, Quiet: true, ScrapeMode: "auto", Deps: d2.deps(), Out: &bytes.Buffer{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := o2.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(directResumed, []string{"ok2.com", "ok3.com"}) {
+		t.Fatalf("resumed direct pass scraped %v, want [ok2.com ok3.com]", directResumed)
+	}
+	if !slices.Equal(d2.llm.researchCalls, []string{"blocked.com"}) {
+		t.Fatalf("resumed research calls = %v, want [blocked.com]", d2.llm.researchCalls)
+	}
+	s2 := o2.progress.Summary()
+	if s2.Total != 4 || s2.Processed != 4 || s2.Successful != 4 || s2.Errors != 0 || s2.Retrying != 0 {
+		t.Fatalf("after resume summary = %+v", s2)
+	}
+	_, rows := readCSV(t, cfg.OutputCSVPath)
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 deduped rows, got %d", len(rows))
+	}
+}
+
 // A checkpoint that cannot be written stops the run instead of carrying on
 // with outcomes a resume cannot see (they would be re-processed, re-billed
 // and written twice).

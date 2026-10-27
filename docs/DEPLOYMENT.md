@@ -284,7 +284,7 @@ the same list grouped by concern.
 | `reject_redirects` | `true` | Direct pass fails off-host redirects (a domain ↔ its own subdomains is not off-host) |
 | `user_agent` | current-Chrome string | An ancient UA is itself a bot signal |
 | `skip_deep_retry_on_block` | `true` | Deep pass skips sites the direct pass proved are blocked (401/403/429 or a block page) rather than retrying from the same IP |
-| `deep_retry_enabled` | `true` | Run the deep retry pass at all. Per run: dashboard "Retry with headless Chrome", `lens submit --no-deep`, `lens run --deep-retry off` |
+| `deep_retry_enabled` | `false` | Run the deep retry pass by default. Per run: dashboard "Retry with headless Chrome", `lens submit --deep` / `--no-deep`, `lens run --deep-retry on\|off` |
 | `retry_follow_redirects` | `true` | Deep retry pass follows cross-host brand→parent redirects (e.g. `foxnewsdigital.com` → `foxnews.com`) that the direct pass rejects. A legacy `firecrawl_follow_redirects` is honoured when this is unset. |
 | `deep_scrape_podman_binary` | `podman` | Container runtime |
 | `deep_scrape_image` | `docker.io/selenium/standalone-chrome:latest` | Fully qualified on purpose — Podman refuses short names without a TTY |
@@ -635,9 +635,9 @@ Everything instance-specific carries over unchanged: `.env`, `config.json`,
 `managed-files/` (job history, inputs, outputs, `_jobs.json`),
 `/var/lib/lens/access.db` and `api_tokens.db` (same schemas, so central
 sessions, the allowlist and Fleet's tokens keep working), and the podman
-storage with the Chrome image. Queued jobs stay queued. As with any update,
-the service is stopped for the swap, so let running jobs finish first: a job
-running at the stop is marked failed ("Interrupted by server restart").
+storage with the Chrome image. Queued jobs stay queued, and a job running at
+the stop pauses gracefully and automatically resumes from its `progress.json`
+when the service starts back up.
 
 Afterwards:
 
@@ -789,12 +789,11 @@ consistent snapshot first, then upload that snapshot to private backup storage.
 Do not copy a live SQLite file directly and do not use S3 as its active
 filesystem.
 
-A dashboard job running when the service stops is marked failed
-("Interrupted by server restart") on the next start; queued jobs stay queued.
-Its `progress.json` and output CSV hold every item finished before the stop
-(`progress.json` is written after every single item). A CLI run (`lens run`)
-interrupted the same way resumes where it left off when re-run with the same
-output and progress paths.
+A dashboard job running when the service stops pauses gracefully and is
+re-queued so the next start automatically resumes it from its `progress.json`
+(`progress.json` is written after every single item); queued jobs stay queued.
+A CLI run (`lens run`) interrupted the same way also resumes where it left off
+when re-run with the same output and progress paths.
 
 ## Health checks and monitoring
 

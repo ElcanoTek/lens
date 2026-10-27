@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/ElcanoTek/lens/internal/categories"
@@ -172,8 +173,8 @@ func (a *RunArgs) Apply(cfg *config.Config, scraperVerboseEnv string) (scrapeMod
 
 // RunMain is `lens run` (main.py): it parses the flags, sets up logging
 // (INFO+ to the log file, WARNING+ to stdout), runs the orchestrator and
-// returns the process exit code: 0 on success or graceful shutdown, 1 when
-// the run failed, 2 for a usage error.
+// returns the process exit code: 0 on completion, 128+signal when paused by
+// SIGINT/SIGTERM, 1 when the run failed, 2 for a usage error.
 //
 // SIGINT/SIGTERM cancel the run's context; the orchestrator stops starting
 // items, abandons in-flight ones and finishes its bookkeeping.
@@ -210,12 +211,18 @@ func runMain(parent context.Context, args []string, deps Deps, stdout, stderr io
 	defer signal.Stop(signals)
 	done := make(chan struct{})
 	defer close(done)
+	var gotSignal atomic.Int64
 	go func() {
 		// Later signals are absorbed like the Python handler did; the run is
 		// already winding down.
 		for {
 			select {
 			case sig := <-signals:
+				if s, ok := sig.(syscall.Signal); ok {
+					gotSignal.CompareAndSwap(0, int64(s))
+				} else {
+					gotSignal.CompareAndSwap(0, int64(syscall.SIGINT))
+				}
 				mainLog.Info(fmt.Sprintf("Received signal %v, initiating graceful shutdown...", sig))
 				cancel()
 			case <-done:
@@ -227,6 +234,9 @@ func runMain(parent context.Context, args []string, deps Deps, stdout, stderr io
 	if err := run(ctx, cfg, parsed, scrapeMode, rejectRedirects, verbose, deps, stdout); err != nil {
 		mainLog.Error(fmt.Sprintf("Application failed: %v", err))
 		return 1
+	}
+	if sig := gotSignal.Load(); sig != 0 {
+		return 128 + int(sig)
 	}
 	return 0
 }

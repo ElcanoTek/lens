@@ -581,7 +581,7 @@ func (d *diagnosis) jobs() {
 	active := counts["running"] + counts["cancelling"] + counts["queued"]
 	detail := "idle (no running or queued jobs)"
 	if active > 0 {
-		detail = fmt.Sprintf("busy: %d running, %d queued — let them finish before lens update or restart",
+		detail = fmt.Sprintf("active: %d running, %d queued (pauses and resumes across lens update/restart)",
 			counts["running"]+counts["cancelling"], counts["queued"])
 	}
 	d.add("jobs", true, detail, "", false)

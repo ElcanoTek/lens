@@ -164,7 +164,7 @@ func Default() *Config {
 		// Don't escalate a site the direct pass proved is blocking this IP:
 		// the deep pass renders from the same datacenter IP.
 		SkipDeepRetryOnBlk: true,
-		DeepRetryEnabled:   true,
+		DeepRetryEnabled:   false,
 
 		ResearchFallbackEnabled: true,
 		ResearchModel:           DefaultResearchModel,

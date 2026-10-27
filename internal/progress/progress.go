@@ -329,6 +329,15 @@ func (t *Tracker) IsProcessed(id string) bool {
 	return ok && e.Status == StatusSuccess
 }
 
+// IsRetryPending reports whether id failed an earlier auto-mode pass and
+// is waiting for a later retry pass.
+func (t *Tracker) IsRetryPending(id string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	e, ok := t.processed[id]
+	return ok && e.Status == StatusRetryPending
+}
+
 func (t *Tracker) withStatus(status string) []string {
 	t.mu.Lock()
 	defer t.mu.Unlock()

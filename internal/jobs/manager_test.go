@@ -100,8 +100,9 @@ func TestFailureCancelAndInterrupted(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// A job persisted as running is failed on load.
-	state := `{"jobs": [{"id": "20260101000000-abcdef", "input_file": "x.csv", "mode": "auto", "status": "running", "created_at": "2026"},
+	// A job persisted as running is re-queued on load to resume; a cancelling job finishes as cancelled.
+	state := `{"jobs": [{"id": "20260101000000-abcdef", "input_file": "x.csv", "mode": "auto", "status": "running", "created_at": "2026", "started_at": "2026-01-01T00:00:01+00:00"},
+	 {"id": "20260101000001-abcdef", "input_file": "x.csv", "mode": "auto", "status": "cancelling", "created_at": "2026"},
 	 {"id": "../evil", "input_file": "x.csv", "mode": "auto", "status": "queued"}]}`
 	home2 := t.TempDir()
 	m2 := NewManager(home2)
@@ -109,11 +110,69 @@ func TestFailureCancelAndInterrupted(t *testing.T) {
 	_ = os.WriteFile(m2.Dirs.StatePath(), []byte(state), 0o600)
 	m2.Load()
 	j, ok := m2.Get("20260101000000-abcdef")
-	if !ok || j.Status != StatusFailed || j.Error != "Interrupted by server restart" || !j.ResearchFallback {
-		t.Fatalf("loaded = %+v", j)
+	if !ok || j.Status != StatusQueued || j.Error != "" || !j.ResearchFallback || j.DeepRetry || m2.QueuePosition(j.ID) != 1 {
+		t.Fatalf("loaded running = %+v", j)
 	}
-	if len(m2.List()) != 1 {
+	jc, ok := m2.Get("20260101000001-abcdef")
+	if !ok || jc.Status != StatusCancelled || jc.FinishedAt == "" {
+		t.Fatalf("loaded cancelling = %+v", jc)
+	}
+	if len(m2.List()) != 2 {
 		t.Fatal("unsafe job id was loaded")
+	}
+}
+
+func TestShutdownPausesRunningJobAndRestartResumesIt(t *testing.T) {
+	// First run traps TERM and exits 143 (128+SIGTERM), simulating `lens run`
+	// pausing on service stop; second run sees the marker file and exits 0.
+	home, exe := fakeRunner(t, `
+marker="$(dirname "$0")/paused_once"
+if [ ! -f "$marker" ]; then
+	trap 'touch "$marker"; exit 143' TERM
+	touch "$(dirname "$0")/started"
+	sleep 30 &
+	wait
+fi
+exit 0
+`)
+	m := NewManager(home)
+	m.Executable = exe
+	if err := m.Dirs.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	runDone := make(chan struct{})
+	go func() {
+		m.Run(ctx)
+		close(runDone)
+	}()
+	job, err := m.Create(NewJob{InputFile: "a.csv", Mode: "auto"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, job.ID, StatusRunning)
+	deadline := time.Now().Add(5 * time.Second)
+	for !exists(filepath.Join(home, "started")) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	cancel()
+	<-runDone
+
+	paused, ok := m.Get(job.ID)
+	if !ok || paused.Status != StatusQueued || paused.ReturnCode != nil || paused.FinishedAt != "" || paused.StartedAt == "" {
+		t.Fatalf("paused = %+v", paused)
+	}
+
+	// Simulate service restart: new Manager loads _jobs.json and resumes the job.
+	m2 := NewManager(home)
+	m2.Executable = exe
+	m2.Load()
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go m2.Run(ctx2)
+	done := waitFor(t, m2, job.ID, StatusCompleted)
+	if done.ReturnCode == nil || *done.ReturnCode != 0 || done.StartedAt != paused.StartedAt {
+		t.Fatalf("resumed = %+v", done)
 	}
 }
 

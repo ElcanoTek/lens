@@ -400,19 +400,18 @@ func serve(args []string, stderr io.Writer, ready func(addr string)) int {
 			code = 1
 		}
 	}
+	stopWorker()
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	_ = srv.Shutdown(shutdownCtx)
-	stopWorker()
-	// The worker waits for running jobs' bookkeeping, i.e. for their
-	// subprocesses, which systemd is stopping alongside us. Don't outlive
-	// the stop timeout for it: a job still running after this is marked
-	// "Interrupted by server restart" on the next start, as before.
+	// The worker pauses running jobs and waits for their bookkeeping to
+	// flush _progress.json and _jobs.json. A job still running after this
+	// timeout is re-queued on the next start by Manager.Load.
 	done := make(chan struct{})
 	go func() { s.Wait(); close(done) }()
 	select {
 	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-time.After(15 * time.Second):
 		logger.Warn("Stopped with jobs still running")
 	}
 	return code

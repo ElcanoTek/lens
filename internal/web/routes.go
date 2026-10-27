@@ -233,7 +233,7 @@ func (s *Server) handleEnqueue(w http.ResponseWriter, r *http.Request) {
 	_, err = s.manager.Create(jobs.NewJob{
 		InputFile: safeInput, Mode: mode, Name: jobs.NormalizeJobName(f.value("name")),
 		LLMModel: model, ResearchFallback: !hasFallback || fallback != "off",
-		DeepRetry: !hasDeep || deep != "off", ResearchModel: resModel,
+		DeepRetry: hasDeep && deep == "on", ResearchModel: resModel,
 		CustomCategories: cats, DecisionModel: decModel,
 	})
 	if err != nil {

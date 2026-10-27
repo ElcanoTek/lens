@@ -78,7 +78,7 @@ func TestSpoolRequestBecomesADashboardJob(t *testing.T) {
 	if !ok || job.Status != jobs.StatusQueued || h.srv.Manager().QueuePosition(job.ID) != 1 {
 		t.Fatalf("job = %+v", job)
 	}
-	if job.Name != "deal sites" || job.DecisionModel != "~typesafe/jev-latest" || job.ResearchFallback || !job.DeepRetry {
+	if job.Name != "deal sites" || job.DecisionModel != "~typesafe/jev-latest" || job.ResearchFallback || job.DeepRetry {
 		t.Fatalf("job = %+v", job)
 	}
 	var got any

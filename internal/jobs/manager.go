@@ -177,13 +177,14 @@ type Manager struct {
 	// Now is the clock (tests).
 	Now func() time.Time
 
-	mu      sync.Mutex
-	jobs    map[string]*Job
-	queue   []string
-	running map[string]*exec.Cmd
-	current string
-	wake    chan struct{}
-	wg      sync.WaitGroup
+	mu       sync.Mutex
+	jobs     map[string]*Job
+	queue    []string
+	running  map[string]*exec.Cmd
+	current  string
+	stopping bool
+	wake     chan struct{}
+	wg       sync.WaitGroup
 }
 
 // MaxParallelFromEnv reads LENS_MAX_PARALLEL_JOBS, clamped to 1-8.
@@ -265,7 +266,8 @@ func notSaved(err error) error { return fmt.Errorf("%w: %w", ErrNotSaved, err) }
 var jobIDRe = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // Load hydrates the table from _jobs.json. Jobs that were running when the
-// server stopped are marked failed ("Interrupted by server restart").
+// server stopped are re-queued so they resume from their progress.json;
+// jobs that were cancelling finish as cancelled.
 func (m *Manager) Load() {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -285,7 +287,7 @@ func (m *Manager) Load() {
 	for _, rawJob := range doc.Jobs {
 		var p persisted
 		// Defaults for keys absent from older files.
-		p.ResearchFallback, p.DeepRetry = true, true
+		p.ResearchFallback, p.DeepRetry = true, false
 		if json.Unmarshal(rawJob, &p) != nil {
 			continue
 		}
@@ -330,9 +332,15 @@ func (m *Manager) Load() {
 				job.CustomCategories = p.CustomCategories
 			}
 		}
-		if job.Status == StatusRunning || job.Status == StatusCancelling {
-			job.Status = StatusFailed
-			job.Error = "Interrupted by server restart"
+		switch job.Status {
+		case StatusRunning:
+			job.Status = StatusQueued
+			job.FinishedAt = ""
+			job.ReturnCode = nil
+			job.Error = ""
+			interrupted = true
+		case StatusCancelling:
+			job.Status = StatusCancelled
 			if job.FinishedAt == "" {
 				job.FinishedAt = m.now()
 			}
@@ -550,14 +558,21 @@ func (m *Manager) Delete(id string) error {
 	return nil
 }
 
-// Run starts queued jobs until ctx is done, then waits for running jobs'
-// bookkeeping to finish. Running subprocesses are left to systemd's
-// KillMode on shutdown, as with the Python service.
+// Run starts queued jobs until ctx is done, then pauses running jobs and
+// waits for their bookkeeping to finish so they resume on the next start.
 func (m *Manager) Run(ctx context.Context) {
+	m.mu.Lock()
+	m.stopping = false
+	m.mu.Unlock()
 	for {
+		if ctx.Err() != nil {
+			m.pauseRunning()
+			m.wg.Wait()
+			return
+		}
 		m.mu.Lock()
 		limit := max(1, min(m.MaxParallel, 8))
-		for len(m.queue) > 0 && len(m.running) < limit {
+		for !m.stopping && len(m.queue) > 0 && len(m.running) < limit {
 			id := m.queue[0]
 			m.queue = m.queue[1:]
 			m.running[id] = nil
@@ -568,6 +583,7 @@ func (m *Manager) Run(ctx context.Context) {
 		m.mu.Unlock()
 		select {
 		case <-ctx.Done():
+			m.pauseRunning()
 			m.wg.Wait()
 			return
 		case <-m.wake:
@@ -575,10 +591,26 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
+func (m *Manager) pauseRunning() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.stopping = true
+	for id, cmd := range m.running {
+		if job := m.jobs[id]; job != nil && job.Status == StatusRunning && cmd != nil && cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		}
+	}
+}
+
+func isTermExit(code int) bool {
+	return code == 128+int(syscall.SIGTERM) || code == -int(syscall.SIGTERM)
+}
+
 func (m *Manager) runAndRelease(id string) {
 	defer m.wg.Done()
 	m.runJob(id)
 	m.mu.Lock()
+	stopping := m.stopping
 	delete(m.running, id)
 	if m.current == id {
 		m.current = ""
@@ -588,7 +620,9 @@ func (m *Manager) runAndRelease(id string) {
 		}
 	}
 	m.mu.Unlock()
-	m.signal()
+	if !stopping {
+		m.signal()
+	}
 }
 
 // Command returns the argv a job runs with (exposed for tests).
@@ -619,7 +653,9 @@ func (m *Manager) Command(job *Job) []string {
 	if !job.ResearchFallback {
 		args = append(args, "--research-fallback", "off")
 	}
-	if !job.DeepRetry {
+	if job.DeepRetry {
+		args = append(args, "--deep-retry", "on")
+	} else {
 		args = append(args, "--deep-retry", "off")
 	}
 	if job.ResearchModel != "" {
@@ -643,12 +679,15 @@ func (m *Manager) runJob(id string) {
 		m.mu.Unlock()
 		return
 	}
+	startedBefore := job.StartedAt
 	job.Status = StatusRunning
-	job.StartedAt = m.now()
+	if job.StartedAt == "" {
+		job.StartedAt = m.now()
+	}
 	if err := m.save(); err != nil {
 		// Don't start a run the next restart would see as still queued and
 		// start again; fail it in memory so the dashboard says why.
-		job.Status, job.StartedAt = StatusFailed, ""
+		job.Status, job.StartedAt = StatusFailed, startedBefore
 		job.FinishedAt = m.now()
 		job.Error = notSaved(err).Error()
 		m.mu.Unlock()
@@ -692,6 +731,13 @@ func (m *Manager) runJob(id string) {
 		m.mu.Unlock()
 		return
 	}
+	if m.stopping {
+		job.Status = StatusQueued
+		m.queue = append([]string{job.ID}, m.queue...)
+		_ = m.save() // best effort; logged
+		m.mu.Unlock()
+		return
+	}
 	m.mu.Unlock()
 
 	cmd := exec.Command(m.Executable, args...) //nolint:gosec,noctx // argv only (no shell); the job outlives request contexts and is cancelled via its process group
@@ -704,9 +750,13 @@ func (m *Manager) runJob(id string) {
 	}
 	m.mu.Lock()
 	m.running[id] = cmd
-	if job.Status == StatusCancelling {
+	switch {
+	case job.Status == StatusCancelling:
 		// Cancel arrived while the process was starting.
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
+	case m.stopping:
+		// Shutdown arrived while the process was starting.
+		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
 	job.OutputFile = snapshot.ID + "_output.csv"
 	job.ProgressFile = snapshot.ID + "_progress.json"
@@ -731,17 +781,27 @@ func (m *Manager) runJob(id string) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	job.ReturnCode = &code
 	switch {
 	case job.Status == StatusCancelling:
+		job.ReturnCode = &code
 		job.Status = StatusCancelled
+		job.FinishedAt = m.now()
 	case code == 0:
+		job.ReturnCode = &code
 		job.Status = StatusCompleted
 		job.Error = ""
+		job.FinishedAt = m.now()
+	case m.stopping || isTermExit(code):
+		job.Status = StatusQueued
+		job.ReturnCode = nil
+		job.Error = ""
+		job.FinishedAt = ""
+		m.queue = append([]string{job.ID}, m.queue...)
 	default:
+		job.ReturnCode = &code
 		job.Status = StatusFailed
 		job.Error = fmt.Sprintf("Analyzer exited with code %d", code)
+		job.FinishedAt = m.now()
 	}
-	job.FinishedAt = m.now()
 	_ = m.save() // best effort; logged
 }
