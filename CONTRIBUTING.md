@@ -130,8 +130,10 @@ code. To change one, `go get module@version`, then `go mod tidy`, and commit
 both files. Never hand-edit `go.sum`.
 
 Dependabot proposes updates (daily, cooldown 7 days (3 for patch releases),
-minor/patch grouped); a human merges one only when the bump earns it (a
-security fix whose code path Lens uses, or an upstream commit we need). Before
+minor/patch grouped); a human merges those routine refreshes once CI is green
+so drift stays small, and merges out-of-cycle manual bumps only when they earn
+it (a security fix whose code path Lens uses, a security scanner update, or an
+upstream commit we need). Before
 adding a dependency, check whether the standard library or a small package of
 our own would do — see "Dependencies and in-housed code" in
 [`AGENTS.md`](AGENTS.md) for the policy and what is already in-house.
