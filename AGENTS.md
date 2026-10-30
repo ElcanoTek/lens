@@ -305,8 +305,12 @@ Deployed hosts upgraded in place from Python, so every persisted format is byte-
 Prefer the standard library or a small package we own; add a module only
 when it clearly earns its maintenance and supply-chain cost. Dependabot
 proposes updates for `gomod` and GitHub Actions (daily, cooldown 7 days (3 for
-patch releases), grouped); a human merges them only when the bump earns it —
-a security fix whose code path we use, a security scanner update (such as CodeQL), or a specific commit we need. In-housed
+patch releases), grouped for minor/patch and separate for majors); a human
+merges routine grouped refreshes and separate major Dependabot PRs (after
+breaking-change review) once CI is green so drift stays small. Out-of-cycle
+manual bumps are merged only when the bump earns it — a security fix whose code
+path we use, a security scanner update (such as CodeQL), or a specific commit
+we need. In-housed
 code is ours and is not tracked by Dependabot. On a CVE, check reachability
 first: `make govulncheck` (CI's go job) is call-graph aware and reports only
 vulnerabilities reachable from Lens, stdlib included. If the affected code is
