@@ -49,7 +49,7 @@
               <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#moon"></use></svg>
             </span>
           </button>
-          <form method="post" action="/logout" class="header-action-form">
+          <form method="post" action="/logout" class="header-action-form js-confirm-sign-out">
             {{ if .CSRFToken }}<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">{{ end }}
             <button class="icon-action" type="submit" aria-label="Log out" title="Log out">
               <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#logout"></use></svg>
@@ -393,7 +393,7 @@
         <h3 id="confirm-modal-title">Are you sure?</h3>
         <p id="confirm-delete-text">This action cannot be undone.</p>
         <div class="confirm-modal-actions">
-          <button value="cancel" class="btn btn-ghost" type="submit">Keep</button>
+          <button value="cancel" class="btn btn-ghost" type="submit" id="confirm-modal-cancel">Keep</button>
           <button value="confirm" class="btn btn-danger" type="submit" id="confirm-modal-action">Delete</button>
         </div>
       </form>

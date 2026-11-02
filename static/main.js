@@ -20,6 +20,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const confirmModalTitle = document.getElementById("confirm-modal-title");
   const confirmModalText = document.getElementById("confirm-delete-text");
   const confirmModalAction = document.getElementById("confirm-modal-action");
+  const confirmModalCancel = document.getElementById("confirm-modal-cancel");
   const toastRoot = document.getElementById("toast-root");
   const flashData = document.getElementById("flash-data");
 
@@ -130,7 +131,12 @@ applySegmentWidths(document);
     setTimeout(remove, 5200);
   }
 
-  function openConfirmModal({ title, message, confirmLabel = "Confirm", submitCallback }) {
+  // One modal serves every confirmation, so each open sets every label and
+  // the confirm button's tone (destructive actions keep the danger red and
+  // "Keep"; sign-out is primary with "Cancel"), and clears the previous
+  // result: Escape closes without setting one, and a stale "confirm" left
+  // from an earlier open must not count as a yes.
+  function openConfirmModal({ title, message, confirmLabel = "Confirm", cancelLabel = "Keep", tone = "danger", submitCallback }) {
     if (!confirmModal || !confirmModalText) {
       submitCallback();
       return;
@@ -140,8 +146,14 @@ applySegmentWidths(document);
     }
     if (confirmModalAction) {
       confirmModalAction.textContent = confirmLabel;
+      confirmModalAction.classList.toggle("btn-danger", tone === "danger");
+      confirmModalAction.classList.toggle("btn-primary", tone === "primary");
+    }
+    if (confirmModalCancel) {
+      confirmModalCancel.textContent = cancelLabel;
     }
     confirmModalText.textContent = message;
+    confirmModal.returnValue = "";
     confirmModal.showModal();
     confirmModal.addEventListener(
       "close",
@@ -385,6 +397,20 @@ applySegmentWidths(document);
       title: "Delete run?",
       message: `Delete ${form.dataset.jobId || "this run"} and its results? This cannot be undone.`,
       confirmLabel: "Delete",
+    });
+  });
+
+  // Signing out asks first. It ends the session at Auth (central mode's
+  // RP-initiated logout, or the auth host's logout in elcano mode), so every
+  // app is signed out, not only Lens. Without script the header button
+  // still posts the same form straight away.
+  document.querySelectorAll(".js-confirm-sign-out").forEach((form) => {
+    confirmFormSubmit(form, {
+      title: "Sign out?",
+      message: "You'll be signed out of all your apps, not just Lens.",
+      confirmLabel: "Sign out",
+      cancelLabel: "Cancel",
+      tone: "primary",
     });
   });
 
