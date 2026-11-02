@@ -581,8 +581,8 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 		!strings.Contains(form[2], `<button class="icon-action" type="submit" aria-label="Sign out"`) {
 		t.Errorf("the logout form lost its token or its submit button:\n%s", form[2])
 	}
-	if !strings.Contains(body, `<dialog class="confirm-modal" id="confirm-delete-modal">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
-		t.Error("the shared confirm modal or its cancel button is missing")
+	if !strings.Contains(body, `<dialog class="confirm-modal" id="confirm-delete-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-delete-text">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
+		t.Error("the shared confirm modal, its name or its cancel button is missing")
 	}
 	mainJS, _ := fs.ReadFile(lens.Static, "static/main.js")
 	js := string(mainJS)
@@ -596,6 +596,10 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 		// Escape leaves returnValue as it was; a stale "confirm" must not
 		// sign anyone out.
 		`confirmModal.returnValue = "";`,
+		// Cancel puts focus back on the button that opened it, and only a
+		// "confirm" result submits.
+		"if (confirmModal.returnValue === \"confirm\") {\n          submitCallback();\n        } else if (opener && opener.isConnected) {\n          opener.focus();",
+		"opener: event.submitter || form.querySelector('[type=\"submit\"]'),",
 	} {
 		if !strings.Contains(js, want) {
 			t.Errorf("main.js lacks %q", want)

@@ -135,8 +135,10 @@ applySegmentWidths(document);
   // the confirm button's tone (destructive actions keep the danger red and
   // "Keep"; sign-out is primary with "Cancel"), and clears the previous
   // result: Escape closes without setting one, and a stale "confirm" left
-  // from an earlier open must not count as a yes.
-  function openConfirmModal({ title, message, confirmLabel = "Confirm", cancelLabel = "Keep", tone = "danger", submitCallback }) {
+  // from an earlier open must not count as a yes. A cancelled confirmation
+  // puts focus back on the control that opened it (Safari does not focus a
+  // clicked button, so the dialog alone would return focus to the page).
+  function openConfirmModal({ title, message, confirmLabel = "Confirm", cancelLabel = "Keep", tone = "danger", opener, submitCallback }) {
     if (!confirmModal || !confirmModalText) {
       submitCallback();
       return;
@@ -160,6 +162,8 @@ applySegmentWidths(document);
       () => {
         if (confirmModal.returnValue === "confirm") {
           submitCallback();
+        } else if (opener && opener.isConnected) {
+          opener.focus();
         }
       },
       { once: true },
@@ -175,6 +179,7 @@ applySegmentWidths(document);
       event.preventDefault();
       openConfirmModal({
         ...options,
+        opener: event.submitter || form.querySelector('[type="submit"]'),
         submitCallback: () => {
           form.dataset.confirmed = "yes";
           form.requestSubmit();
