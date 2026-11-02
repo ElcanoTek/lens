@@ -560,7 +560,7 @@ type csrfAuth struct{ AuthProvider }
 
 func (csrfAuth) CSRFToken(*http.Request) string { return "csrf-test-token" }
 
-// The header's Log out button asks first: main.js holds the logout form's
+// The header's Sign out button asks first: main.js holds the logout form's
 // submit behind the shared confirm modal ("Sign out?"). The form itself is
 // unchanged, so without script the button still posts /logout, CSRF token
 // included, straight away.
@@ -578,7 +578,7 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 		t.Errorf("the logout form is not held for confirmation: class=%q", form[1])
 	}
 	if !strings.Contains(form[2], `<input type="hidden" name="csrf_token" value="csrf-test-token">`) ||
-		!strings.Contains(form[2], `<button class="icon-action" type="submit" aria-label="Log out"`) {
+		!strings.Contains(form[2], `<button class="icon-action" type="submit" aria-label="Sign out"`) {
 		t.Errorf("the logout form lost its token or its submit button:\n%s", form[2])
 	}
 	if !strings.Contains(body, `<dialog class="confirm-modal" id="confirm-delete-modal">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
