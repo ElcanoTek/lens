@@ -95,6 +95,14 @@ prompt_secret() {
 }
 genbase64() { openssl rand -base64 "$1" | tr -d '=\n' | tr '/+' '_-'; }
 genhex()    { openssl rand -hex "$1"; }
+# signin_target -> where this box sends browsers to sign in, for the summary.
+signin_target() {
+  if [[ "${LENS_AUTH_MODE:-}" == central ]]; then
+    printf 'central Auth at %s' "${AUTH_ISSUER_URL:-(AUTH_ISSUER_URL unset)}"
+  else
+    printf 'the auth service at %s' "${AUTH_LOGIN_URL:-https://auth.elcanotek.com}"
+  fi
+}
 
 [[ $EUID -eq 0 ]] || die "run as root: sudo bash scripts/bootstrap.sh"
 [[ -f "$SRC_DIR/go.mod" && -d "$SRC_DIR/cmd/lens" ]] || die "not a Lens checkout at $SRC_DIR"
@@ -231,7 +239,8 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 # Unified auth: Lens verifies the elcano_auth cookie minted by the auth
-# service (auth.elcanotek.com) using that service's Ed25519 PUBLIC key. Get it
+# service (the client's auth.<domain>, or auth.elcanotek.com for Elcano's own)
+# using that service's Ed25519 PUBLIC key. Get it
 # from the auth host with `auth pubkey`. Safe to paste — verify-only, can't
 # mint sessions. Without it the app redirects every request to auth.
 AUTH_SIGNING_PUBKEY="$(prompt AUTH_SIGNING_PUBKEY "auth service AUTH_SIGNING_PUBKEY (run 'auth pubkey' on the auth host)" "${AUTH_SIGNING_PUBKEY:-}")"
@@ -441,7 +450,7 @@ say "  Logs        ${c_dim}lens logs${c_reset}"
 say "  Diagnose    ${c_dim}lens doctor${c_reset}"
 say "  Maintain    ${c_dim}lens update --yes; lens host --help${c_reset}"
 say
-say "  Sign-in     ${c_dim}via the auth service (auth.elcanotek.com) — no local password${c_reset}"
+say "  Sign-in     ${c_dim}via $(signin_target); no local password${c_reset}"
 if [[ -z "$AUTH_SIGNING_PUBKEY" ]]; then
   printf '  %s! AUTH_SIGNING_PUBKEY is unset — every request will redirect to auth.%s\n' "$c_yellow" "$c_reset"
   printf '  %s  Set it with: lens env edit  (paste the output of `auth pubkey`), then: lens restart%s\n' "$c_yellow" "$c_reset"

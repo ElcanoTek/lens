@@ -45,6 +45,28 @@ func TestBootstrapOptionalSecretPrompt(t *testing.T) {
 	}
 }
 
+// The summary names the auth host this box signs in through, not Elcano's.
+func TestBootstrapSummaryNamesTheConfiguredAuthHost(t *testing.T) {
+	src := read(t, "scripts/bootstrap.sh")
+	fn := between(t, src, "signin_target() {", "\n}\n") + "\n}\n"
+	cases := []struct{ mode, issuer, login, want string }{
+		{"central", "https://auth.basisvic.com", "", "central Auth at https://auth.basisvic.com"},
+		{"central", "", "", "central Auth at (AUTH_ISSUER_URL unset)"},
+		{"elcano", "", "", "the auth service at https://auth.elcanotek.com"},
+		{"elcano", "", "https://auth.example.com", "the auth service at https://auth.example.com"},
+	}
+	for _, tc := range cases {
+		r := bash(t, fn+`LENS_AUTH_MODE="$1" AUTH_ISSUER_URL="$2" AUTH_LOGIN_URL="$3" signin_target`,
+			[]string{tc.mode, tc.issuer, tc.login})
+		if r.code != 0 || r.stdout != tc.want {
+			t.Fatalf("%+v: code %d stdout %q stderr %s", tc, r.code, r.stdout, r.stderr)
+		}
+	}
+	if strings.Contains(between(t, src, "✓ Lens installed", "AUTH_SIGNING_PUBKEY is unset"), "auth.elcanotek.com") {
+		t.Fatal("the install summary names a fixed auth host")
+	}
+}
+
 // runuser keeps the cwd; from root's unreadable home, podman fails.
 func TestServiceUserCommandsNeverRunFromTheCallersCwd(t *testing.T) {
 	for _, script := range []string{"scripts/bootstrap.sh", "scripts/update.sh"} {
