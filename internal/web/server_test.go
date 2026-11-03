@@ -554,6 +554,69 @@ func TestHealthLogoutAndSignedOut(t *testing.T) {
 	}
 }
 
+// csrfAuth is the elcano test provider with a central-mode logout token, so
+// the page renders the hidden csrf_token field.
+type csrfAuth struct{ AuthProvider }
+
+func (csrfAuth) CSRFToken(*http.Request) string { return "csrf-test-token" }
+
+// The header's Sign out button asks first: main.js holds the logout form's
+// submit behind the shared confirm modal ("Sign out?"). The form itself is
+// unchanged, so without script the button still posts /logout, CSRF token
+// included, straight away.
+func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
+	h := newHarness(t, false, func(o *Options) { o.Auth = csrfAuth{o.Auth} })
+	resp, body := h.get("/")
+	if resp.StatusCode != 200 {
+		t.Fatal(resp.StatusCode)
+	}
+	form := regexp.MustCompile(`(?s)<form method="post" action="/logout" class="([^"]*)">(.*?)</form>`).FindStringSubmatch(body)
+	if form == nil {
+		t.Fatal("no POST /logout form on the page")
+	}
+	if !strings.Contains(" "+form[1]+" ", " js-confirm-sign-out ") {
+		t.Errorf("the logout form is not held for confirmation: class=%q", form[1])
+	}
+	if !strings.Contains(form[2], `<input type="hidden" name="csrf_token" value="csrf-test-token">`) ||
+		!strings.Contains(form[2], `<button class="icon-action" type="submit" aria-label="Sign out"`) {
+		t.Errorf("the logout form lost its token or its submit button:\n%s", form[2])
+	}
+	if !strings.Contains(body, `<dialog class="confirm-modal" id="confirm-delete-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-delete-text">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
+		t.Error("the shared confirm modal, its name or its cancel button is missing")
+	}
+	mainJS, _ := fs.ReadFile(lens.Static, "static/main.js")
+	js := string(mainJS)
+	for _, want := range []string{
+		`document.querySelectorAll(".js-confirm-sign-out").forEach((form) => {`,
+		`title: "Sign out?"`,
+		`message: "You'll be signed out of all your apps, not just Lens."`,
+		`confirmLabel: "Sign out"`,
+		`cancelLabel: "Cancel"`,
+		`confirmModalCancel.textContent = cancelLabel`,
+		// Escape leaves returnValue as it was; a stale "confirm" must not
+		// sign anyone out.
+		`confirmModal.returnValue = "";`,
+		// Cancel puts focus back on the button that opened it, and only a
+		// "confirm" result submits.
+		"if (confirmModal.returnValue === \"confirm\") {\n          submitCallback();\n        } else if (opener && opener.isConnected) {\n          opener.focus();",
+		"opener: event.submitter || form.querySelector('[type=\"submit\"]'),",
+	} {
+		if !strings.Contains(js, want) {
+			t.Errorf("main.js lacks %q", want)
+		}
+	}
+	// The popup is opaque in both themes: the dark elevated gradient alone
+	// lets the page read through it.
+	css, _ := fs.ReadFile(lens.Static, "static/styles.css")
+	if !strings.Contains(string(css), "background: var(--gradient-surface-elevated), var(--color-bg);") {
+		t.Error("the modal background has no opaque layer under the elevated gradient")
+	}
+	// The no-script path still signs out.
+	if logout := h.postForm("/logout", nil); logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout" {
+		t.Fatal(logout.StatusCode, location(logout))
+	}
+}
+
 func TestBackchannelBodyLimits(t *testing.T) {
 	h := newHarness(t, false)
 	post := func(body io.Reader, length int64, chunked bool) int {
