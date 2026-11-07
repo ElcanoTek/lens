@@ -78,7 +78,7 @@ func (h *harness) lastExec(t *testing.T) execCall {
 	return h.execs[len(h.execs)-1]
 }
 
-const sudoPrefix = "sudo --preserve-env=LENS_SRC_DIR,LENS_APP_DIR,LENS_UPDATE_YES,LENS_UPDATE_BRANCH,LENS_UPDATE_SKIP_DEEP,LENS_KEEP_ROLLBACKS,EDITOR,LENS_APP_USER,LENS_HOME,LENS_FROM_SOURCE,LENS_UPDATE_TAG"
+const sudoPrefix = "sudo --preserve-env=LENS_SRC_DIR,LENS_APP_DIR,LENS_UPDATE_YES,LENS_UPDATE_BRANCH,LENS_UPDATE_SKIP_DEEP,LENS_KEEP_ROLLBACKS,EDITOR,LENS_APP_USER,LENS_HOME,LENS_FROM_SOURCE,LENS_UPDATE_TAG,LENS_ALLOW_DOWNGRADE"
 
 func TestServiceCommandsUseSudoOnlyWhenNotRoot(t *testing.T) {
 	src := t.TempDir()

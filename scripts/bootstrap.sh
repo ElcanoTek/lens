@@ -232,7 +232,7 @@ if [[ "$FROM_SOURCE" != "1" ]]; then
   lens_git "$INSTALL_SRC_DIR" checkout --quiet --detach "refs/tags/$RELEASE_TAG"
 fi
 deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
-deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
+deploy_describe="$( (cd "$INSTALL_SRC_DIR" && bash "$INSTALL_SRC_DIR/scripts/version.sh" describe) 2>/dev/null || lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
 # Build in a root-only tree, never in $APP_DIR: that tree belongs to the
 # service user, and on a bootstrap re-run the service is still running, so
 # it could swap sources or bin/ while root builds. Root executes this binary

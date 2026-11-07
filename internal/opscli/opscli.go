@@ -48,7 +48,7 @@ const Service = "lens.service"
 var preserveEnv = []string{
 	"LENS_SRC_DIR", "LENS_APP_DIR", "LENS_UPDATE_YES", "LENS_UPDATE_BRANCH",
 	"LENS_UPDATE_SKIP_DEEP", "LENS_KEEP_ROLLBACKS", "EDITOR",
-	"LENS_APP_USER", "LENS_HOME", "LENS_FROM_SOURCE", "LENS_UPDATE_TAG",
+	"LENS_APP_USER", "LENS_HOME", "LENS_FROM_SOURCE", "LENS_UPDATE_TAG", "LENS_ALLOW_DOWNGRADE",
 }
 
 // serviceUserEnv is forwarded explicitly (sudo and runuser both scrub the

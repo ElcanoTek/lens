@@ -27,7 +27,7 @@ BIN := bin/lens
 # (`:=`) so git runs once per make invocation. update.sh builds in a staging
 # copy that has no .git, so it passes VERSION and COMMIT on the command line
 # (command-line variables override these assignments).
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION := $(shell ./scripts/version.sh describe 2>/dev/null || echo dev)
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
 VERSION_PKG := github.com/ElcanoTek/lens/internal/version
 LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT)

@@ -84,10 +84,13 @@ func TestVersionScript(t *testing.T) {
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "2026.11.07.1" {
 		t.Fatalf("describe = (%d, %q)", r.code, r.stdout)
 	}
+	// A malformed leading-zero tag is ignored by next (never parsed as octal).
+	gitIn("tag", "v2026.11.07.08")
 	r = runCmd(t, []string{bashPath(t), script, "next", "2026.11.07"}, func(c *exec.Cmd) { c.Dir = dir })
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "v2026.11.07.2" {
-		t.Fatalf("next after .1 = (%d, %q)", r.code, r.stdout)
+		t.Fatalf("next with leading-zero tag = (%d, %q, %q)", r.code, r.stdout, r.stderr)
 	}
+	gitIn("tag", "-d", "v2026.11.07.08")
 
 	// filter keeps only valid release tags and sorts them chronologically.
 	r = runCmd(t, []string{bashPath(t), script, "filter"},
@@ -477,6 +480,17 @@ exec %q "$@"
 	}
 	if exists(b.systemctlLog) && strings.Contains(readFile(t, b.systemctlLog), "stop") {
 		t.Fatalf("service was stopped before binary verification failed:\n%s", readFile(t, b.systemctlLog))
+	}
+	// 4. An automatic update refuses a stale Latest marker that is older than the installed binary,
+	// while an explicit LENS_UPDATE_TAG / --allow-downgrade permits rolling back.
+	write(t, filepath.Join(b.app, "bin/lens"), "#!/bin/sh\necho \"lens 2026.11.07.9 ("+oldSha+")\"\n", 0o755)
+	r = b.run(t, envVars...)
+	if r.code == 0 || !strings.Contains(r.stderr, "refusing automatic downgrade") {
+		t.Fatalf("automatic downgrade was not refused: (%d, %s)", r.code, r.stderr)
+	}
+	r = b.run(t, append(envVars, "LENS_UPDATE_TAG="+tag)...)
+	if r.code != 0 {
+		t.Fatalf("explicit --tag rollback failed (%d):\nstdout=%s\nstderr=%s", r.code, r.stdout, r.stderr)
 	}
 }
 

@@ -33,17 +33,21 @@ SERVICE="lens.service"
 ORIG_ARGS=("$@")
 FROM_SOURCE="${LENS_FROM_SOURCE:-0}"
 RELEASE_TAG="${LENS_UPDATE_TAG:-${LENS_RELEASE_TAG:-}}"
+EXPLICIT_TAG=0
+[[ -n "$RELEASE_TAG" ]] && EXPLICIT_TAG=1
+ALLOW_DOWNGRADE="${LENS_ALLOW_DOWNGRADE:-0}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y) export LENS_UPDATE_YES=1; shift ;;
     --from-source) FROM_SOURCE=1; export LENS_FROM_SOURCE=1; shift ;;
     --artifact) FROM_SOURCE=0; export LENS_FROM_SOURCE=0; shift ;;
+    --allow-downgrade) ALLOW_DOWNGRADE=1; export LENS_ALLOW_DOWNGRADE=1; shift ;;
     --tag)
       [[ $# -ge 2 && -n "${2:-}" ]] || { echo "--tag requires a release tag (vYYYY.MM.DD.N)" >&2; exit 2; }
-      RELEASE_TAG="$2"; export LENS_UPDATE_TAG="$2"; shift 2 ;;
+      RELEASE_TAG="$2"; EXPLICIT_TAG=1; export LENS_UPDATE_TAG="$2"; shift 2 ;;
     --tag=*)
-      RELEASE_TAG="${1#--tag=}"; export LENS_UPDATE_TAG="$RELEASE_TAG"; shift ;;
-    --help|-h) echo 'Usage: lens update [--yes] [--tag vYYYY.MM.DD.N] [--from-source] (or lens rebuild [--from-source] to deploy the current checkout)'; exit 0 ;;
+      RELEASE_TAG="${1#--tag=}"; EXPLICIT_TAG=1; export LENS_UPDATE_TAG="$RELEASE_TAG"; shift ;;
+    --help|-h) echo 'Usage: lens update [--yes] [--tag vYYYY.MM.DD.N] [--allow-downgrade] [--from-source] (or lens rebuild [--from-source] to deploy the current checkout)'; exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -104,6 +108,15 @@ if [[ "$FROM_SOURCE" != "1" ]]; then
       RELEASE_TAG="$(lens_release_latest_tag)" || die "could not determine latest published release tag from GitHub"
     fi
     [[ "$RELEASE_TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$ ]] || die "invalid release tag: $RELEASE_TAG"
+    if [[ -x "$APP_DIR/bin/lens" ]]; then
+      current_ver="$("$APP_DIR/bin/lens" --version 2>/dev/null | awk '{print $2}' || true)"
+      if [[ -n "$current_ver" ]] && lens_release_older "$RELEASE_TAG" "$current_ver"; then
+        if [[ "$EXPLICIT_TAG" != "1" && "$ALLOW_DOWNGRADE" != "1" ]]; then
+          die "refusing automatic downgrade from $current_ver to older release $RELEASE_TAG (pass --tag $RELEASE_TAG or --allow-downgrade to roll back)"
+        fi
+        warn "rolling back from $current_ver to older release $RELEASE_TAG"
+      fi
+    fi
     git fetch --quiet --tags --force origin
     after_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null)" \
       || die "release tag $RELEASE_TAG not found in origin"
@@ -302,7 +315,7 @@ if [[ "$FROM_SOURCE" == "1" ]]; then
   # neither). GOTOOLCHAIN=auto then fetches go.mod's pinned release into the
   # root-owned build cache (scripts/lib/deploy.sh).
   lens_ensure_go || die "could not install the Go toolchain (dnf install golang make) — live install untouched"
-  describe="$(git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
+  describe="$(bash "$SRC_DIR/scripts/version.sh" describe 2>/dev/null || git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
   lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live install untouched"
 else
   verified_bin="$(lens_release_fetch "$SRC_DIR" "$RELEASE_TAG" "$PRIV_DIR/release" "$LENS_COSIGN_CACHE" "$after_sha")" \

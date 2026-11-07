@@ -97,10 +97,10 @@ jobs:
           fi
 
           if [ "${EVENT_NAME}" = "workflow_dispatch" ]; then
-            ci_ok="$(gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&status=completed" \
-              --jq '[.workflow_runs[] | select((.name == "Tests" or .name == "CI") and .conclusion == "success")] | length > 0')"
+            ci_ok="$(gh api "repos/${REPO}/actions/runs?head_sha=${HEAD_SHA}&event=push&status=completed" \
+              --jq '[.workflow_runs[] | select((.name == "Tests" or .name == "CI") and .event == "push" and .head_branch == "main" and .conclusion == "success")] | length > 0')"
             if [ "${ci_ok}" != "true" ]; then
-              echo "::error::Cannot release ${HEAD_SHA}: no completed successful Tests/CI workflow run found for this commit."
+              echo "::error::Cannot release ${HEAD_SHA}: no completed successful push Tests/CI workflow run on main found for this commit."
               exit 1
             fi
           fi
@@ -117,8 +117,8 @@ jobs:
           fi
 
           tip="$(git rev-parse HEAD)"
-          if [ "${HEAD_SHA}" != "${tip}" ] && ! git diff --quiet "${HEAD_SHA}" "${tip}" -- .github/workflows; then
-            echo "::notice::${HEAD_SHA} is superseded: main is at ${tip}, whose workflow files differ, so a release tag on ${HEAD_SHA} cannot be pushed with this token. ${tip}'s own release covers this commit; not tagging it."
+          if [ "${HEAD_SHA}" != "${tip}" ]; then
+            echo "::notice::${HEAD_SHA} is superseded: main is now at ${tip}, whose own release covers this commit; not tagging an older commit."
             echo "released=false" >>"${GITHUB_OUTPUT}"
             exit 0
           fi
@@ -169,13 +169,19 @@ jobs:
             backoff=$(( (attempt < 10 ? attempt : 10) + RANDOM % 5 ))
             echo "::warning::pushing ${tag} was rejected (attempt ${attempt}/${MAX_ATTEMPTS}); refetching tags and retrying in ${backoff}s"
             sleep "${backoff}"
-            git fetch --force --tags origin || echo "::warning::refetching tags failed; retrying"
+            git fetch --force --tags origin main || echo "::warning::refetching tags failed; retrying"
             if existing="$(scripts/version.sh released-at "${HEAD_SHA}")" && [ -n "${existing}" ]; then
               echo "::notice::${HEAD_SHA} was tagged ${existing} meanwhile."
               {
                 echo "tag=${existing}"
                 echo "released=true"
               } >>"${GITHUB_OUTPUT}"
+              exit 0
+            fi
+            tip="$(git rev-parse origin/main 2>/dev/null || git rev-parse HEAD)"
+            if [ "${HEAD_SHA}" != "${tip}" ]; then
+              echo "::notice::${HEAD_SHA} is now superseded by ${tip} on main; not assigning a newer ordinal to an older commit."
+              echo "released=false" >>"${GITHUB_OUTPUT}"
               exit 0
             fi
           done

@@ -166,14 +166,15 @@ cmd_next() {
 	local highest=0 tag ordinal
 	while read -r tag; do
 		[ -n "$tag" ] || continue
+		is_release_tag "$tag" || continue
 		ordinal="${tag##*.}"
 		case "$ordinal" in
-		'' | *[!0-9]*) continue ;;
+		'' | 0* | *[!0-9]*) continue ;;
 		esac
 		if [ "$ordinal" -gt "$highest" ]; then
 			highest="$ordinal"
 		fi
-	done <<<"$(git tag --list "v${date}.[0-9]*" 2>/dev/null)"
+	done <<<"$(git tag --list "v${date}.[1-9]*" 2>/dev/null)"
 
 	echo "v${date}.$((highest + 1))"
 }
