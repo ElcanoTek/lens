@@ -48,7 +48,7 @@ const Service = "lens.service"
 var preserveEnv = []string{
 	"LENS_SRC_DIR", "LENS_APP_DIR", "LENS_UPDATE_YES", "LENS_UPDATE_BRANCH",
 	"LENS_UPDATE_SKIP_DEEP", "LENS_KEEP_ROLLBACKS", "EDITOR",
-	"LENS_APP_USER", "LENS_HOME",
+	"LENS_APP_USER", "LENS_HOME", "LENS_FROM_SOURCE", "LENS_UPDATE_TAG", "LENS_ALLOW_DOWNGRADE",
 }
 
 // serviceUserEnv is forwarded explicitly (sudo and runuser both scrub the
@@ -274,9 +274,10 @@ Service
   lens serve [--addr 127.0.0.1:8808]   run the dashboard/API/MCP server (systemd does this)
 
 Deploy and maintain
-  lens update [--yes]           fetch + staged Go build + restart; rollback on failure
-                                (unattended: LENS_UPDATE_YES=1 lens update)
-  lens rebuild                  rebuild + restart current checkout
+  lens update [--yes] [--tag vYYYY.MM.DD.N] [--allow-downgrade] [--from-source]
+                                fetch + verify signed release (or build from source) + restart;
+                                rollback on failure (unattended: LENS_UPDATE_YES=1 lens update)
+  lens rebuild [--from-source]  re-stage + restart current checkout
                                 (skip fetch — useful after a manual rollback)
   lens doctor [--json] [--strict] [--public-url https://HOST]
                                 read-only diagnostics (including auth + runtime)

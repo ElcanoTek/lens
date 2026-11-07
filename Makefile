@@ -27,7 +27,7 @@ BIN := bin/lens
 # (`:=`) so git runs once per make invocation. update.sh builds in a staging
 # copy that has no .git, so it passes VERSION and COMMIT on the command line
 # (command-line variables override these assignments).
-VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+VERSION := $(shell ./scripts/version.sh describe 2>/dev/null || echo dev)
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null)
 VERSION_PKG := github.com/ElcanoTek/lens/internal/version
 LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$(COMMIT)
@@ -35,7 +35,8 @@ LDFLAGS := -s -w -X $(VERSION_PKG).Version=$(VERSION) -X $(VERSION_PKG).Commit=$
 # The shell scripts ShellCheck lints (CI's shell job runs this target): the
 # deploy scripts, the shared frontend-standard tooling and the cloud-session hook.
 SHELL_SCRIPTS := install.sh scripts/bootstrap.sh scripts/update.sh scripts/host.sh \
-	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh scripts/lib/dnscheck.sh \
+	scripts/version.sh scripts/retry-transient.sh scripts/release-push-rejection.sh scripts/release-newer-published.sh \
+	scripts/bsl-change-date.sh scripts/lib/deploy.sh scripts/lib/release.sh scripts/lib/caddy-site.sh scripts/lib/hostname.sh scripts/lib/dnscheck.sh \
 	scripts/flag-sync.sh scripts/stack-check.sh .claude/hooks/session-start.sh
 
 all: build
