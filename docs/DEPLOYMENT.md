@@ -49,9 +49,9 @@ from the Lens home) or adapt the script.
 | Root access | `bootstrap.sh` refuses to run as a non-root user |
 | curl | The public installer installs Git and clones main over HTTPS; no GitHub credentials needed |
 | An OpenRouter API key | Every classification is an OpenRouter call. Runs cost real money — budget before pointing it at a large list. |
-| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API and the Google Play Store; at build time (install and every update) to the Go module proxy and checksum database (`proxy.golang.org`, `sum.golang.org`), which also serve the pinned Go toolchain |
+| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API, the Google Play Store, and GitHub Releases (`github.com`, `api.github.com`, `objects.githubusercontent.com`) for signed release binaries (plus `proxy.golang.org` and `sum.golang.org` only when `--from-source` is used) |
 | 1 vCPU / 2 GB RAM | Enough for the direct crawl and research fallback. The deep crawler's Chrome container wants ~2 GB more RAM. |
-| ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), the Go build cache (`/var/cache/lens-build`, a few hundred MB) and whatever run output you keep |
+| ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), the pinned `cosign` cache (`/var/cache/lens-cosign`; or `/var/cache/lens-build` when `--from-source` is used) and whatever run output you keep |
 | A public DNS record | Only if you want Caddy to obtain a Let's Encrypt certificate |
 
 ## Install
@@ -123,11 +123,12 @@ then pass these same variables to `bash` with that file.
 
 Seven steps, in order:
 
-1. **`dnf install`** — `git curl jq golang make rsync openssl util-linux
-   ca-certificates`, plus `chromium chromedriver` (unless `SKIP_CHROME`), and
-   `podman` (unless `SKIP_DEEP`). Any distro Go ≥ 1.21 is enough: the build
-   runs with `GOTOOLCHAIN=auto`, so Go downloads the exact release `go.mod`
-   pins (see step 3). Then, when `cockpit-ws` is installed, it removes Cockpit with
+1. **`dnf install`** — `git curl jq rsync openssl util-linux
+   ca-certificates`, plus `chromium chromedriver` (unless `SKIP_CHROME`),
+   `podman` (unless `SKIP_DEEP`), and `golang make` only when `--from-source`
+   (`LENS_FROM_SOURCE=1`) or an untagged commit is being built from source. In
+   default signed-release mode no Go toolchain or `make` is installed on the
+   box. Then, when `cockpit-ws` is installed, it removes Cockpit with
    `dnf -y remove 'cockpit*'`: the Vultr Fedora image ships Cockpit's
    root-capable web login on :9090, and Lens hosts are administered over ssh
    only. `LENS_KEEP_COCKPIT=1` keeps it; a failed removal only warns.
@@ -518,14 +519,19 @@ build cannot take down a working install:
    interactive) — without it every request redirects in a loop. Then ensure
    the rootless-podman prerequisites and the pre-pulled Chrome image, which
    fixes hosts bootstrapped before deep-scrape support existed.
-3. **Stage.** Install `golang` and `make` from dnf if either is missing, copy
-   the release tree into `/opt/lens.staging.XXXXXX` and `make build` there,
-   with the same `GOTOOLCHAIN=auto` and `/var/cache/lens-build` caches as
-   bootstrap. The staged `bin/lens --version` must report the target commit.
+3. **Stage.** By default, verify the release's keyless Sigstore OIDC bundle
+   (`release.json` and `SHA256SUMS`) with the `cosign` binary pinned in
+   `scripts/cosign.lock`, download and verify `lens-linux-${arch}`, and stage
+   the release tree into `/opt/lens.staging.XXXXXX` without requiring Go or
+   `make` on the host. (When `--from-source` / `LENS_FROM_SOURCE=1` is passed,
+   install `golang` and `make` from dnf if either is missing and run `make build`
+   in `/opt/lens.staging.XXXXXX` with `GOTOOLCHAIN=auto` and
+   `/var/cache/lens-build`.) The staged `bin/lens --version` must report the
+   target commit.
    Staging next to `$APP_DIR` rather than in `/tmp` is deliberate: a tree
-   built under `/tmp` keeps its SELinux `tmp_t` label across a move and
-   systemd then refuses to exec it (203/EXEC). A failed build or toolchain
-   download dies here with the live install untouched.
+   staged under `/tmp` keeps its SELinux `tmp_t` label across a move and
+   systemd then refuses to exec it (203/EXEC). A failed verification, download
+   or build dies here with the live install untouched.
 4. **Swap.** Snapshot the deployed release under `/opt/lens.rollback.XXXXXX`
    — the release tree with its `bin/lens`, a Python-era `.venv` if there is
    one, the unit and the operator CLI — then stop the service, migrate a
