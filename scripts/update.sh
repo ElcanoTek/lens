@@ -104,7 +104,7 @@ if [[ "$FROM_SOURCE" != "1" ]]; then
       tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null || true)"
       [[ "$tag_sha" == "$after_sha" ]] || die "tag $RELEASE_TAG (${tag_sha:0:12}) does not match HEAD (${after_sha:0:12})"
       lens_release_verify_manifest "$SRC_DIR" "$RELEASE_TAG" "$after_sha" "$LENS_COSIGN_CACHE" \
-        || die "release manifest verification failed for $RELEASE_TAG — live install untouched"
+        || die "release manifest verification failed for $RELEASE_TAG (if this release was pruned on GitHub, run: lens rebuild --from-source) — live install untouched"
       ok "rebuild-only mode — skipping fetch, verifying signed release $RELEASE_TAG (${after_sha:0:12})"
       say
     fi
@@ -130,6 +130,13 @@ if [[ "$FROM_SOURCE" != "1" ]]; then
     git fetch --quiet --tags --force origin
     after_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null)" \
       || die "release tag $RELEASE_TAG not found in origin"
+    deployed_sha="$(tr -d '[:space:]' < "$APP_DIR/.deployed-revision" 2>/dev/null || true)"
+    if [[ -n "$deployed_sha" && "$deployed_sha" != "$after_sha" ]] && git merge-base --is-ancestor "$after_sha" "$deployed_sha" 2>/dev/null; then
+      if [[ "$EXPLICIT_TAG" != "1" && "$ALLOW_DOWNGRADE" != "1" ]]; then
+        die "refusing automatic downgrade from deployed commit ${deployed_sha:0:12} to ancestor release $RELEASE_TAG (${after_sha:0:12}) (pass --tag $RELEASE_TAG or --allow-downgrade to roll back)"
+      fi
+      warn "rolling back from deployed commit ${deployed_sha:0:12} to ancestor release $RELEASE_TAG (${after_sha:0:12})"
+    fi
 
     if [[ -z "${LENS_UPDATE_BASE_SHA:-}" && "$before_sha" == "$after_sha" && "$(cat "$APP_DIR/.deployed-revision" 2>/dev/null || true)" == "$after_sha" ]]; then
       ok "already on $RELEASE_TAG (${after_sha:0:12}) — nothing to update"; exit 0

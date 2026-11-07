@@ -434,13 +434,13 @@ command.
 | `lens status` | `systemctl status lens.service` |
 | `lens logs` | `journalctl -fu lens.service` |
 | `lens logs [args…]` | Passes arguments straight to journalctl, e.g. `lens logs -n 200 --since -1h` |
-| `lens update [--yes]` | Fetch, staged Go build, restart, health check; restore the previous release on failure |
+| `lens update [--yes] [--tag vYYYY.MM.DD.N] [--allow-downgrade] [--from-source]` | Fetch, verify and stage the signed release binary (or build from source with `--from-source`), restart, health check; restore the previous release on failure |
 | `lens doctor [--json] [--strict] [--public-url https://HOST]` | Read-only diagnostics; exit 1 on failures (also warnings with `--strict`) |
 | `lens host check` | Refresh DNF metadata and show package updates |
 | `lens host update [--yes]` | Upgrade packages from enabled DNF repositories |
 | `lens host tools [--yes]` | Install/update distro Node, npm and Go |
 | `lens host upgrade [--yes]` | Download latest stable Fedora release upgrade; print offline reboot command |
-| `lens rebuild` | Rebuild and restart the *current* checkout without fetching. The correct command after a manual rollback. |
+| `lens rebuild [--from-source]` | Re-stage and restart the *current* checkout without fetching (verifies the signed release when `HEAD` is on a retained release tag; pass `--from-source` for pruned tags or explicit source builds). |
 | `lens env [show]` | Print `/opt/lens/.env` with anything matching `TOKEN\|KEY\|SECRET\|PASSWORD\|PUBKEY` redacted |
 | `lens env edit` | Open `/opt/lens/.env` in `$EDITOR` (default `vi`); follow with `lens restart` |
 | `lens submit FILE [options]` | Queue a dashboard run from a file on the host (see below) |
@@ -583,16 +583,23 @@ Application rollback does not undo DNF packages, the Go toolchain or module
 cache in `/var/cache/lens-build`, migrated auth state or the removal of the
 old Firecrawl stack.
 
-**Bad code** — check out the previous commit and rebuild, without fetching:
+**Bad code** — roll back to one of the 20 retained signed GitHub Releases (no Go toolchain required on the host), or check out a previous commit and rebuild from source without fetching:
 
 ```bash
+# Roll back to a retained signed release tag:
+sudo lens update --tag vYYYY.MM.DD.N --yes
+
+# Or check out an untagged commit / pruned older tag and rebuild from source:
 cd /opt/lens-src
 sudo git checkout <previous-sha>
-sudo lens rebuild
+sudo lens rebuild --from-source
 ```
 
-Use `lens rebuild`, not `lens update`: from a detached HEAD, `update` resolves
-a branch and fast-forwards straight back to the tip you were trying to leave.
+Use `lens update --tag vYYYY.MM.DD.N` to roll back to a signed release, or
+`lens rebuild --from-source` after checking out an arbitrary commit or a release
+tag whose GitHub Release object was pruned after 20 newer releases (do not run
+bare `lens update` from a detached HEAD, which resolves the latest release or
+branch tip and moves straight back to the version you were trying to leave).
 The end of a successful update prints the retained snapshot path. Prefer that
 snapshot when a previous failed update already advanced the source checkout.
 Going back across the Go rewrite this way — checking out a Python-era commit

@@ -138,13 +138,19 @@ lens_release_verify_blob() {
 }
 
 # lens_release_older TAG VERSION — TAG (vYYYY.MM.DD.N) is older than the
-# stamped VERSION a lens binary reports (YYYY.MM.DD.N[+…]). An unstamped
-# version (dev…) compares as nothing: not a downgrade.
+# stamped VERSION a lens binary reports (YYYY.MM.DD.N[+…]). A source build
+# ahead of a tag (YYYY.MM.DD.N+M.g<sha>) is newer than that tag itself. An
+# unstamped version (dev…) compares as nothing: not a downgrade.
 lens_release_older() {
-  local t="${1#v}" c="${2#v}"
-  c="${c%%[+ ]*}"
+  local t="${1#v}" raw="${2#v}" c
+  raw="${raw%% *}"
+  c="${raw%%+*}"
   [[ "$c" =~ ^[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[0-9]+$ ]] || return 1
-  [[ "$t" != "$c" && "$(printf '%s\n%s\n' "$t" "$c" | sort -V | head -n1)" == "$t" ]]
+  if [[ "$t" == "$c" ]]; then
+    [[ "$raw" =~ \+[1-9][0-9]*\.g ]]
+    return
+  fi
+  [[ "$(printf '%s\n%s\n' "$t" "$c" | sort -V | head -n1)" == "$t" ]]
 }
 
 # lens_release_verify_manifest ROOT TAG COMMIT [CACHE] — fetch TAG's

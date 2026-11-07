@@ -496,8 +496,14 @@ exec %q "$@"
 	if exists(b.systemctlLog) && strings.Contains(readFile(t, b.systemctlLog), "stop") {
 		t.Fatalf("service was stopped before binary verification failed:\n%s", readFile(t, b.systemctlLog))
 	}
-	// 4. An automatic update refuses a stale Latest marker that is older than the installed binary,
+	// 4. An automatic update refuses a stale Latest marker that is older than the installed binary
+	// (including a post-release source build 2026.11.07.1+2.g... ahead of v2026.11.07.1),
 	// while an explicit LENS_UPDATE_TAG / --allow-downgrade permits rolling back.
+	write(t, filepath.Join(b.app, "bin/lens"), "#!/bin/sh\necho \"lens 2026.11.07.1+2.gdeadbeef ("+oldSha+")\"\n", 0o755)
+	r = b.run(t, envVars...)
+	if r.code == 0 || !strings.Contains(r.stderr, "refusing automatic downgrade") {
+		t.Fatalf("automatic downgrade from post-release source build was not refused: (%d, %s)", r.code, r.stderr)
+	}
 	write(t, filepath.Join(b.app, "bin/lens"), "#!/bin/sh\necho \"lens 2026.11.07.9 ("+oldSha+")\"\n", 0o755)
 	r = b.run(t, envVars...)
 	if r.code == 0 || !strings.Contains(r.stderr, "refusing automatic downgrade") {
