@@ -49,7 +49,7 @@ from the Lens home) or adapt the script.
 | Root access | `bootstrap.sh` refuses to run as a non-root user |
 | curl | The public installer installs Git and clones main over HTTPS; no GitHub credentials needed |
 | An OpenRouter API key | Every classification is an OpenRouter call. Runs cost real money — budget before pointing it at a large list. |
-| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API, the Google Play Store, and GitHub Releases (`github.com`, `api.github.com`, `objects.githubusercontent.com`) for signed release binaries (plus `proxy.golang.org` and `sum.golang.org` only when `--from-source` is used) |
+| Outbound HTTPS | To `openrouter.ai`, the sites being crawled, the iTunes Search API, the Google Play Store, and GitHub (`github.com`, `api.github.com`, `raw.githubusercontent.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`) for the installer and signed release binaries (plus `proxy.golang.org` and `sum.golang.org` only when `--from-source` is used) |
 | 1 vCPU / 2 GB RAM | Enough for the direct crawl and research fallback. The deep crawler's Chrome container wants ~2 GB more RAM. |
 | ~2 GB free disk | For the Selenium Chrome image (optional, deep crawl only), the pinned `cosign` cache (`/var/cache/lens-cosign`; or `/var/cache/lens-build` when `--from-source` is used) and whatever run output you keep |
 | A public DNS record | Only if you want Caddy to obtain a Let's Encrypt certificate |
@@ -154,12 +154,15 @@ Seven steps, in order:
    `/opt/lens` with `--delete`, preserving `.git`, `.env*`, `config.json`,
    `managed-files`, the legacy `data` directory during migration, a
    Python-era `.venv`, CLI run files, and podman's `.local`/`.config`/`.cache`.
-3. **Build** — `make build` in `/opt/lens` emits `/opt/lens/bin/lens`, stamped
-   with the checkout's commit (`scripts/lib/deploy.sh`, `lens_build`). The
-   build runs with `GOTOOLCHAIN=auto` and `GOENV=off`, and keeps GOPATH, the
-   module cache, the build cache and any downloaded toolchain in the
-   root-owned `/var/cache/lens-build`, so it neither litters `/root` nor
-   depends on `HOME`, and reruns reuse what was downloaded. The binary is
+3. **Release binary (or `--from-source` build)** — by default, downloads and
+   verifies the latest keyless Sigstore OIDC signed release binary
+   (`lens_release_verify_manifest` + `lens_release_fetch` using the `cosign`
+   pinned in `scripts/cosign.lock` and cached under `/var/cache/lens-cosign`)
+   and installs it to `/opt/lens/bin/lens` without needing Go or `make`. When
+   `--from-source` (`LENS_FROM_SOURCE=1`) or an untagged commit is used,
+   `make build` in `/opt/lens` emits `/opt/lens/bin/lens`, stamped with the
+   checkout's commit (`scripts/lib/deploy.sh`, `lens_build`), using
+   `GOTOOLCHAIN=auto`, `GOENV=off`, and `/var/cache/lens-build`. The binary is
    static (`CGO_ENABLED=0`) and carries the dashboard assets and taxonomy.
    `bin/` is owned by root: root runs this binary for every operator command,
    so the service account must not be able to rewrite it.
@@ -505,16 +508,18 @@ is in [API.md](API.md).
 `lens update` runs `scripts/update.sh`, which is deliberately staged so a bad
 build cannot take down a working install:
 
-1. **Fetch.** `git fetch origin`, resolve the target branch (the checked-out
-   branch; if HEAD is detached, a branch pointing at HEAD, else `origin/HEAD`,
-   overridable with `LENS_UPDATE_BRANCH`), print the incoming commits and ask
-   for confirmation. Already up to date exits 0 only if the deployed revision
-   stamp also matches — a failed previous deployment can be retried normally.
-   Local source changes abort before deployment.
-   The branch is fast-forwarded, never merged — a diverged branch aborts.
-   If the update changed `update.sh` or `scripts/lib/deploy.sh`, the script
-   re-execs the new copy in rebuild-only mode, because bash is still holding
-   the old inode.
+1. **Fetch.** By default (signed-release mode), resolves the latest published
+   `vYYYY.MM.DD.N` release tag (or `--tag vYYYY.MM.DD.N`), fetches tags with
+   `git fetch --force --tags origin`, verifies the signed `release.json` and
+   `SHA256SUMS` manifest before checking out the tag, prints the incoming
+   commits and asks for confirmation. (When `--from-source` / `LENS_FROM_SOURCE=1`
+   is passed, it instead runs `git fetch origin` and fast-forwards the target
+   branch — the checked-out branch, or `LENS_UPDATE_BRANCH`.) Already up to date
+   exits 0 only if the deployed revision stamp also matches — a failed previous
+   deployment can be retried normally. Local source changes abort before
+   deployment. If the update changed `update.sh` or `scripts/lib/deploy.sh`, the
+   script re-execs the new copy in rebuild-only mode, because bash is still
+   holding the old inode.
 2. **Heal.** Ensure `AUTH_SIGNING_PUBKEY` is present (prompting when
    interactive) — without it every request redirects in a loop. Then ensure
    the rootless-podman prerequisites and the pre-pulled Chrome image, which
@@ -628,11 +633,12 @@ sees that `update.sh` changed and re-execs the new one in rebuild-only mode
 (`LENS_UPDATE_NO_PULL=1`, with the deploy lock still held). From there the
 Go `update.sh` runs on its own:
 
-- It installs `golang` and `make` with dnf (a Python host has neither) and
-  builds `bin/lens` in staging; `GOTOOLCHAIN=auto` downloads the toolchain
-  `go.mod` pins into `/var/cache/lens-build`, so an older distro Go is fine.
-  The first build fetches the toolchain and modules and takes a few minutes;
-  later ones reuse the cache.
+- By default it resolves and verifies the latest keyless Sigstore OIDC signed
+  release binary (`cosign` cached in `/var/cache/lens-cosign`) and stages
+  `bin/lens` without installing Go or `make` (or, when `--from-source` /
+  `LENS_FROM_SOURCE=1` is passed or `HEAD` is an untagged commit, installs
+  `golang` and `make` with dnf and builds `bin/lens` in staging using
+  `GOTOOLCHAIN=auto` and `/var/cache/lens-build`).
 - The rollback snapshot includes the Python `.venv` (about 250 MB) along with
   the code, the old unit and the old bash CLI.
 - The swap leaves `.venv` in place, installs the new unit
@@ -642,8 +648,8 @@ Go `update.sh` runs on its own:
   `.venv.old`) removed. If the health check fails, rollback restores the
   Python release — code, venv, unit and bash CLI — and starts it again, and
   `lens update` exits non-zero. `lens logs` shows why the Go release did not
-  come up; fix that and run `lens update` again (it rebuilds the already
-  fetched commit). The restored Python CLI's `lens doctor` does not work in
+  come up; fix that and run `lens update` again (it re-stages the target
+  release). The restored Python CLI's `lens doctor` does not work in
   this state — it runs `scripts/doctor.sh` from `/opt/lens-src`, which is
   already on the Go release.
 
