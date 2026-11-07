@@ -64,7 +64,10 @@ The installer function is parsed in full before it runs. In a root SSH shell, us
 instead of `sudo bash`. `install.sh` refuses to replace an existing checkout:
 use `lens update` for upgrades, or `/opt/lens-src/scripts/bootstrap.sh` to
 reconfigure. For a reviewed/pinned install, clone the repository, check out the
-desired commit, inspect its scripts and run `sudo bash scripts/bootstrap.sh`.
+desired release tag (or commit), inspect its scripts and run
+`sudo bash scripts/bootstrap.sh` (a tagged checkout verifies and installs that
+tag's signed release binary; a detached untagged commit or `--from-source`
+builds that commit from source).
 
 The installer prompts for:
 

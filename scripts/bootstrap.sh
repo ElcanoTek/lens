@@ -37,11 +37,12 @@ SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
 ORIG_ARGS=("$@")
 FROM_SOURCE="${LENS_FROM_SOURCE:-0}"
+EXPLICIT_ARTIFACT=0
 RELEASE_TAG="${LENS_UPDATE_TAG:-${LENS_RELEASE_TAG:-}}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --from-source) FROM_SOURCE=1; export LENS_FROM_SOURCE=1; shift ;;
-    --artifact) FROM_SOURCE=0; export LENS_FROM_SOURCE=0; shift ;;
+    --from-source) FROM_SOURCE=1; EXPLICIT_ARTIFACT=0; export LENS_FROM_SOURCE=1; shift ;;
+    --artifact) FROM_SOURCE=0; EXPLICIT_ARTIFACT=1; export LENS_FROM_SOURCE=0; shift ;;
     --tag)
       [[ $# -ge 2 && -n "${2:-}" ]] || { echo "--tag requires a release tag (vYYYY.MM.DD.N)" >&2; exit 2; }
       RELEASE_TAG="$2"; export LENS_UPDATE_TAG="$2"; shift 2 ;;
@@ -136,6 +137,18 @@ Safe to re-run: existing .env is preserved; only missing values are prompted.
 EOF
 
 step "1/7  Installing system dependencies via dnf"
+# When an operator checks out a pinned release tag or commit before running
+# bootstrap.sh, honor that checkout instead of jumping to Latest: a tagged
+# release uses its signed artifact, and an untagged detached commit builds
+# that pinned commit from source.
+if [[ "$FROM_SOURCE" != "1" && -z "$RELEASE_TAG" && "$EXPLICIT_ARTIFACT" != "1" && -d "$SRC_DIR/.git" ]]; then
+  if _head_tag="$( (cd "$SRC_DIR" && bash "$SRC_DIR/scripts/version.sh" released-at HEAD) 2>/dev/null || true)" && [[ -n "$_head_tag" ]]; then
+    RELEASE_TAG="$_head_tag"
+  elif [[ "$(lens_git "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" == "HEAD" ]]; then
+    FROM_SOURCE=1
+    export LENS_FROM_SOURCE=1
+  fi
+fi
 # chromium + chromedriver are host packages; the deep scrape itself drives
 # the containerised Chrome over WebDriver.
 # If the operator runs scrapers headless-only, they can skip those

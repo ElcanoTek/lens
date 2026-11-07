@@ -84,13 +84,28 @@ func TestVersionScript(t *testing.T) {
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "2026.11.07.1" {
 		t.Fatalf("describe = (%d, %q)", r.code, r.stdout)
 	}
-	// A malformed leading-zero tag is ignored by next (never parsed as octal).
+	// A malformed leading-zero tag is ignored by next (never parsed as octal) and by released-at/current.
 	gitIn("tag", "v2026.11.07.08")
 	r = runCmd(t, []string{bashPath(t), script, "next", "2026.11.07"}, func(c *exec.Cmd) { c.Dir = dir })
 	if r.code != 0 || strings.TrimSpace(r.stdout) != "v2026.11.07.2" {
 		t.Fatalf("next with leading-zero tag = (%d, %q, %q)", r.code, r.stdout, r.stderr)
 	}
+	r = runCmd(t, []string{bashPath(t), script, "released-at", sha1}, func(c *exec.Cmd) { c.Dir = dir })
+	if r.code != 0 || strings.TrimSpace(r.stdout) != "v2026.11.07.1" {
+		t.Fatalf("released-at with co-located malformed tag = (%d, %q)", r.code, r.stdout)
+	}
 	gitIn("tag", "-d", "v2026.11.07.08")
+
+	// A nearer malformed tag on a child commit never masks an ancestor valid release tag in describe.
+	write(t, filepath.Join(dir, "README.md"), "two\n", 0o644)
+	gitIn("add", "-A")
+	gitIn("commit", "-q", "-m", "second")
+	gitIn("tag", "v2026.11.08.2oops")
+	r = runCmd(t, []string{bashPath(t), script, "describe"}, func(c *exec.Cmd) { c.Dir = dir })
+	if r.code != 0 || !strings.HasPrefix(strings.TrimSpace(r.stdout), "2026.11.07.1+1.g") {
+		t.Fatalf("describe with nearer malformed tag = (%d, %q)", r.code, r.stdout)
+	}
+	gitIn("tag", "-d", "v2026.11.08.2oops")
 
 	// filter keeps only valid release tags and sorts them chronologically.
 	r = runCmd(t, []string{bashPath(t), script, "filter"},
@@ -491,6 +506,23 @@ exec %q "$@"
 	r = b.run(t, append(envVars, "LENS_UPDATE_TAG="+tag)...)
 	if r.code != 0 {
 		t.Fatalf("explicit --tag rollback failed (%d):\nstdout=%s\nstderr=%s", r.code, r.stdout, r.stderr)
+	}
+
+	// 5. `lens rebuild` (LENS_UPDATE_NO_PULL=1, LENS_UPDATE_BASE_SHA="", LENS_FROM_SOURCE=0) on an untagged
+	// commit automatically falls back to building from source instead of failing on a missing release tag.
+	gitIn(b.src, "reset", "-q", "--hard", oldSha)
+	_ = os.Remove(filepath.Join(b.stubs, "make"))
+	stub(t, b.stubs, "go", "exit 0")
+	r = b.run(t,
+		"LENS_FROM_SOURCE=0",
+		"LENS_UPDATE_NO_PULL=1",
+		"LENS_UPDATE_BASE_SHA=",
+	)
+	if r.code != 0 {
+		t.Fatalf("lens rebuild on untagged commit failed (%d):\nstdout=%s\nstderr=%s", r.code, r.stdout, r.stderr)
+	}
+	if !strings.Contains(readFile(t, filepath.Join(b.app, "bin/lens")), "lens test ("+oldSha+")") {
+		t.Fatalf("lens rebuild on untagged commit did not fall back to source build: %s", readFile(t, filepath.Join(b.app, "bin/lens")))
 	}
 }
 

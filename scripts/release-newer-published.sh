@@ -20,7 +20,7 @@ newer="$(printf '%s\n%s\n' "$listed" "$tag" | awk 'NF && !seen[$0]++' | "$here/v
   | awk -v t="$tag" 'found { print } $0 == t { found = 1 }')"
 [[ -n "$newer" ]] || exit 0
 while IFS= read -r t; do
-  if ! complete="$(gh release view "$t" --json isDraft,assets --jq '(.isDraft | not) and ([.assets[].name] | index("SHA256SUMS") != null)')"; then
+  if ! complete="$(gh release view "$t" --json isDraft,assets --jq '(.isDraft | not) and ((["SHA256SUMS","SHA256SUMS.sigstore.json","release.json","lens-linux-amd64","lens-linux-amd64.sigstore.json","lens-linux-arm64","lens-linux-arm64.sigstore.json"] - [.assets[].name]) | length == 0)')"; then
     echo "could not read release $t" >&2
     exit 2
   fi

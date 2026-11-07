@@ -80,9 +80,21 @@ tree_is_dirty() {
 	[ -n "$(git status --porcelain --untracked-files=normal 2>/dev/null)" ]
 }
 
+describe_release_tag() {
+	local -a excludes=()
+	local t
+	while IFS= read -r t; do
+		[ -n "$t" ] || continue
+		if ! is_release_tag "$t"; then
+			excludes+=("--exclude=$t")
+		fi
+	done <<<"$(git tag --list "$TAG_GLOB" 2>/dev/null)"
+	git describe --tags --match "$TAG_GLOB" "${excludes[@]}" "$@" 2>/dev/null
+}
+
 newest_tag() {
 	local tag
-	tag="$(git describe --tags --abbrev=0 --match "$TAG_GLOB" 2>/dev/null)" || return 0
+	tag="$(describe_release_tag --abbrev=0)" || return 0
 	is_release_tag "$tag" || return 0
 	printf '%s' "$tag"
 }
@@ -102,7 +114,7 @@ cmd_current() {
 cmd_released_at() {
 	local rev="${1:-HEAD}" tag
 	in_lens_git_repo || return 0
-	tag="$(git describe --tags --exact-match --match "$TAG_GLOB" "$rev" 2>/dev/null)" || return 0
+	tag="$(describe_release_tag --exact-match "$rev")" || return 0
 	is_release_tag "$tag" || return 0
 	printf '%s\n' "$tag"
 }
@@ -117,7 +129,7 @@ cmd_describe() {
 	local version
 
 	local described
-	if described="$(git describe --tags --long --abbrev=12 --match "$TAG_GLOB" 2>/dev/null)"; then
+	if described="$(describe_release_tag --long --abbrev=12)"; then
 		local sha without_sha distance
 		sha="${described##*-g}"
 		without_sha="${described%-g*}"

@@ -32,6 +32,7 @@ BIN_OWNER="${LENS_BIN_OWNER:-root:root}"
 SERVICE="lens.service"
 ORIG_ARGS=("$@")
 FROM_SOURCE="${LENS_FROM_SOURCE:-0}"
+EXPLICIT_ARTIFACT=0
 RELEASE_TAG="${LENS_UPDATE_TAG:-${LENS_RELEASE_TAG:-}}"
 EXPLICIT_TAG=0
 [[ -n "$RELEASE_TAG" ]] && EXPLICIT_TAG=1
@@ -39,8 +40,8 @@ ALLOW_DOWNGRADE="${LENS_ALLOW_DOWNGRADE:-0}"
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --yes|-y) export LENS_UPDATE_YES=1; shift ;;
-    --from-source) FROM_SOURCE=1; export LENS_FROM_SOURCE=1; shift ;;
-    --artifact) FROM_SOURCE=0; export LENS_FROM_SOURCE=0; shift ;;
+    --from-source) FROM_SOURCE=1; EXPLICIT_ARTIFACT=0; export LENS_FROM_SOURCE=1; shift ;;
+    --artifact) FROM_SOURCE=0; EXPLICIT_ARTIFACT=1; export LENS_FROM_SOURCE=0; shift ;;
     --allow-downgrade) ALLOW_DOWNGRADE=1; export LENS_ALLOW_DOWNGRADE=1; shift ;;
     --tag)
       [[ $# -ge 2 && -n "${2:-}" ]] || { echo "--tag requires a release tag (vYYYY.MM.DD.N)" >&2; exit 2; }
@@ -91,13 +92,22 @@ if [[ "$FROM_SOURCE" != "1" ]]; then
   elif [[ "${LENS_UPDATE_NO_PULL:-0}" == "1" && -z "${LENS_UPDATE_BASE_SHA:-}" ]]; then
     after_sha="$before_sha"
     RELEASE_TAG="${RELEASE_TAG:-$(bash "$SRC_DIR/scripts/version.sh" released-at HEAD 2>/dev/null || true)}"
-    [[ -n "$RELEASE_TAG" ]] || die "HEAD (${after_sha:0:12}) has no release tag — pass --from-source or run: lens update"
-    tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null || true)"
-    [[ "$tag_sha" == "$after_sha" ]] || die "tag $RELEASE_TAG (${tag_sha:0:12}) does not match HEAD (${after_sha:0:12})"
-    lens_release_verify_manifest "$SRC_DIR" "$RELEASE_TAG" "$after_sha" "$LENS_COSIGN_CACHE" \
-      || die "release manifest verification failed for $RELEASE_TAG — live install untouched"
-    ok "rebuild-only mode — skipping fetch, verifying signed release $RELEASE_TAG (${after_sha:0:12})"
-    say
+    if [[ -z "$RELEASE_TAG" ]]; then
+      if [[ "$EXPLICIT_ARTIFACT" == "1" ]]; then
+        die "HEAD (${after_sha:0:12}) has no release tag — pass --from-source or run: lens update"
+      fi
+      FROM_SOURCE=1
+      export LENS_FROM_SOURCE=1
+      ok "rebuild-only mode — HEAD (${after_sha:0:12}) has no release tag; building current checkout from source"
+      say
+    else
+      tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null || true)"
+      [[ "$tag_sha" == "$after_sha" ]] || die "tag $RELEASE_TAG (${tag_sha:0:12}) does not match HEAD (${after_sha:0:12})"
+      lens_release_verify_manifest "$SRC_DIR" "$RELEASE_TAG" "$after_sha" "$LENS_COSIGN_CACHE" \
+        || die "release manifest verification failed for $RELEASE_TAG — live install untouched"
+      ok "rebuild-only mode — skipping fetch, verifying signed release $RELEASE_TAG (${after_sha:0:12})"
+      say
+    fi
   else
     # Normal signed-release update, OR the one-time re-exec from a pre-release
     # update.sh (which set LENS_UPDATE_NO_PULL=1 and LENS_UPDATE_BASE_SHA after
