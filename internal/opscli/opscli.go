@@ -274,9 +274,10 @@ Service
   lens serve [--addr 127.0.0.1:8808]   run the dashboard/API/MCP server (systemd does this)
 
 Deploy and maintain
-  lens update [--yes]           fetch + staged Go build + restart; rollback on failure
-                                (unattended: LENS_UPDATE_YES=1 lens update)
-  lens rebuild                  rebuild + restart current checkout
+  lens update [--yes] [--tag vYYYY.MM.DD.N] [--allow-downgrade] [--from-source]
+                                fetch + verify signed release (or build from source) + restart;
+                                rollback on failure (unattended: LENS_UPDATE_YES=1 lens update)
+  lens rebuild [--from-source]  re-stage + restart current checkout
                                 (skip fetch — useful after a manual rollback)
   lens doctor [--json] [--strict] [--public-url https://HOST]
                                 read-only diagnostics (including auth + runtime)

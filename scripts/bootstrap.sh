@@ -141,12 +141,15 @@ step "1/7  Installing system dependencies via dnf"
 # bootstrap.sh, honor that checkout instead of jumping to Latest: a tagged
 # release uses its signed artifact, and an untagged detached commit builds
 # that pinned commit from source.
+PINNED_SRC_CHECKOUT=0
 if [[ "$FROM_SOURCE" != "1" && -z "$RELEASE_TAG" && "$EXPLICIT_ARTIFACT" != "1" && -d "$SRC_DIR/.git" ]]; then
   if _head_tag="$( (cd "$SRC_DIR" && bash "$SRC_DIR/scripts/version.sh" released-at HEAD) 2>/dev/null || true)" && [[ -n "$_head_tag" ]]; then
     RELEASE_TAG="$_head_tag"
+    PINNED_SRC_CHECKOUT=1
   elif [[ "$(lens_git "$SRC_DIR" rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)" == "HEAD" ]]; then
     FROM_SOURCE=1
     export LENS_FROM_SOURCE=1
+    PINNED_SRC_CHECKOUT=1
   fi
 fi
 # chromium + chromedriver are host packages; the deep scrape itself drives
@@ -221,14 +224,17 @@ if [[ "$NEED_PODMAN" == "1" ]] && command -v podman >/dev/null 2>&1; then
   fi
 fi
 
-if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
-  # Seed WITH /.git so `lens update` can git fetch/merge later.
+if [[ ! -d "$INSTALL_SRC_DIR/.git" || "$PINNED_SRC_CHECKOUT" == "1" || "$FROM_SOURCE" == "1" ]]; then
+  # Seed WITH /.git so `lens update` can git fetch/merge later, and so a
+  # re-run from a pinned or source-mode checkout updates $INSTALL_SRC_DIR.
   # bin/ is rebuilt into APP_DIR below.
   [[ -d "$SRC_DIR/.git" ]] || die "bootstrap must run from a git checkout (no .git at $SRC_DIR)"
   mkdir -p "$INSTALL_SRC_DIR"
-  rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$INSTALL_SRC_DIR/"
-  # .git is needed for subsequent updates, but local instance data is not.
-  rsync -a "$SRC_DIR/.git/" "$INSTALL_SRC_DIR/.git/"
+  if [[ "$(cd "$SRC_DIR" && pwd -P)" != "$(cd "$INSTALL_SRC_DIR" && pwd -P)" ]]; then
+    rsync -a --delete "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$INSTALL_SRC_DIR/"
+    # .git is needed for subsequent updates, but local instance data is not.
+    rsync -a --delete "$SRC_DIR/.git/" "$INSTALL_SRC_DIR/.git/"
+  fi
 fi
 
 step "3/7  Building bin/lens"
