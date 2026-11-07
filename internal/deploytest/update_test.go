@@ -47,7 +47,10 @@ func newUpdateBox(t *testing.T) updateBox {
 		systemctlLog: filepath.Join(dir, "systemctl.log"), migrateLog: filepath.Join(dir, "migrate.log")}
 
 	// Source checkout: the real deploy scripts + unit, a fake build.
-	for _, rel := range []string{"scripts/update.sh", "scripts/lib/deploy.sh", "deploy/lens.service", "deploy/motd"} {
+	for _, rel := range []string{
+		"scripts/update.sh", "scripts/lib/deploy.sh", "scripts/lib/release.sh",
+		"scripts/version.sh", "scripts/cosign.lock", "deploy/lens.service", "deploy/motd",
+	} {
 		write(t, filepath.Join(b.src, rel), read(t, rel), 0o755)
 	}
 	write(t, filepath.Join(b.src, "Makefile"), fakeMakefile, 0o644)
@@ -93,8 +96,10 @@ func (b updateBox) run(t *testing.T, kv ...string) result {
 	return runCmd(t, []string{bashPath(t), filepath.Join(b.src, "scripts/update.sh")}, extend(append([]string{
 		"PATH=" + b.stubs + ":" + os.Getenv("PATH"),
 		// What the Python-era update.sh passes when it re-execs this one,
-		// inside the deploy lock it holds.
+		// inside the deploy lock it holds. Existing source-build tests run with
+		// LENS_FROM_SOURCE=1; signed-release tests override with LENS_FROM_SOURCE=0.
 		"LENS_UPDATE_NO_PULL=1", "LENS_UPDATE_YES=1", "LENS_UPDATE_BASE_SHA=0123456789ab", "LENS_DEPLOY_LOCKED=1",
+		"LENS_FROM_SOURCE=1",
 		"SRC_DIR=" + b.src, "APP_DIR=" + b.app, "APP_USER=" + u.Username, "LENS_BIN_OWNER=" + u.Username,
 		"LENS_UNIT_DIR=" + b.unit, "LENS_CLI_TARGET=" + b.cli, "LENS_STATE_DIR=" + filepath.Join(b.dir, "state"),
 		"LENS_MOTD_FILE=" + filepath.Join(b.dir, "motd"), "LENS_BUILD_CACHE=" + filepath.Join(b.dir, "cache"),

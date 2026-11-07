@@ -35,8 +35,27 @@ APP_DIR="${APP_DIR:-/opt/lens}"
 APP_USER="${APP_USER:-lens}"
 SRC_DIR="${SRC_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 INSTALL_SRC_DIR="${LENS_SRC_DIR:-/opt/lens-src}"
+ORIG_ARGS=("$@")
+FROM_SOURCE="${LENS_FROM_SOURCE:-0}"
+RELEASE_TAG="${LENS_UPDATE_TAG:-${LENS_RELEASE_TAG:-}}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from-source) FROM_SOURCE=1; export LENS_FROM_SOURCE=1; shift ;;
+    --artifact) FROM_SOURCE=0; export LENS_FROM_SOURCE=0; shift ;;
+    --tag)
+      [[ $# -ge 2 && -n "${2:-}" ]] || { echo "--tag requires a release tag (vYYYY.MM.DD.N)" >&2; exit 2; }
+      RELEASE_TAG="$2"; export LENS_UPDATE_TAG="$2"; shift 2 ;;
+    --tag=*)
+      RELEASE_TAG="${1#--tag=}"; export LENS_UPDATE_TAG="$RELEASE_TAG"; shift ;;
+    --help|-h) echo 'Usage: sudo bash scripts/bootstrap.sh [--tag vYYYY.MM.DD.N] [--from-source]'; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
+  esac
+done
+set -- "${ORIG_ARGS[@]}"
 # shellcheck source=lib/deploy.sh
 . "$SRC_DIR/scripts/lib/deploy.sh"
+# shellcheck source=lib/release.sh
+. "$SRC_DIR/scripts/lib/release.sh"
 # shellcheck source=lib/hostname.sh
 . "$SRC_DIR/scripts/lib/hostname.sh"
 # runuser keeps the caller's working directory. Started from /root, the service
@@ -124,13 +143,18 @@ step "1/7  Installing system dependencies via dnf"
 # golang + make build bin/lens; any Go >= 1.21 will do because the Makefile
 # sets GOTOOLCHAIN=auto and Go fetches go.mod's pinned release itself.
 # bind-utils: dig, for the public-DNS check before Let's Encrypt (step 7).
-PKGS=(git curl jq golang make rsync openssl util-linux ca-certificates bind-utils)
+PKGS=(git curl jq rsync openssl util-linux ca-certificates bind-utils)
+if [[ "$FROM_SOURCE" == "1" ]]; then
+  PKGS+=(golang make)
+fi
 [[ "${LENS_BOOTSTRAP_SKIP_CHROME:-0}" == "1" ]] || PKGS+=(chromium chromedriver)
 # podman drives the deep-scrape headless-Chrome container (auto mode's
 # fallback for sites that block the fast crawler).
 [[ "${LENS_BOOTSTRAP_SKIP_DEEP:-0}" == "1" ]] || PKGS+=(podman)
 dnf install -y "${PKGS[@]}" >/dev/null
-command -v go >/dev/null 2>&1 || die "go missing after dnf install"
+if [[ "$FROM_SOURCE" == "1" ]]; then
+  command -v go >/dev/null 2>&1 || die "go missing after dnf install"
+fi
 ok "installed: ${PKGS[*]}"
 
 # The Vultr Fedora image ships Cockpit's root-capable web login on :9090; our boxes are administered over ssh only.
@@ -195,6 +219,18 @@ if [[ ! -d "$INSTALL_SRC_DIR/.git" ]]; then
 fi
 
 step "3/7  Building bin/lens"
+if [[ "$FROM_SOURCE" != "1" ]]; then
+  if [[ -z "$RELEASE_TAG" ]]; then
+    RELEASE_TAG="$(lens_release_latest_tag)" || die "could not determine latest published release tag from GitHub"
+  fi
+  [[ "$RELEASE_TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$ ]] || die "invalid release tag: $RELEASE_TAG"
+  lens_git "$INSTALL_SRC_DIR" fetch --quiet --tags --force origin || true
+  deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null)" \
+    || die "release tag $RELEASE_TAG not found in $INSTALL_SRC_DIR"
+  lens_release_verify_manifest "$INSTALL_SRC_DIR" "$RELEASE_TAG" "$deploy_sha" "$LENS_COSIGN_CACHE" \
+    || die "release manifest verification failed for $RELEASE_TAG"
+  lens_git "$INSTALL_SRC_DIR" checkout --quiet --detach "refs/tags/$RELEASE_TAG"
+fi
 deploy_sha="$(lens_git "$INSTALL_SRC_DIR" rev-parse HEAD)"
 deploy_describe="$(lens_git "$INSTALL_SRC_DIR" describe --tags --always --dirty 2>/dev/null || printf '%s' "${deploy_sha:0:12}")"
 # Build in a root-only tree, never in $APP_DIR: that tree belongs to the
@@ -205,8 +241,14 @@ rm -rf "${APP_DIR}".deploybin.* 2>/dev/null || true
 PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
 trap 'rm -rf "$PRIV_DIR"' EXIT
 rsync -a "${LENS_STATE_EXCLUDES[@]}" "$INSTALL_SRC_DIR/" "$PRIV_DIR/tree/"
-lens_build "$PRIV_DIR/tree" "$deploy_sha" "$deploy_describe" || die "build failed"
-install -o root -g root -m 0755 "$PRIV_DIR/tree/bin/lens" "$PRIV_DIR/lens"
+if [[ "$FROM_SOURCE" == "1" ]]; then
+  lens_build "$PRIV_DIR/tree" "$deploy_sha" "$deploy_describe" || die "build failed"
+  install -o root -g root -m 0755 "$PRIV_DIR/tree/bin/lens" "$PRIV_DIR/lens"
+else
+  verified_bin="$(lens_release_fetch "$INSTALL_SRC_DIR" "$RELEASE_TAG" "$PRIV_DIR/release" "$LENS_COSIGN_CACHE" "$deploy_sha")" \
+    || die "signed release verification failed for $RELEASE_TAG"
+  install -o root -g root -m 0755 "$verified_bin" "$PRIV_DIR/lens"
+fi
 
 # Keep runtime state out of --delete's reach: uploaded inputs/outputs
 # (managed-files), the legacy auth DB during its one-time migration (data),

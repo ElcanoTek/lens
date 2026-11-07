@@ -539,6 +539,24 @@ func TestOSSupportAndFirecrawlAndCockpit(t *testing.T) {
 	}
 }
 
+func TestDoctorDoesNotRequireGoOrMake(t *testing.T) {
+	app := t.TempDir()
+	f := &fakeHost{look: map[string]bool{
+		"git":       true,
+		"curl":      true,
+		"rsync":     true,
+		"dnf":       true,
+		"systemctl": true,
+	}}
+	checks := byName(Diagnose(context.Background(), Options{App: app, Src: app, User: "lens"}, f.host(app)))
+	if _, hasMake := checks["make"]; hasMake {
+		t.Fatalf("doctor must not require make on a signed-release box: %+v", checks["make"])
+	}
+	if checks["go-toolchain"].Status != StatusOK {
+		t.Fatalf("go-toolchain without go installed = %+v, want StatusOK", checks["go-toolchain"])
+	}
+}
+
 func contains(list []string, v string) bool {
 	for _, x := range list {
 		if x == v {

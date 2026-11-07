@@ -124,20 +124,19 @@ func (d *diagnosis) app(parts ...string) string {
 }
 
 func (d *diagnosis) tools() {
-	// make is what update.sh builds with; go is checked separately because
-	// update.sh installs it on demand.
-	for _, name := range []string{"git", "curl", "rsync", "make", "dnf", "systemctl"} {
+	// Signed release updates verify prebuilt binaries with cosign and do not
+	// need Go or make on the host; go is checked only when installed.
+	for _, name := range []string{"git", "curl", "rsync", "dnf", "systemctl"} {
 		d.add(name, d.h.LookPath(name), "installed", "Run bootstrap to install "+name, false)
 	}
 	if !d.h.LookPath("go") {
-		d.add("go-toolchain", false, "",
-			"No Go toolchain; lens update installs golang via dnf (or: lens host tools)", true)
+		d.add("go-toolchain", true, "not installed (signed release updates do not require Go)", "", false)
 		return
 	}
 	// Run outside any module so GOTOOLCHAIN cannot trigger a download.
 	code, out := d.h.Run(d.ctx, RunOptions{Timeout: defaultCommandTimeout, Dir: "/"}, "go", "version")
 	d.add("go-toolchain", code == 0, out,
-		"Go toolchain is broken; lens update needs it (lens host tools reinstalls golang)", true)
+		"Optional Go toolchain is broken; lens host tools reinstalls golang", true)
 }
 
 func (d *diagnosis) deployedRevision() string {

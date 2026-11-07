@@ -30,15 +30,28 @@ MOTD_FILE="${LENS_MOTD_FILE:-/etc/motd}"
 # compromised service root. The service only needs to execute bin/lens.
 BIN_OWNER="${LENS_BIN_OWNER:-root:root}"
 SERVICE="lens.service"
-for arg in "$@"; do
-  case "$arg" in
-    --yes|-y) export LENS_UPDATE_YES=1 ;;
-    --help|-h) echo 'Usage: lens update [--yes] (or lens rebuild to deploy the current checkout)'; exit 0 ;;
-    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
+ORIG_ARGS=("$@")
+FROM_SOURCE="${LENS_FROM_SOURCE:-0}"
+RELEASE_TAG="${LENS_UPDATE_TAG:-${LENS_RELEASE_TAG:-}}"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes|-y) export LENS_UPDATE_YES=1; shift ;;
+    --from-source) FROM_SOURCE=1; export LENS_FROM_SOURCE=1; shift ;;
+    --artifact) FROM_SOURCE=0; export LENS_FROM_SOURCE=0; shift ;;
+    --tag)
+      [[ $# -ge 2 && -n "${2:-}" ]] || { echo "--tag requires a release tag (vYYYY.MM.DD.N)" >&2; exit 2; }
+      RELEASE_TAG="$2"; export LENS_UPDATE_TAG="$2"; shift 2 ;;
+    --tag=*)
+      RELEASE_TAG="${1#--tag=}"; export LENS_UPDATE_TAG="$RELEASE_TAG"; shift ;;
+    --help|-h) echo 'Usage: lens update [--yes] [--tag vYYYY.MM.DD.N] [--from-source] (or lens rebuild [--from-source] to deploy the current checkout)'; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 2 ;;
   esac
 done
+set -- "${ORIG_ARGS[@]}"
 # shellcheck source=lib/deploy.sh
 . "$SRC_DIR/scripts/lib/deploy.sh"
+# shellcheck source=lib/release.sh
+. "$SRC_DIR/scripts/lib/release.sh"
 
 if [[ -t 1 && "${TERM:-}" != "dumb" ]]; then
   c_reset=$'\033[0m' c_dim=$'\033[2m' c_red=$'\033[0;31m'
@@ -63,7 +76,70 @@ git() { lens_git "$SRC_DIR" "$@"; }
 before_sha="$(git rev-parse HEAD)"
 [[ -z "$(git status --porcelain)" ]] || die "source checkout has local changes — commit or stash them first"
 
-if [[ "${LENS_UPDATE_NO_PULL:-0}" == "1" ]]; then
+if [[ "$FROM_SOURCE" != "1" ]]; then
+  if [[ "${LENS_UPDATE_REEXEC:-0}" == "1" ]]; then
+    after_sha="$before_sha"
+    before_sha="${LENS_UPDATE_BASE_SHA:-$before_sha}"
+    RELEASE_TAG="${RELEASE_TAG:-$(bash "$SRC_DIR/scripts/version.sh" released-at HEAD 2>/dev/null || true)}"
+    [[ -n "$RELEASE_TAG" ]] || die "re-executed release update lost its tag"
+    ok "re-executed on verified release $RELEASE_TAG (${after_sha:0:12})"
+    say
+  elif [[ "${LENS_UPDATE_NO_PULL:-0}" == "1" && -z "${LENS_UPDATE_BASE_SHA:-}" ]]; then
+    after_sha="$before_sha"
+    RELEASE_TAG="${RELEASE_TAG:-$(bash "$SRC_DIR/scripts/version.sh" released-at HEAD 2>/dev/null || true)}"
+    [[ -n "$RELEASE_TAG" ]] || die "HEAD (${after_sha:0:12}) has no release tag — pass --from-source or run: lens update"
+    tag_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null || true)"
+    [[ "$tag_sha" == "$after_sha" ]] || die "tag $RELEASE_TAG (${tag_sha:0:12}) does not match HEAD (${after_sha:0:12})"
+    lens_release_verify_manifest "$SRC_DIR" "$RELEASE_TAG" "$after_sha" "$LENS_COSIGN_CACHE" \
+      || die "release manifest verification failed for $RELEASE_TAG — live install untouched"
+    ok "rebuild-only mode — skipping fetch, verifying signed release $RELEASE_TAG (${after_sha:0:12})"
+    say
+  else
+    # Normal signed-release update, OR the one-time re-exec from a pre-release
+    # update.sh (which set LENS_UPDATE_NO_PULL=1 and LENS_UPDATE_BASE_SHA after
+    # pulling main). In both cases, resolve the published release tag, fetch
+    # tags, verify the signed manifest, and check out the tag.
+    before_sha="${LENS_UPDATE_BASE_SHA:-$before_sha}"
+    if [[ -z "$RELEASE_TAG" ]]; then
+      RELEASE_TAG="$(lens_release_latest_tag)" || die "could not determine latest published release tag from GitHub"
+    fi
+    [[ "$RELEASE_TAG" =~ ^v[0-9]{4}\.[0-9]{2}\.[0-9]{2}\.[1-9][0-9]*$ ]] || die "invalid release tag: $RELEASE_TAG"
+    git fetch --quiet --tags --force origin
+    after_sha="$(git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" 2>/dev/null)" \
+      || die "release tag $RELEASE_TAG not found in origin"
+
+    if [[ -z "${LENS_UPDATE_BASE_SHA:-}" && "$before_sha" == "$after_sha" && "$(cat "$APP_DIR/.deployed-revision" 2>/dev/null || true)" == "$after_sha" ]]; then
+      ok "already on $RELEASE_TAG (${after_sha:0:12}) — nothing to update"; exit 0
+    fi
+    if [[ "$before_sha" != "$after_sha" ]]; then
+      say; printf '%s  incoming commits (%s):%s\n' "$c_dim" "$RELEASE_TAG" "$c_reset"
+      git --no-pager log --oneline --no-decorate "${before_sha}..${after_sha}" | sed 's/^/    /' || true; say
+    fi
+
+    if [[ "${LENS_UPDATE_YES:-0}" != "1" ]]; then
+      count="$(git rev-list --count "${before_sha}..${after_sha}" 2>/dev/null || echo 1)"
+      printf '%s?%s Deploy signed release %s%s%s (%s%d%s commits — %s..%s)? %s(y/N)%s ' \
+        "$c_cyan" "$c_reset" "$c_bold" "$RELEASE_TAG" "$c_reset" "$c_bold" "$count" "$c_reset" \
+        "${before_sha:0:12}" "${after_sha:0:12}" "$c_dim" "$c_reset"
+      read -r answer
+      case "${answer,,}" in y|yes) ;; *) warn "cancelled"; exit 1 ;; esac
+    fi
+
+    lens_release_verify_manifest "$SRC_DIR" "$RELEASE_TAG" "$after_sha" "$LENS_COSIGN_CACHE" \
+      || die "release manifest verification failed for $RELEASE_TAG — live install untouched"
+
+    checkout_before_tag="$(git rev-parse HEAD)"
+    git checkout --quiet --detach "refs/tags/$RELEASE_TAG"
+    ok "checked out verified release $RELEASE_TAG (${after_sha:0:12})"
+
+    if [[ "$checkout_before_tag" != "$after_sha" ]] && ! git diff --quiet "$checkout_before_tag" "$after_sha" -- scripts/update.sh scripts/lib/deploy.sh scripts/lib/release.sh; then
+      warn "update.sh changed in this release — re-executing the verified release script"
+      exec env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_REEXEC=1 LENS_UPDATE_YES=1 \
+        LENS_UPDATE_BASE_SHA="$before_sha" LENS_UPDATE_TAG="$RELEASE_TAG" LENS_FROM_SOURCE=0 \
+        bash "$SRC_DIR/scripts/update.sh"
+    fi
+  fi
+elif [[ "${LENS_UPDATE_NO_PULL:-0}" == "1" ]]; then
   after_sha="$before_sha"
   # Set when a pull re-execs the fresh script (below) so the final
   # summary still shows the real old → new range.
@@ -71,7 +147,7 @@ if [[ "${LENS_UPDATE_NO_PULL:-0}" == "1" ]]; then
   ok "rebuild-only mode — skipping fetch, building ${after_sha:0:12}"
   say
 else
-  git fetch --quiet origin
+  git fetch --quiet --tags --force origin
 
   # Resolve target branch.  If HEAD is attached we simply follow it.
   # If detached, try to recover from a local branch at this commit;
@@ -126,9 +202,9 @@ else
   # old inode across the checkout above), so a fix to update.sh itself
   # would otherwise only take effect on the NEXT update. If this update
   # changed update.sh, re-exec the fresh copy in rebuild-only mode.
-  if ! git diff --quiet "$before_sha" "$after_sha" -- scripts/update.sh scripts/lib/deploy.sh; then
+  if ! git diff --quiet "$before_sha" "$after_sha" -- scripts/update.sh scripts/lib/deploy.sh scripts/lib/release.sh; then
     warn "update.sh changed in this update — re-executing the new version"
-    exec env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 \
+    exec env LENS_UPDATE_NO_PULL=1 LENS_UPDATE_YES=1 LENS_FROM_SOURCE="$FROM_SOURCE" \
       LENS_UPDATE_BASE_SHA="$before_sha" bash "$SRC_DIR/scripts/update.sh"
   fi
 fi
@@ -209,10 +285,6 @@ ensure_rootless_podman() {
 ensure_rootless_podman
 
 step "2/4  Building staging release"
-# go + make from dnf when missing (a first Go migration of a Python box has
-# neither). GOTOOLCHAIN=auto then fetches go.mod's pinned release into the
-# root-owned build cache (scripts/lib/deploy.sh).
-lens_ensure_go || die "could not install the Go toolchain (dnf install golang make) — live install untouched"
 # Stage beside $APP_DIR, not in /tmp: a tree built under /tmp keeps its
 # SELinux tmp_t label across mv, and systemd refuses to exec tmp_t
 # (203/EXEC Permission denied). Same filesystem also makes the swap cheap.
@@ -225,8 +297,19 @@ STAGING="$(mktemp -d "${APP_DIR}.staging.XXXXXX")"
 PRIV_DIR="$(mktemp -d "${APP_DIR}.deploybin.XXXXXX")"
 trap 'rm -rf "$STAGING" "$PRIV_DIR"' EXIT
 rsync -a "${LENS_STATE_EXCLUDES[@]}" "$SRC_DIR/" "$STAGING/"
-describe="$(git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
-lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live install untouched"
+if [[ "$FROM_SOURCE" == "1" ]]; then
+  # go + make from dnf when missing (a first Go migration of a Python box has
+  # neither). GOTOOLCHAIN=auto then fetches go.mod's pinned release into the
+  # root-owned build cache (scripts/lib/deploy.sh).
+  lens_ensure_go || die "could not install the Go toolchain (dnf install golang make) — live install untouched"
+  describe="$(git describe --tags --always --dirty 2>/dev/null || printf '%s' "${after_sha:0:12}")"
+  lens_build "$STAGING" "$after_sha" "$describe" || die "build failed — live install untouched"
+else
+  verified_bin="$(lens_release_fetch "$SRC_DIR" "$RELEASE_TAG" "$PRIV_DIR/release" "$LENS_COSIGN_CACHE" "$after_sha")" \
+    || die "signed release verification failed for $RELEASE_TAG — live install untouched"
+  install -d -m 0755 "$STAGING/bin"
+  install -m 0755 "$verified_bin" "$STAGING/bin/lens"
+fi
 # Refuse a binary that cannot even report its own identity: nothing has been
 # stopped yet, so this is the last cheap exit.
 built="$("$STAGING/bin/lens" --version 2>/dev/null || true)"
