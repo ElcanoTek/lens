@@ -97,7 +97,7 @@ func TestLocalizedDashboardPreservesJobsFilesAndPayloads(t *testing.T) {
 			t.Fatal(invalid)
 		}
 		_, signedOut := h.get("/signed-out?lang=" + tc.lang)
-		if !strings.Contains(signedOut, `lang=`+tc.lang+`&amp;next=%2F`) {
+		if !strings.Contains(signedOut, `next=%2F&amp;lang=`+tc.lang) {
 			t.Fatal("sign-in link lost language")
 		}
 	}

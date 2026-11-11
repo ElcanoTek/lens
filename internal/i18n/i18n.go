@@ -5,6 +5,7 @@
 package i18n
 
 import (
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -66,6 +67,9 @@ func T(lang, source string, values ...any) string {
 }
 
 func RequestLanguage(r *http.Request) string {
+	if language, ok := r.Context().Value(displayLanguageKey{}).(string); ok {
+		return language
+	}
 	if lang := Normalize(r.URL.Query().Get("lang")); lang != "" {
 		return lang
 	}
@@ -153,6 +157,19 @@ type languageWriter struct {
 
 func (w *languageWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
+type displayLanguageKey struct{}
+
+// WithDisplayLanguage selects presentation for a verified callback's error
+// response. The original request, its URL and authentication context remain
+// unchanged; callers keep using those for credential validation.
+func WithDisplayLanguage(w http.ResponseWriter, r *http.Request, language string) (http.ResponseWriter, *http.Request) {
+	language = Normalize(language)
+	if language == "" {
+		return w, r
+	}
+	return &languageWriter{ResponseWriter: w, language: language}, r.WithContext(context.WithValue(r.Context(), displayLanguageKey{}, language))
+}
+
 // Language returns the presentation language selected by Middleware.
 func Language(w http.ResponseWriter) string {
 	if localized, ok := w.(*languageWriter); ok {
@@ -180,12 +197,23 @@ func Middleware(next http.Handler) http.Handler {
 // Authentication state and redirect targets remain byte-for-byte query values.
 func URL(raw, language, parameter string) string {
 	parsed, err := url.Parse(raw)
-	if err != nil {
+	language = Normalize(language)
+	if err != nil || language == "" {
 		return raw
 	}
-	query := parsed.Query()
-	query.Set(parameter, language)
-	parsed.RawQuery = query.Encode()
+	// Decode only keys. Browser-valid search values may contain literal
+	// semicolons or percent sequences that url.Values silently discards.
+	var fields []string
+	if parsed.RawQuery != "" {
+		for _, field := range strings.Split(parsed.RawQuery, "&") {
+			key, _, _ := strings.Cut(field, "=")
+			decoded, err := url.QueryUnescape(key)
+			if err != nil || decoded != parameter {
+				fields = append(fields, field)
+			}
+		}
+	}
+	parsed.RawQuery = strings.Join(append(fields, url.QueryEscape(parameter)+"="+language), "&")
 	return parsed.String()
 }
 

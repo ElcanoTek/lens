@@ -162,19 +162,42 @@ func randomURLSafe(n int) string {
 // BeginLogin starts a login transaction (state, nonce, PKCE verifier in the
 // signed lens_ui cookie) and redirects to Auth's /authorize.
 func (p *CentralProvider) BeginLogin(w http.ResponseWriter, r *http.Request, nextPath string) {
+	next := SafeLocalPath(nextPath)
+	if language := i18n.Normalize(r.URL.Query().Get("lang")); language != "" {
+		next = i18n.URL(next, language, "lang")
+		if SafeLocalPath(next) != next {
+			next = i18n.URL("/", language, "lang")
+		}
+	}
 	state := randomURLSafe(32)
 	nonce := randomURLSafe(32)
 	verifier := randomURLSafe(64)
 	sum := sha256.Sum256([]byte(verifier))
 	challenge := base64.RawURLEncoding.EncodeToString(sum[:])
 	if err := p.Transactions.Set(w, loginTransaction{
-		State: state, Nonce: nonce, Verifier: verifier, Next: SafeLocalPath(nextPath), CreatedAt: p.now().Unix(),
+		State: state, Nonce: nonce, Verifier: verifier, Next: next, CreatedAt: p.now().Unix(),
 	}); err != nil {
 		http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, i18n.URL(p.Client.AuthorizationURL(state, challenge, nonce), i18n.RequestLanguage(r), "ui_locales"), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
+}
+
+// callbackLanguage reads presentation metadata without consuming a transaction.
+// CompleteLogin independently repeats every credential check before exchange.
+func (p *CentralProvider) callbackLanguage(r *http.Request, state string) string {
+	var tx loginTransaction
+	if !p.Transactions.Get(r, &tx) || tx.CreatedAt+LoginTransactionSeconds <= p.now().Unix() ||
+		tx.State == "" || subtle.ConstantTimeCompare([]byte(tx.State), []byte(state)) != 1 ||
+		tx.Nonce == "" || tx.Verifier == "" {
+		return ""
+	}
+	next, err := url.Parse(SafeLocalPath(tx.Next))
+	if err != nil {
+		return ""
+	}
+	return i18n.Normalize(next.Query().Get("lang"))
 }
 
 // CompleteLogin consumes the login transaction (the lens_ui cookie is cleared

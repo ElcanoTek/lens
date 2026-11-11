@@ -46,6 +46,38 @@ func TestRequestPreferenceAndSafeCookie(t *testing.T) {
 	}
 }
 
+func TestDisplayLanguageLeavesAuthenticationRequestUnchanged(t *testing.T) {
+	r := httptest.NewRequest(http.MethodGet, "https://lens.example/auth/callback?state=opaque%2bstate&code=one-time", nil)
+	r.Header.Set("Accept-Language", "en")
+	w := httptest.NewRecorder()
+	displayWriter, displayRequest := WithDisplayLanguage(w, r, "pt-BR")
+	if Language(displayWriter) != "pt" || RequestLanguage(displayRequest) != "pt" {
+		t.Fatal("presentation layers disagree")
+	}
+	if RequestLanguage(r) != "en" || Language(w) != "en" || r.URL.RawQuery != "state=opaque%2bstate&code=one-time" || displayRequest.URL != r.URL {
+		t.Fatal("display override changed authentication request or original writer")
+	}
+	if ignoredWriter, ignoredRequest := WithDisplayLanguage(w, r, "//evil.example"); ignoredWriter != w || ignoredRequest != r {
+		t.Fatal("unsupported display language accepted")
+	}
+}
+
+func TestLanguageURLPreservesOpaqueQueryFields(t *testing.T) {
+	for _, language := range []string{"es", "pt"} {
+		source := "/jobs/a%2Fb?q=alpha;beta&opaque=100%done&%zz=opaque&filter=a%26b&filter=c&empty=&flag&&l%61ng=en&%6cang=pt#saved"
+		want := "/jobs/a%2Fb?q=alpha;beta&opaque=100%done&%zz=opaque&filter=a%26b&filter=c&empty=&flag&&lang=" + language + "#saved"
+		if got := URL(source, language+"-XX", "lang"); got != want {
+			t.Fatalf("unrelated URL data changed: %q, want %q", got, want)
+		}
+		if got := URL(source, "unsupported", "lang"); got != source {
+			t.Fatal("unsupported locale changed URL")
+		}
+	}
+	if got := URL("https://auth.example/authorize?state=A%2bB%2fC%3d&ui%5flocales=en", "pt", "ui_locales"); got != "https://auth.example/authorize?state=A%2bB%2fC%3d&ui_locales=pt" {
+		t.Fatal("OAuth state encoding changed", got)
+	}
+}
+
 func TestCatalogsKeepMessageSlotsAndOpaqueValues(t *testing.T) {
 	slots := regexp.MustCompile(`\{[0-9]+\}|%(?:\.[0-9]+)?[sdqvf]`)
 	for language, catalog := range languageCatalogs {

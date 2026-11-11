@@ -584,7 +584,7 @@ func TestLanguageHandoffKeepsAuthenticationTransaction(t *testing.T) {
 	app.auth.nonces["locale-code"] = q.Get("nonce")
 	app.auth.mu.Unlock()
 	callback, body := app.get("/auth/callback?" + url.Values{"code": {"locale-code"}, "state": {q.Get("state")}, "lang": {"es"}}.Encode())
-	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/?filter=customer" || app.sessionCookie() == "" {
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/?filter=customer&lang=pt" || app.sessionCookie() == "" {
 		t.Fatal(callback, body)
 	}
 	rec := httptest.NewRecorder()
@@ -600,5 +600,21 @@ func TestLanguageHandoffKeepsAuthenticationTransaction(t *testing.T) {
 	logout, _ := app.postForm("/logout?lang=pt", url.Values{"csrf_token": {CSRFTokenForSession(token)}})
 	if logout.StatusCode != http.StatusSeeOther || logout.Header.Get("Location") != app.auth.server.URL+"/logout?client_id=lens&lang=pt" || app.identity(token) != nil {
 		t.Fatal("localized logout failed to revoke session or preserve language", logout)
+	}
+}
+
+func TestLoginLanguageKeepsReturnPathBounds(t *testing.T) {
+	app := newLensApp(t, "central")
+	for _, next := range []string{"https://evil.example/", "//evil.example/", `/\evil.example/`, "/?q=" + strings.Repeat("x", 2048-len("/?q="))} {
+		start, _ := app.get("/auth/login?" + url.Values{"next": {next}, "lang": {"pt-BR"}}.Encode())
+		r := httptest.NewRequest(http.MethodGet, app.server.URL, nil)
+		response := &http.Response{Header: start.Header}
+		for _, cookie := range response.Cookies() {
+			r.AddCookie(cookie)
+		}
+		var tx loginTransaction
+		if !app.central().Transactions.Get(r, &tx) || tx.Next != "/?lang=pt" {
+			t.Fatalf("unsafe or oversized return path survived locale decoration: %q", tx.Next)
+		}
 	}
 }
