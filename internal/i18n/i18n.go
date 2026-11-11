@@ -169,6 +169,7 @@ func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		language := RequestLanguage(r)
 		if Normalize(r.URL.Query().Get("lang")) != "" && !strings.HasPrefix(r.URL.Path, "/static/") {
+			//nolint:gosec // G124: display preference only; Secure follows the trusted public scheme, including supported HTTP deployments.
 			http.SetCookie(w, &http.Cookie{Name: "elcano_language", Value: language, Path: "/", MaxAge: 31536000, Secure: r.TLS != nil || r.URL.Scheme == "https", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		}
 		next.ServeHTTP(&languageWriter{ResponseWriter: w, language: language}, r)
