@@ -82,7 +82,7 @@ func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p.Identity(r) != nil {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+		http.Redirect(w, r, i18n.URL("/", i18n.RequestLanguage(r), "lang"), http.StatusSeeOther) //nolint:gosec // G710: fixed local path; RequestLanguage allowlists en/es/pt and URL query-encodes it.
 		return
 	}
 	if central, ok := p.(*CentralProvider); ok {

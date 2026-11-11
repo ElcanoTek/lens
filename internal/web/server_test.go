@@ -546,7 +546,7 @@ func TestHealthLogoutAndSignedOut(t *testing.T) {
 	}
 	// Signed in already: /login goes home. Callback/back-channel are
 	// central-only.
-	if resp, _ := h.get("/auth/login"); resp.StatusCode != 303 || location(resp) != "/" {
+	if resp, _ := h.get("/auth/login"); resp.StatusCode != 303 || location(resp) != "/?lang=en" {
 		t.Fatal(resp.StatusCode, location(resp))
 	}
 	if resp, _ := h.get("/auth/callback?code=x&state=y"); resp.StatusCode != 404 {
@@ -570,7 +570,7 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatal(resp.StatusCode)
 	}
-	form := regexp.MustCompile(`(?s)<form method="post" action="/logout" class="([^"]*)">(.*?)</form>`).FindStringSubmatch(body)
+	form := regexp.MustCompile(`(?s)<form method="post" action="/logout\?lang=en" class="([^"]*)">(.*?)</form>`).FindStringSubmatch(body)
 	if form == nil {
 		t.Fatal("no POST /logout form on the page")
 	}
