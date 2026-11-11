@@ -12,6 +12,10 @@ shared `elcano.language` localStorage key. A host-only, HttpOnly, SameSite=Lax `
 and action messages in the same language. Storage being disabled does not
 prevent explicit links or the native language form from working.
 
+The sign-out form carries the current language through Lens to Auth, and an
+already signed-in visit to Login retains it when returning to the dashboard.
+Both paths work when the browser cannot save its display preference.
+
 Lens accepts Auth's `ui_locales` hint after `lang` and before the cookie. It
 forwards `lang` on local/legacy sign-in navigation and `ui_locales` on central
 Auth's authorization request. Locale selection never changes the callback URL,

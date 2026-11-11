@@ -8,10 +8,67 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
 )
+
+// Keep authentication cookies while refusing the optional display preference,
+// as a browser that blocks preference storage does. No browser script runs in
+// these HTTP requests, so localStorage cannot rescue a missing URL language.
+type noLanguageCookieJar struct{ http.CookieJar }
+
+func (j noLanguageCookieJar) SetCookies(u *url.URL, cookies []*http.Cookie) {
+	var allowed []*http.Cookie
+	for _, cookie := range cookies {
+		if cookie.Name != "elcano_language" {
+			allowed = append(allowed, cookie)
+		}
+	}
+	j.CookieJar.SetCookies(u, allowed)
+}
+
+func TestAuthNavigationWithoutPreferenceCookies(t *testing.T) {
+	for _, tc := range []struct{ query, language, title string }{
+		{"en", "en", "Your files"},
+		{"es-MX", "es", "Tus archivos"},
+		{"pt-BR", "pt", "Os seus ficheiros"},
+		{"//evil.example/\"<script>", "en", "Your files"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			h := newHarness(t, false)
+			h.client.Jar = noLanguageCookieJar{h.client.Jar}
+			for _, route := range []string{"/login", "/auth/login"} {
+				response, _ := h.get(route + "?" + url.Values{"lang": {tc.query}, "next": {"https://evil.example/"}}.Encode())
+				if response.StatusCode != http.StatusSeeOther || location(response) != "/?lang="+tc.language {
+					t.Fatalf("%s redirect: %d %q", route, response.StatusCode, location(response))
+				}
+				page, body := h.get(location(response))
+				if page.StatusCode != http.StatusOK || !strings.Contains(body, `<html lang="`+tc.language+`">`) || !strings.Contains(body, tc.title) {
+					t.Fatalf("%s lost language on the final dashboard", route)
+				}
+			}
+			// Submit the action actually rendered in the dashboard, not a URL
+			// built by the test. This also covers the native no-script form.
+			_, body := h.get("/?lang=" + url.QueryEscape(tc.query))
+			form := regexp.MustCompile(`<form method="post" action="([^"]+)" class="[^"]*js-confirm-sign-out`).FindStringSubmatch(body)
+			if form == nil || form[1] != "/logout?lang="+tc.language {
+				t.Fatalf("logout form did not carry the normalized language: %v", form)
+			}
+			logout := h.postForm(form[1], nil)
+			if logout.StatusCode != http.StatusSeeOther || location(logout) != "https://auth.elcanotek.com/logout?lang="+tc.language {
+				t.Fatalf("Auth handoff: %d %q", logout.StatusCode, location(logout))
+			}
+			u, _ := url.Parse(h.ts.URL)
+			for _, cookie := range h.client.Jar.Cookies(u) {
+				if cookie.Name == "elcano_language" {
+					t.Fatal("test unexpectedly persisted the language preference")
+				}
+			}
+		})
+	}
+}
 
 func TestLocalizedDashboardPreservesJobsFilesAndPayloads(t *testing.T) {
 	h := newHarness(t, false)

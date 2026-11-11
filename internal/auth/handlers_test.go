@@ -277,7 +277,7 @@ func TestCallbackRequiresALiveMatchingTransaction(t *testing.T) {
 		t.Fatalf("next %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	// Signed in: /auth/login goes home.
-	if resp, _ := app.get("/auth/login"); resp.Header.Get("Location") != "/" {
+	if resp, _ := app.get("/auth/login"); resp.Header.Get("Location") != "/?lang=en" {
 		t.Fatalf("signed-in login %q", resp.Header.Get("Location"))
 	}
 }
@@ -426,6 +426,43 @@ func TestCentralLogoutSignsOutEverywhereViaAuth(t *testing.T) {
 	}
 	if len(app.accounts) != 1 || app.accounts[0] != app.auth.server.URL+"/account" {
 		t.Fatalf("account URL %v", app.accounts)
+	}
+}
+
+func TestCentralAuthenticatedNavigationKeepsLanguageAndCSRF(t *testing.T) {
+	for _, tc := range []struct{ query, language string }{
+		{"es-MX", "es"}, {"pt-BR", "pt"}, {"//evil.example/\"<script>", "en"},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			app := newLensApp(t, "central")
+			token, err := app.central().Store.CreateSession(context.Background(), "account-123", "alice@example.com")
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, _ := url.Parse(app.server.URL)
+			// Only the authentication cookie exists: no saved display choice.
+			app.client.Jar.SetCookies(u, []*http.Cookie{{Name: "lens_session", Value: token, Path: "/"}})
+			for _, route := range []string{"/login", "/auth/login"} {
+				resp, _ := app.get(route + "?" + url.Values{"lang": {tc.query}, "next": {"https://evil.example/"}}.Encode())
+				if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/?lang="+tc.language {
+					t.Fatalf("%s redirect: %d %q", route, resp.StatusCode, resp.Header.Get("Location"))
+				}
+			}
+			path := "/logout?lang=" + url.QueryEscape(tc.query)
+			for _, csrf := range []string{"", "wrong"} {
+				rejected, _ := app.postForm(path, url.Values{"csrf_token": {csrf}})
+				if rejected.StatusCode != http.StatusForbidden || app.identity(token) == nil || app.sessionCookie() != token {
+					t.Fatal("localized logout bypassed CSRF or ended a session on rejection")
+				}
+			}
+			logout, _ := app.postForm(path, url.Values{"csrf_token": {CSRFTokenForSession(token)}})
+			if logout.StatusCode != http.StatusSeeOther || logout.Header.Get("Location") != app.auth.server.URL+"/logout?client_id=lens&lang="+tc.language {
+				t.Fatalf("Auth handoff: %d %q", logout.StatusCode, logout.Header.Get("Location"))
+			}
+			if app.identity(token) != nil || app.sessionCookie() != "" {
+				t.Fatal("localized logout did not revoke the session and clear its cookie")
+			}
+		})
 	}
 }
 
