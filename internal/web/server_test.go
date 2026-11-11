@@ -539,7 +539,7 @@ func TestHealthLogoutAndSignedOut(t *testing.T) {
 		t.Fatal(logout.StatusCode, location(logout))
 	}
 	resp, body = h.get("/signed-out")
-	if resp.StatusCode != 200 || !strings.Contains(body, "You are signed out") || !strings.Contains(body, `href="/auth/login?lang=en&amp;next=%2F"`) ||
+	if resp.StatusCode != 200 || !strings.Contains(body, "You are signed out") || !strings.Contains(body, `href="/auth/login?next=%2F&amp;lang=en"`) ||
 		!strings.Contains(body, `href="https://auth.elcanotek.com?lang=en"`) || resp.Header.Get("Location") != "" ||
 		!strings.HasPrefix(body, "<!-- SPDX-License-Identifier: BUSL-1.1 -->\n") {
 		t.Fatal(resp.StatusCode, body)

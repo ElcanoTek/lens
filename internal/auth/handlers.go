@@ -111,11 +111,15 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 	}
 	query := r.URL.Query()
 	code, state := query.Get("code"), query.Get("state")
+	displayWriter, displayRequest := w, r
+	if i18n.Normalize(query.Get("lang")) == "" {
+		displayWriter, displayRequest = i18n.WithDisplayLanguage(w, r, central.callbackLanguage(r, state))
+	}
 	if query.Get("error") != "" || code == "" || state == "" {
 		if central.Transactions.Present(r) {
 			central.Transactions.Clear(w)
 		}
-		h.fail(w, r, http.StatusBadRequest, "Sign-in was not completed")
+		h.fail(displayWriter, displayRequest, http.StatusBadRequest, "Sign-in was not completed")
 		return
 	}
 	token, destination, err := central.CompleteLogin(r.Context(), w, r, code, state)
@@ -123,15 +127,15 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 		var authErr *CentralAuthError
 		switch {
 		case errors.Is(err, ErrTransaction), errors.Is(err, ErrCodeExchangeRejected):
-			h.fail(w, r, http.StatusBadRequest, "Sign-in expired. Try again.")
+			h.fail(displayWriter, displayRequest, http.StatusBadRequest, "Sign-in expired. Try again.")
 		case errors.Is(err, ErrAccessDenied):
-			h.fail(w, r, http.StatusForbidden, "Your account does not have Lens access")
+			h.fail(displayWriter, displayRequest, http.StatusForbidden, "Your account does not have Lens access")
 		case errors.As(err, &authErr):
 			logger.Warn("central sign-in failed", "reason", authErr.Error())
-			h.fail(w, r, http.StatusBadGateway, "The authentication service is unavailable")
+			h.fail(displayWriter, displayRequest, http.StatusBadGateway, "The authentication service is unavailable")
 		default:
 			logger.Error("central sign-in failed", "error", err)
-			http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
+			http.Error(displayWriter, i18n.T(i18n.RequestLanguage(displayRequest), "Internal Server Error"), http.StatusInternalServerError)
 		}
 		return
 	}

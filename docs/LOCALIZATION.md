@@ -15,6 +15,10 @@ prevent explicit links or the native language form from working.
 The sign-out form carries the current language through Lens to Auth, and an
 already signed-in visit to Login retains it when returning to the dashboard.
 Both paths work when the browser cannot save its display preference.
+Central sign-in also keeps the explicit language in the vetted, signed return
+path. Callback errors recover it only from a live transaction with matching
+state; invalid transactions use the ordinary request-language fallback.
+Unrelated return-query fields remain byte-for-byte unchanged.
 
 Lens accepts Auth's `ui_locales` hint after `lang` and before the cookie. It
 forwards `lang` on local/legacy sign-in navigation and `ui_locales` on central
