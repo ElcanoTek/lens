@@ -1,9 +1,11 @@
 <!doctype html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Lens — Elcano</title>
+  <meta name="elcano-translations" content="{{catalog}}">
+  <script nonce="{{.Nonce}}" src="{{static_url "language.js"}}"></script>
+  <title>{{tr "Lens — Elcano"}}</title>
   <script nonce="{{ .Nonce }}">
     (function () {
       var storageKey = "flag-theme-preference";
@@ -37,13 +39,14 @@
     <header class="page-header" role="banner">
       <div class="ds-app-header">
         <div class="ds-app-header__brand">
-          <img class="ds-app-header__mark" src="{{ static_url "design-system/logos/elcano-mark-primary.svg" }}" alt="Elcano">
+          <img class="ds-app-header__mark" src="{{ static_url "design-system/logos/elcano-mark-primary.svg" }}" alt="{{tr "Elcano"}}">
           <div class="ds-app-header__text">
-            <h1 class="ds-app-header__title">Lens</h1>
+            <h1 class="ds-app-header__title">{{tr "Lens"}}</h1>
           </div>
         </div>
         <div class="ds-app-header__actions">
-          <button data-flag-theme-toggle class="icon-action theme-toggle" type="button" aria-label="Switch to dark mode" aria-pressed="false">
+          {{template "language-choice" .}}
+          <button data-flag-theme-toggle class="icon-action theme-toggle" type="button" aria-label="{{tr "Switch to dark mode"}}" aria-pressed="false">
             <span class="theme-toggle__icon-wrap" aria-hidden="true">
               <svg class="theme-toggle__icon theme-toggle__icon--sun" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#sun"></use></svg>
               <svg class="theme-toggle__icon theme-toggle__icon--moon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#moon"></use></svg>
@@ -51,13 +54,13 @@
           </button>
           <form method="post" action="/logout" class="header-action-form js-confirm-sign-out">
             {{ if .CSRFToken }}<input type="hidden" name="csrf_token" value="{{ .CSRFToken }}">{{ end }}
-            <button class="icon-action" type="submit" aria-label="Sign out" title="Sign out">
+            <button class="icon-action" type="submit" aria-label="{{tr "Sign out"}}" title="{{tr "Sign out"}}">
               <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#logout"></use></svg>
             </button>
           </form>
         </div>
       </div>
-      <p class="page-header__intro">Upload a list and Lens does the rest — it detects websites, iOS &amp; Android apps, and CTV channels automatically and rates each one for advertising quality.</p>
+      <p class="page-header__intro">{{tr "Upload a list and Lens does the rest — it detects websites, iOS & Android apps, and CTV channels automatically and rates each one for advertising quality."}}</p>
     </header>
 
     <div id="toast-root" class="toast-root" aria-live="polite"></div>
@@ -75,29 +78,29 @@
 
       {{ comment "── Your files ─────────────────────────────────────────────" }}
       <section class="panel panel-new-run">
-        <h2>Your files</h2>
+        <h2>{{tr "Your files"}}</h2>
 
         <form method="post" action="/files/upload" enctype="multipart/form-data" id="input-upload-form">
           <input type="hidden" name="destination" value="inputs">
-          <div class="dropzone thin" id="fileDropzone" tabindex="0" role="button" aria-label="Upload input files">
+          <div class="dropzone thin" id="fileDropzone" tabindex="0" role="button" aria-labelledby="dropzone-label dropzone-status">
             <svg class="dropzone-icon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#paperclip"></use></svg>
-            <p class="dropzone-text">Drop a CSV or Excel file here, or click to browse</p>
-            <p class="dropzone-subtext" id="dropzone-status">Uploads start automatically · mixed lists welcome</p>
-            <input id="input-file-native" type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="file-input-hidden" tabindex="-1" aria-hidden="true">
+            <p class="dropzone-text" id="dropzone-label">{{tr "Drop a CSV or Excel file here, or click to browse"}}</p>
+            <p class="dropzone-subtext" id="dropzone-status">{{tr "Uploads start automatically · mixed lists welcome"}}</p>
           </div>
+<input id="input-file-native" type="file" name="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" class="file-input-hidden" tabindex="-1" aria-hidden="true">
           <div class="validation-error" id="fileError" aria-live="polite" aria-atomic="true"></div>
         </form>
 
         {{ if .InputFiles }}
         <div class="lib-subhead-row">
-          <h3 class="lib-subhead">Uploaded files <span class="ws-count">({{ len .InputFiles }})</span></h3>
+          <h3 class="lib-subhead">{{tr "Uploaded files"}} <span class="ws-count">({{number (len .InputFiles)}})</span></h3>
           {{ if gt (len .InputFiles) 2 }}
           <div class="searchbox">
             <svg class="searchbox-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
               <circle cx="11" cy="11" r="7"></circle>
               <path d="M20 20l-3.5-3.5"></path>
             </svg>
-            <input type="text" id="file-search" placeholder="Search files" autocomplete="off" aria-label="Search uploaded files">
+            <input type="text" id="file-search" placeholder="{{tr "Search files"}}" autocomplete="off" aria-label="{{tr "Search uploaded files"}}">
           </div>
           {{ end }}
         </div>
@@ -106,7 +109,7 @@
           {{ range $i, $file := .InputFiles }}
           <div class="filecard" data-filename="{{ $file.Name }}" data-size="{{ $file.Size }}" data-uploaded="{{ $file.Uploaded }}" {{ $file.BreakdownAttr }}>
             <div class="fc-top">
-              <input class="fc-radio" type="radio" name="input_file" form="queue-job-form" value="{{ $file.Name }}" id="file-radio-{{ inc $i }}" required aria-label="Select {{ $file.Name }}">
+              <input class="fc-radio" type="radio" name="input_file" form="queue-job-form" value="{{ $file.Name }}" id="file-radio-{{ inc $i }}" required aria-label="{{tr "Select {0}" $file.Name}}">
               <label class="fc-name" for="file-radio-{{ inc $i }}">
                 <svg class="fc-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
@@ -115,29 +118,29 @@
                 <span class="nm" title="{{ $file.Name }}">{{ $file.Name }}</span>
               </label>
               <span class="fc-actions">
-                <button class="icon-action js-rename-input" type="button" data-filename="{{ $file.Name }}" aria-label="Rename {{ $file.Name }}" title="Rename">
+                <button class="icon-action js-rename-input" type="button" data-filename="{{ $file.Name }}" aria-label="{{tr "Rename {0}" $file.Name}}" title="{{tr "Rename"}}">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5z"></path>
                   </svg>
                 </button>
-                <a class="icon-action" href="/files/download/inputs/{{ $file.Name }}" aria-label="Download {{ $file.Name }}" title="Download">
+                <a class="icon-action" href="/files/download/inputs/{{ $file.Name }}" aria-label="{{tr "Download {0}" $file.Name}}" title="{{tr "Download"}}">
                   <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#download"></use></svg>
                 </a>
-                <button class="icon-action danger js-delete-input" type="button" data-filename="{{ $file.Name }}" aria-label="Delete {{ $file.Name }}" title="Delete">
+                <button class="icon-action danger js-delete-input" type="button" data-filename="{{ $file.Name }}" aria-label="{{tr "Delete {0}" $file.Name}}" title="{{tr "Delete"}}">
                   <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                 </button>
               </span>
             </div>
             <div class="fc-meta-row">
               {{ if $file.BreakdownChips }}
-              <span class="comp-bar" title="Detected composition" aria-label="{{ $file.BreakdownLabel }}">
+              <span class="comp-bar" role="img" title="{{tr "Detected composition"}}" aria-label="{{ $file.BreakdownLabel }}">
                 {{ range $file.BreakdownChips }}
                 <span class="comp-seg {{ .Seg }}" data-pct="{{ .Pct }}"></span>
                 {{ end }}
               </span>
-              <span class="metanum"><strong>{{ $file.BreakdownTotal }}</strong> rows</span>
+              <span class="metanum"><strong>{{if eq $file.BreakdownTotal 1}}{{tr "1 row"}}{{else}}{{tr "{0} rows" $file.BreakdownTotal}}{{end}}</strong></span>
               {{ range $file.BreakdownChips }}
-              <span class="tchip"><span class="tdot {{ .Seg }}"></span>{{ .Label }} <b>{{ .Count }}</b></span>
+              <span class="tchip"><span class="tdot {{ .Seg }}"></span>{{ .Label }} <b>{{number .Count}}</b></span>
               {{ end }}
               {{ end }}
               <span class="metanum"><span class="meta-sep">·</span> {{ $file.Size }} <span class="meta-sep">·</span> {{ $file.Uploaded }}</span>
@@ -145,28 +148,28 @@
           </div>
           {{ end }}
         </div>
-        <p class="empty-state lib-empty" id="files-no-match" hidden>No files match your search.</p>
+        <p class="empty-state lib-empty" id="files-no-match" hidden>{{tr "No files match your search."}}</p>
 
         <div class="format-key">
-          <span class="tchip"><span class="tdot seg-site"></span>Websites</span>
-          <span class="tchip"><span class="tdot seg-ios"></span>iOS apps</span>
-          <span class="tchip"><span class="tdot seg-android"></span>Android apps</span>
-          <span class="tchip"><span class="tdot seg-ctv"></span>CTV channels</span>
+          <span class="tchip"><span class="tdot seg-site"></span>{{tr "Websites"}}</span>
+          <span class="tchip"><span class="tdot seg-ios"></span>{{tr "iOS apps"}}</span>
+          <span class="tchip"><span class="tdot seg-android"></span>{{tr "Android apps"}}</span>
+          <span class="tchip"><span class="tdot seg-ctv"></span>{{tr "CTV channels"}}</span>
         </div>
 
         {{ else }}
-        <p class="empty-state lib-empty">No files yet — upload one above to get started.</p>
+        <p class="empty-state lib-empty">{{tr "No files yet — upload one above to get started."}}</p>
         {{ end }}
       </section>
 
       {{ comment "── Ready to analyze ───────────────────────────────────────" }}
       <section class="panel panel-ready">
-        <h2>Ready to analyze</h2>
+        <h2>{{tr "Ready to analyze"}}</h2>
 
         <div class="launch-empty" id="ready-empty">
           <div class="empty-state">
-            <b>No file selected</b>
-            <span>Select a file from your library above and its details will appear here, ready to run.</span>
+            <b>{{tr "No file selected"}}</b>
+            <span>{{tr "Select a file from your library above and its details will appear here, ready to run."}}</span>
           </div>
         </div>
 
@@ -179,134 +182,134 @@
               </svg>
               <span id="ready-file-name"></span>
             </span>
-            <span class="comp-bar" id="ready-comp-bar" title="Detected composition" aria-hidden="true" hidden></span>
+            <span class="comp-bar" id="ready-comp-bar" title="{{tr "Detected composition"}}" aria-hidden="true" hidden></span>
             <span class="metanum" id="ready-rows" hidden></span>
             <span class="ls-types" id="ready-file-types"></span>
           </div>
           <form method="post" action="/jobs" id="queue-job-form" class="run-form">
             <div class="run-controls">
-              <input id="job-name" name="name" type="text" maxlength="120" placeholder="Job name (optional)" autocomplete="off">
-              <button type="submit" id="queue-job-btn" class="btn btn-primary" disabled>Analyze</button>
+              <input id="job-name" name="name" type="text" maxlength="120" placeholder="{{tr "Job name (optional)"}}" autocomplete="off">
+              <button type="submit" id="queue-job-btn" class="btn btn-primary" disabled>{{tr "Analyze"}}</button>
             </div>
             <details class="run-advanced">
-              <summary class="caption">Advanced settings</summary>
+              <summary class="caption">{{tr "Advanced settings"}}</summary>
               <div class="run-advanced-body">
                 <label class="run-advanced-field">
-                  <span class="run-advanced-label">Classification model</span>
+                  <span class="run-advanced-label">{{tr "Classification model"}}</span>
                   <select name="llm_model" id="llm-model-select" data-previous-defaults="{{ .PreviousRecommendedModels }}">
                     {{/* recommended label resolved in Go */}}
-                    <option value="{{ .RecommendedModel }}" selected>{{ .RecommendedClassifyLabel }} — recommended</option>
+                    <option value="{{ .RecommendedModel }}" selected>{{tr "{0} — recommended" (modelLabel .RecommendedClassifyLabel)}}</option>
                     {{ range .Catalog.Classify }}
                     {{ if ne .ID $.RecommendedModel }}
-                    <option value="{{ .ID }}">{{ .Label }}</option>
+                    <option value="{{ .ID }}">{{modelLabel .Label}}</option>
                     {{ end }}
                     {{ end }}
                   </select>
-                  <span class="caption">Only cost-effective models are listed — classification doesn't benefit from frontier-priced models. “Latest” aliases track each vendor's current release automatically.</span>
+                  <span class="caption">{{tr "Only cost-effective models are listed — classification doesn't benefit from frontier-priced models. “Latest” aliases track each vendor's current release automatically."}}</span>
                 </label>
                 <input type="hidden" name="deep_retry" value="off">
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="deep-retry-check" name="deep_retry" value="on">
                   <span>
-                    <span class="run-advanced-label">Retry with headless Chrome</span>
-                    <span class="caption">Sites the fast fetch can't read get one more try in a real browser (one at a time, ~15 s each). Off by default so failed sites go straight to research.</span>
+                    <span class="run-advanced-label">{{tr "Retry with headless Chrome"}}</span>
+                    <span class="caption">{{tr "Sites the fast fetch can't read get one more try in a real browser (one at a time, ~15 s each). Off by default so failed sites go straight to research."}}</span>
                   </span>
                 </label>
                 <input type="hidden" name="research_fallback" value="off">
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="research-fallback-check" name="research_fallback" value="on" checked>
                   <span>
-                    <span class="run-advanced-label">Research unscrapeable sites</span>
-                    <span class="caption">Sites that block every crawler (e.g. wsj.com, reuters.com) are classified from a web-search research summary instead of failing. Never contacts the blocked site.</span>
+                    <span class="run-advanced-label">{{tr "Research unscrapeable sites"}}</span>
+                    <span class="caption">{{tr "Sites that block every crawler (e.g. wsj.com, reuters.com) are classified from a web-search research summary instead of failing. Never contacts the blocked site."}}</span>
                   </span>
                 </label>
                 <label class="run-advanced-field" id="research-model-field">
-                  <span class="run-advanced-label">Research model</span>
+                  <span class="run-advanced-label">{{tr "Research model"}}</span>
                   <select name="research_model" id="research-model-select" data-previous-defaults="{{ .PreviousRecommendedResearchModels }}">
                     {{/* recommended label resolved in Go */}}
-                    <option value="{{ .RecommendedResearchModel }}" selected>{{ .RecommendedResearchLabel }} — recommended</option>
+                    <option value="{{ .RecommendedResearchModel }}" selected>{{tr "{0} — recommended" (modelLabel .RecommendedResearchLabel)}}</option>
                     {{ range .Catalog.Research }}
                     {{ if ne .ID $.RecommendedResearchModel }}
-                    <option value="{{ .ID }}">{{ .Label }}</option>
+                    <option value="{{ .ID }}">{{modelLabel .Label}}</option>
                     {{ end }}
                     {{ end }}
                   </select>
-                  <span class="caption">Used for website research fallback and all CTV research. All listed models have built-in web search.</span>
+                  <span class="caption">{{tr "Used for website research fallback and all CTV research. All listed models have built-in web search."}}</span>
                 </label>
               </div>
             </details>
             <details class="run-advanced custom-categories" id="custom-categories">
-              <summary class="caption">Custom categories <span class="caption">· optional · decision model</span></summary>
+              <summary class="caption">{{tr "Custom categories"}} <span class="caption">{{tr "· optional · decision model"}}</span></summary>
               <div class="run-advanced-body">
                 <label class="run-advanced-field run-advanced-check">
                   <input type="checkbox" id="custom-categories-enabled">
-                  <span><span class="run-advanced-label">Add your own categories</span>
-                  <span class="caption">Add labels to this run alongside the standard Lens analysis. Optional; sends source text to the decision model below, through OpenRouter, for an additional API call per successfully analyzed item.</span></span>
+                  <span><span class="run-advanced-label">{{tr "Add your own categories"}}</span>
+                  <span class="caption">{{tr "Add labels to this run alongside the standard Lens analysis. Optional; sends source text to the decision model below, through OpenRouter, for an additional API call per successfully analyzed item."}}</span></span>
                 </label>
                 <div id="custom-category-editor" hidden>
                   <label class="run-advanced-field">
-                    <span class="run-advanced-label">Decision model</span>
+                    <span class="run-advanced-label">{{tr "Decision model"}}</span>
                     <select name="decision_model" id="decision-model-select">
                       {{/* recommended label resolved in Go */}}
-                      <option value="{{ .RecommendedDecisionModel }}" selected>{{ .RecommendedDecisionLabel }} — recommended</option>
+                      <option value="{{ .RecommendedDecisionModel }}" selected>{{tr "{0} — recommended" (modelLabel .RecommendedDecisionLabel)}}</option>
                       {{ range .Catalog.Decision }}
                       {{ if ne .ID $.RecommendedDecisionModel }}
-                      <option value="{{ .ID }}">{{ .Label }}</option>
+                      <option value="{{ .ID }}">{{modelLabel .Label}}</option>
                       {{ end }}
                       {{ end }}
                     </select>
-                    <span class="caption">Decision models return typed answers with probabilities, not prose. Output tokens are free. Jev returns a probability for every choice option; some other models return only the selected option, leaving those columns blank.</span>
+                    <span class="caption">{{tr "Decision models return typed answers with probabilities, not prose. Output tokens are free. Jev returns a probability for every choice option; some other models return only the selected option, leaving those columns blank."}}</span>
                   </label>
-                  <p class="caption">Give each category a name, choose an answer format, and write a specific question. Use “Add category” for another independent judgment.</p>
-                  <p class="caption">The decision model evaluates scraped text, app-store descriptions, or research summaries—not images or video. A missing detail in a research summary is not proof of absence.</p>
+                  <p class="caption">{{tr "Give each category a name, choose an answer format, and write a specific question. Use “Add category” for another independent judgment."}}</p>
+                  <p class="caption">{{tr "The decision model evaluates scraped text, app-store descriptions, or research summaries—not images or video. A missing detail in a research summary is not proof of absence."}}</p>
                   <div id="custom-category-list"></div>
-                  <button class="btn btn-ghost" type="button" id="add-custom-category">Add category</button>
-                  <p class="caption">Up to 12 categories. Yes/no uses a 50% cutoff; its probability is always P(yes). Choice selects one option. Include “Other” or “Unknown” when appropriate.</p>
-                  <p class="caption">Click Analyze above to start the run. Download its CSV from Runs to see your labels and probabilities. If the decision model fails, standard results are kept and custom labels are blank; check Decision_Status and Decision_Error.</p>
-                  <p class="caption">Definitions are remembered in this browser. After reloading the page, enable “Add your own categories” again to include them in a run.</p>
+                  <button class="btn btn-ghost" type="button" id="add-custom-category">{{tr "Add category"}}</button>
+                  <p class="caption">{{tr "Up to 12 categories. Yes/no uses a 50% cutoff; its probability is always P(yes). Choice selects one option. Include “Other” or “Unknown” when appropriate."}}</p>
+                  <p class="caption">{{tr "Click Analyze above to start the run. Download its CSV from Runs to see your labels and probabilities. If the decision model fails, standard results are kept and custom labels are blank; check Decision_Status and Decision_Error."}}</p>
+                  <p class="caption">{{tr "Definitions are remembered in this browser. After reloading the page, enable “Add your own categories” again to include them in a run."}}</p>
                 </div>
                 <input type="hidden" name="custom_categories" id="custom-categories-json" value="">
-                <noscript><p class="caption">JavaScript is required for the category editor. The CLI also accepts a JSON definition file.</p></noscript>
+                <noscript><p class="caption">{{tr "JavaScript is required for the category editor. The CLI also accepts a JSON definition file."}}</p></noscript>
               </div>
             </details>
-            <p class="caption run-hint">Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research.</p>
+            <p class="caption run-hint">{{tr "Mixed lists are fine. Sites that block the fast crawler are retried with a rendering browser, and sites that block everything are classified from public research."}}</p>
           </form>
         </div>
       </section>
 
       {{ comment "── Runs ───────────────────────────────────────────────────" }}
       <section class="panel panel-runs">
-        <h2>Runs</h2>
+        <h2>{{tr "Runs"}}</h2>
         {{ if .Runs }}
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Run</th>
-                <th>Started</th>
-                <th>Status</th>
-                <th>Progress</th>
-                <th>Results</th>
-                <th><span class="visually-hidden">Actions</span></th>
+                <th>{{tr "Run"}}</th>
+                <th>{{tr "Started"}}</th>
+                <th>{{tr "Status"}}</th>
+                <th>{{tr "Progress"}}</th>
+                <th>{{tr "Results"}}</th>
+                <th><span class="visually-hidden">{{tr "Actions"}}</span></th>
               </tr>
             </thead>
             <tbody>
               {{ range .Runs }}
               <tr data-job-id="{{ .ID }}" data-status="{{ .Status }}">
-                <td data-label="Run">
+                <td data-label="{{tr "Run"}}">
                   <span class="run-title" title="{{ .Title }}">{{ .Title }}</span>
                   {{ if .InputFile }}<span class="caption run-input" title="{{ .InputFile }}">{{ .InputFile }}</span>{{ end }}
                   {{ if .SettingsSummary }}<span class="caption run-settings" title="{{ .SettingsSummary }}">{{ .SettingsSummary }}</span>{{ end }}
                 </td>
-                <td data-label="Started">
+                <td data-label="{{tr "Started"}}">
                   {{ if .CreatedAtISO }}
                   <time class="js-local-timestamp" {{ jattr "datetime" .CreatedAtISO }} {{ jattr "data-utc-timestamp" .CreatedAtISO }}>{{ .CreatedAtDisplay }}</time>
                   {{ else }}{{ .CreatedAtDisplay }}{{ end }}
                 </td>
-                <td data-label="Status"><span class="status-badge status-{{ .Status }}"><span class="status-dot"></span>{{ .Status }}</span></td>
-                <td data-label="Progress">
+                <td data-label="{{tr "Status"}}"><span class="status-badge status-{{ .Status }}"><span class="status-dot"></span>{{tr .Status}}</span></td>
+                <td class="run-progress-cell" data-label="{{tr "Progress"}}">
                   <div class="queue-progress">
-                    <div class="queue-progress-bar" title="green: classified · amber: queued for retry · red: failed">
+                    <div class="queue-progress-bar" title="{{tr "green: classified · amber: queued for retry · red: failed"}}">
                       <span class="bar-seg bar-seg--ok" data-pct="{{ .Progress.OKPct }}"></span>
                       <span class="bar-seg bar-seg--retry" data-pct="{{ .Progress.RetryPct }}"></span>
                       <span class="bar-seg bar-seg--fail" data-pct="{{ .Progress.FailPct }}"></span>
@@ -318,18 +321,18 @@
                     </div>
                   </div>
                 </td>
-                <td data-label="Results">
+                <td data-label="{{tr "Results"}}">
                   <span class="input-file-actions">
                     {{ if .OutputFile }}
-                    <a class="icon-action" href="/files/download/outputs/{{ .OutputFile }}" aria-label="Download results for {{ .Title }}" title="Download results (CSV)">
+                    <a class="icon-action" href="/files/download/outputs/{{ .OutputFile }}" aria-label="{{tr "Download results for {0}" .Title}}" title="{{tr "Download results (CSV)"}}">
                       <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#download"></use></svg>
                     </a>
                     {{ end }}
                     {{ if .CategoryFile }}
-                    <a class="btn btn-ghost" href="/files/download/outputs/{{ .CategoryFile }}" title="Download custom category definitions (JSON)">Categories</a>
+                    <a class="btn btn-ghost" href="/files/download/outputs/{{ .CategoryFile }}" title="{{tr "Download custom category definitions (JSON)"}}">{{tr "Categories"}}</a>
                     {{ end }}
                     {{ if .LogFile }}
-                    <a class="icon-action subtle" href="/files/download/outputs/{{ .LogFile }}" aria-label="Download log for {{ .Title }}" title="Download log">
+                    <a class="icon-action subtle" href="/files/download/outputs/{{ .LogFile }}" aria-label="{{tr "Download log for {0}" .Title}}" title="{{tr "Download log"}}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
                         <path d="M14 2v6h6"></path>
@@ -339,10 +342,10 @@
                     {{ end }}
                   </span>
                 </td>
-                <td data-label="Actions">
+                <td data-label="{{tr "Actions"}}">
                   <span class="input-file-actions">
                     {{ if not .IsArchived }}
-                    <button type="button" class="icon-action js-view-job" data-job-id="{{ .ID }}" data-job-name="{{ if .HasName }}{{ .Title }}{{ end }}" aria-label="Watch {{ .Title }} live" title="Watch live">
+                    <button type="button" class="icon-action js-view-job" data-job-id="{{ .ID }}" data-job-name="{{ if .HasName }}{{ .Title }}{{ end }}" aria-label="{{tr "Watch {0} live" .Title}}" title="{{tr "Watch live"}}">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path>
                         <circle cx="12" cy="12" r="3"></circle>
@@ -351,7 +354,7 @@
                     {{ end }}
                     {{ if .IsActive }}
                     <form method="post" action="/jobs/{{ .ID }}/cancel" class="js-confirm-cancel" data-job-id="{{ .Title }}">
-                      <button class="icon-action danger" type="submit" aria-label="Cancel {{ .Title }}" title="Cancel">
+                      <button class="icon-action danger" type="submit" aria-label="{{tr "Cancel {0}" .Title}}" title="{{tr "Cancel"}}">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="6" y="6" width="12" height="12" rx="1.5"></rect>
                         </svg>
@@ -364,13 +367,13 @@
                       {{ if .ProgressFile }}<input type="hidden" name="filenames" value="{{ .ProgressFile }}">{{ end }}
                       {{ if .LogFile }}<input type="hidden" name="filenames" value="{{ .LogFile }}">{{ end }}
                       {{ if .CategoryFile }}<input type="hidden" name="filenames" value="{{ .CategoryFile }}">{{ end }}
-                      <button class="icon-action danger" type="submit" aria-label="Delete artifacts for {{ .Title }}" title="Delete run and results">
+                      <button class="icon-action danger" type="submit" aria-label="{{tr "Delete artifacts for {0}" .Title}}" title="{{tr "Delete run and results"}}">
                         <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                       </button>
                     </form>
                     {{ else }}
                     <form method="post" action="/jobs/{{ .ID }}/delete" class="js-confirm-job-delete" data-job-id="{{ .Title }}">
-                      <button class="icon-action danger" type="submit" aria-label="Delete {{ .Title }}" title="Delete run and results">
+                      <button class="icon-action danger" type="submit" aria-label="{{tr "Delete {0}" .Title}}" title="{{tr "Delete run and results"}}">
                         <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#trash"></use></svg>
                       </button>
                     </form>
@@ -383,18 +386,18 @@
           </table>
         </div>
         {{ else }}
-        <p class="empty-state">No runs yet. Select a file above and hit Analyze.</p>
+        <p class="empty-state">{{tr "No runs yet. Select a file above and hit Analyze."}}</p>
         {{ end }}
       </section>
     </main>
 
     <dialog class="confirm-modal" id="confirm-delete-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-delete-text">
       <form method="dialog" class="confirm-modal-inner">
-        <h3 id="confirm-modal-title">Are you sure?</h3>
-        <p id="confirm-delete-text">This action cannot be undone.</p>
+        <h3 id="confirm-modal-title">{{tr "Are you sure?"}}</h3>
+        <p id="confirm-delete-text">{{tr "This action cannot be undone."}}</p>
         <div class="confirm-modal-actions">
-          <button value="cancel" class="btn btn-ghost" type="submit" id="confirm-modal-cancel">Keep</button>
-          <button value="confirm" class="btn btn-danger" type="submit" id="confirm-modal-action">Delete</button>
+          <button value="cancel" class="btn btn-ghost" type="submit" id="confirm-modal-cancel">{{tr "Keep"}}</button>
+          <button value="confirm" class="btn btn-danger" type="submit" id="confirm-modal-action">{{tr "Delete"}}</button>
         </div>
       </form>
     </dialog>
@@ -403,28 +406,28 @@
       <div class="monitor-modal-inner">
         <div class="monitor-modal-head">
           <div>
-            <h3 id="monitor-job-id">Run</h3>
-            <p class="caption" id="monitor-job-input">Input: —</p>
-            <p class="caption" id="monitor-job-timing">Elapsed — · ETA —</p>
+            <h3 id="monitor-job-id">{{tr "Run"}}</h3>
+            <p class="caption" id="monitor-job-input">{{tr "Input: —"}}</p>
+            <p class="caption" id="monitor-job-timing">{{tr "Elapsed — · ETA —"}}</p>
           </div>
           <div class="monitor-modal-actions">
-            <span class="status-badge" id="monitor-job-status"><span class="status-dot"></span>idle</span>
-            <button type="button" class="icon-action" id="monitor-modal-close" aria-label="Close live view">
+            <span class="status-badge" id="monitor-job-status"><span class="status-dot"></span>{{tr "idle"}}</span>
+            <button type="button" class="icon-action" id="monitor-modal-close" aria-label="{{tr "Close live view"}}">
               <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#close"></use></svg>
             </button>
           </div>
         </div>
         <div class="live-progress" id="live-progress">
-          <div class="live-progress-bar" title="green: classified · amber: queued for retry · red: failed">
+          <div class="live-progress-bar" title="{{tr "green: classified · amber: queued for retry · red: failed"}}">
             <span class="bar-seg bar-seg--ok" id="live-seg-ok"></span>
             <span class="bar-seg bar-seg--retry" id="live-seg-retry"></span>
             <span class="bar-seg bar-seg--fail" id="live-seg-fail"></span>
           </div>
-          <p class="live-progress-summary" id="live-progress-summary">No progress data yet.</p>
-          <p class="caption bar-legend"><span class="legend-dot legend-ok"></span>classified <span class="legend-dot legend-retry"></span>retry queue <span class="legend-dot legend-fail"></span>failed</p>
+          <p class="live-progress-summary" id="live-progress-summary">{{tr "No progress data yet."}}</p>
+          <p class="caption bar-legend"><span class="legend-dot legend-ok"></span>{{tr "classified"}} <span class="legend-dot legend-retry"></span>{{tr "retry queue"}} <span class="legend-dot legend-fail"></span>{{tr "failed"}}</p>
         </div>
         <div id="monitor-completion-banner" class="completion-banner" hidden></div>
-        <pre class="log-preview" id="live-log">No log output yet.</pre>
+        <pre class="log-preview" id="live-log">{{tr "No log output yet."}}</pre>
       </div>
     </dialog>
 
@@ -433,15 +436,16 @@
       <input type="hidden" name="filename" id="delete-input-filename" value="">
     </form>
 
-    <dialog class="confirm-modal" id="rename-modal">
+    <dialog class="confirm-modal" id="rename-modal" aria-labelledby="rename-modal-title">
       <form method="post" action="/files/rename" class="confirm-modal-inner" id="rename-form">
-        <h3>Rename file</h3>
+        <h3 id="rename-modal-title">{{tr "Rename file"}}</h3>
         <input type="hidden" name="destination" value="inputs">
         <input type="hidden" name="filename" id="rename-old-name" value="">
-        <input type="text" name="new_name" id="rename-new-name" maxlength="120" required autocomplete="off" placeholder="New file name">
+        <label class="visually-hidden" for="rename-new-name">{{tr "New file name"}}</label>
+        <input type="text" name="new_name" id="rename-new-name" maxlength="120" required autocomplete="off" placeholder="{{tr "New file name"}}">
         <div class="confirm-modal-actions">
-          <button type="button" class="btn btn-ghost" id="rename-cancel">Cancel</button>
-          <button type="submit" class="btn btn-primary">Rename</button>
+          <button type="button" class="btn btn-ghost" id="rename-cancel">{{tr "Cancel"}}</button>
+          <button type="submit" class="btn btn-primary">{{tr "Rename"}}</button>
         </div>
       </form>
     </dialog>

@@ -27,9 +27,9 @@ body {
 }
 
 [data-theme="light"] .btn-primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-white);
+  background: var(--color-primary-fill);
+  border-color: var(--color-primary-fill);
+  color: var(--color-on-primary-fill);
 }
 
 [data-theme="light"] a {
@@ -1657,7 +1657,7 @@ th {
     flex-shrink: 0;
   }
 
-  .panel-runs td[data-label="Progress"] .queue-progress {
+  .panel-runs td.run-progress-cell .queue-progress {
     width: 100%;
     flex: 1 1 100%;
     min-width: 0;
@@ -1680,3 +1680,22 @@ th {
     scroll-behavior: auto !important;
   }
 }
+
+/* Native language names stay usable with scripts or storage disabled. */
+.language-choice { display: flex; align-items: center; gap: var(--space-2); margin: 0; }
+.language-choice select { width: auto; min-height: var(--space-10); padding: var(--space-2) var(--space-3); font: inherit; color: var(--color-text-primary); background: var(--color-surface-1); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.language-choice select:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+.signed-out-panel .language-choice { justify-content: center; margin-bottom: var(--space-5); }
+
+@media (max-width: 47.9375rem) {
+  .ds-app-header { flex-wrap: wrap; }
+  .ds-app-header__actions { flex-wrap: wrap; margin-left: auto; }
+}
+
+/* Translated controls must shrink within the mobile page grid. */
+.page-shell, .page-header, .dashboard-grid, .panel { grid-template-columns: minmax(0, 1fr); }
+.page-header, .dashboard-grid, .panel { min-width: 0; }
+.ready-content, .run-form, .run-advanced-body, .custom-category-card,
+.run-advanced-field:not(.run-advanced-check) { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.run-advanced-field select { min-width: 0; width: 100%; }
+.ls-file { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }

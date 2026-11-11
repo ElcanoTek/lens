@@ -410,7 +410,7 @@ func TestCentralLogoutSignsOutEverywhereViaAuth(t *testing.T) {
 	}
 
 	resp, _ := app.postForm("/logout", url.Values{"csrf_token": {CSRFTokenForSession(token)}})
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != app.auth.server.URL+"/logout?client_id=lens" {
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != app.auth.server.URL+"/logout?client_id=lens&lang=en" {
 		t.Fatalf("logout %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	if app.identity(token) != nil {
@@ -432,7 +432,7 @@ func TestCentralLogoutSignsOutEverywhereViaAuth(t *testing.T) {
 func TestLegacyLogoutStillUsesTheElcanoAuthLogout(t *testing.T) {
 	app := newLensApp(t, "elcano")
 	resp, _ := app.postForm("/logout", nil)
-	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "https://auth.elcanotek.com/logout" {
+	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "https://auth.elcanotek.com/logout?lang=en" {
 		t.Fatalf("legacy logout %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
 	if resp, _ := app.get("/auth/callback?code=c&state=s"); resp.StatusCode != http.StatusNotFound {
@@ -454,8 +454,8 @@ func TestLegacyLogoutStillUsesTheElcanoAuthLogout(t *testing.T) {
 func TestUnauthenticatedResponseCarriesTheBoundedTarget(t *testing.T) {
 	app := newLensApp(t, "central")
 	for path, want := range map[string]string{
-		"/jobs?x=1":                     "/auth/login?next=%2Fjobs%3Fx%3D1",
-		"/" + strings.Repeat("a", 2100): "/auth/login?next=%2F",
+		"/jobs?x=1":                     "/auth/login?next=%2Fjobs%3Fx%3D1&lang=en",
+		"/" + strings.Repeat("a", 2100): "/auth/login?next=%2F&lang=en",
 	} {
 		rec := httptest.NewRecorder()
 		app.provider.UnauthenticatedResponse(rec, httptest.NewRequest(http.MethodGet, path, nil))
@@ -525,5 +525,43 @@ func TestShlexSplit(t *testing.T) {
 		if _, err := shlexSplit(bad); err == nil {
 			t.Errorf("shlexSplit(%q) accepted", bad)
 		}
+	}
+}
+
+// Locale is a display hint; the transaction and PKCE remain authoritative.
+func TestLanguageHandoffKeepsAuthenticationTransaction(t *testing.T) {
+	app := newLensApp(t, "central")
+	start, _ := app.get("/auth/login?lang=pt-BR&next=%2F%3Ffilter%3Dcustomer")
+	target, err := url.Parse(start.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := target.Query()
+	if q.Get("ui_locales") != "pt" || q.Get("state") == "" || q.Get("nonce") == "" || q.Get("code_challenge_method") != "S256" || q.Get("code_challenge") == "" {
+		t.Fatal(q)
+	}
+	if q.Get("redirect_uri") != "http://lens.example.com/auth/callback" {
+		t.Fatal(q.Get("redirect_uri"))
+	}
+	app.auth.mu.Lock()
+	app.auth.nonces["locale-code"] = q.Get("nonce")
+	app.auth.mu.Unlock()
+	callback, body := app.get("/auth/callback?" + url.Values{"code": {"locale-code"}, "state": {q.Get("state")}, "lang": {"es"}}.Encode())
+	if callback.StatusCode != http.StatusSeeOther || callback.Header.Get("Location") != "/?filter=customer" || app.sessionCookie() == "" {
+		t.Fatal(callback, body)
+	}
+	rec := httptest.NewRecorder()
+	app.provider.UnauthenticatedResponse(rec, httptest.NewRequest(http.MethodGet, "https://lens.example/?lang=es-MX&x=1", nil))
+	local, _ := url.Parse(rec.Header().Get("Location"))
+	if local.Query().Get("lang") != "es" || local.Query().Get("next") != "/?lang=es-MX&x=1" {
+		t.Fatal(local)
+	}
+	token := app.sessionCookie()
+	if rejected, _ := app.postForm("/logout?lang=pt", url.Values{"csrf_token": {"wrong"}}); rejected.StatusCode != http.StatusForbidden || app.identity(token) == nil {
+		t.Fatal("language hint bypassed logout CSRF")
+	}
+	logout, _ := app.postForm("/logout?lang=pt", url.Values{"csrf_token": {CSRFTokenForSession(token)}})
+	if logout.StatusCode != http.StatusSeeOther || logout.Header.Get("Location") != app.auth.server.URL+"/logout?client_id=lens&lang=pt" || app.identity(token) != nil {
+		t.Fatal("localized logout failed to revoke session or preserve language", logout)
 	}
 }

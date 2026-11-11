@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/ElcanoTek/lens/internal/i18n"
 )
 
 // Legacy ("elcano") mode defaults.
@@ -141,7 +143,7 @@ func (v *CookieVerifier) CurrentIdentity(r *http.Request) *Identity {
 // via ?return_to= after a successful magic-link sign-in.
 func (v *CookieVerifier) LoginRedirect(w http.ResponseWriter, r *http.Request) {
 	target := v.LoginURL + "/?return_to=" + pyQuote(RequestURL(r), "")
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	http.Redirect(w, r, target+"&lang="+i18n.RequestLanguage(r), http.StatusSeeOther)
 }
 
 // RequestURL reconstructs the absolute URL the browser asked for, as

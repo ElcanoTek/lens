@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ElcanoTek/lens/internal/i18n"
 )
 
 // Provider modes.
@@ -146,7 +148,7 @@ func (p *CentralProvider) UnauthenticatedResponse(w http.ResponseWriter, r *http
 	if len(target) > 2048 {
 		target = "/"
 	}
-	http.Redirect(w, r, "/auth/login?next="+pyQuote(target, ""), http.StatusSeeOther)
+	http.Redirect(w, r, "/auth/login?next="+pyQuote(target, "")+"&lang="+i18n.RequestLanguage(r), http.StatusSeeOther)
 }
 
 func randomURLSafe(n int) string {
@@ -168,11 +170,11 @@ func (p *CentralProvider) BeginLogin(w http.ResponseWriter, r *http.Request, nex
 	if err := p.Transactions.Set(w, loginTransaction{
 		State: state, Nonce: nonce, Verifier: verifier, Next: SafeLocalPath(nextPath), CreatedAt: p.now().Unix(),
 	}); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Cache-Control", "no-store")
-	http.Redirect(w, r, p.Client.AuthorizationURL(state, challenge, nonce), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
+	http.Redirect(w, r, i18n.URL(p.Client.AuthorizationURL(state, challenge, nonce), i18n.RequestLanguage(r), "ui_locales"), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
 }
 
 // CompleteLogin consumes the login transaction (the lens_ui cookie is cleared

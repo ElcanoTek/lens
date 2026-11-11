@@ -1,4 +1,7 @@
+// SPDX-License-Identifier: BUSL-1.1
+// Copyright (c) 2026 ElcanoTek, Inc.
 document.addEventListener("DOMContentLoaded", () => {
+  const { text: T, html: H, number: N, cost: C, costTitle: CT, locale } = window.LensI18n;
   const nativeInput = document.getElementById("input-file-native");
   const fileDropzone = document.getElementById("fileDropzone");
   const dropzoneStatus = document.getElementById("dropzone-status");
@@ -92,21 +95,21 @@ applySegmentWidths(document);
 
     const includeYear = new Set(parsed.map((entry) => entry.date.getFullYear())).size > 1;
     parsed.forEach(({ node, date }) => {
-      node.textContent = new Intl.DateTimeFormat("en-US", {
+      node.textContent = new Intl.DateTimeFormat(locale, {
         month: "short",
         day: "numeric",
         hour: "numeric",
         minute: "2-digit",
-        hour12: true,
+        hour12: locale === "en-US",
         ...(includeYear ? { year: "numeric" } : {}),
       }).format(date);
-      node.title = `${new Intl.DateTimeFormat("en-US", {
+      node.title = `${new Intl.DateTimeFormat(locale, {
         month: "short",
         day: "numeric",
         year: "numeric",
         hour: "numeric",
         minute: "2-digit",
-        hour12: true,
+        hour12: locale === "en-US",
         timeZone: "UTC",
       }).format(date)} UTC`;
     });
@@ -120,7 +123,7 @@ applySegmentWidths(document);
     }
     const toast = document.createElement("div");
     toast.className = `toast toast-${tone}`;
-    toast.innerHTML = `<span>${escapeHtml(text)}</span><button type="button" class="toast-close" aria-label="Dismiss notification">×</button>`;
+    toast.innerHTML = `<span>${escapeHtml(text)}</span><button type="button" class="toast-close" aria-label="${H("Dismiss notification")}">×</button>`;
     toastRoot.appendChild(toast);
 
     const remove = () => {
@@ -138,7 +141,7 @@ applySegmentWidths(document);
   // from an earlier open must not count as a yes. A cancelled confirmation
   // puts focus back on the control that opened it (Safari does not focus a
   // clicked button, so the dialog alone would return focus to the page).
-  function openConfirmModal({ title, message, confirmLabel = "Confirm", cancelLabel = "Keep", tone = "danger", opener, submitCallback }) {
+  function openConfirmModal({ title, message, confirmLabel = T("Confirm"), cancelLabel = T("Keep"), tone = "danger", opener, submitCallback }) {
     if (!confirmModal || !confirmModalText) {
       submitCallback();
       return;
@@ -199,7 +202,7 @@ applySegmentWidths(document);
     }
     if (dropzoneStatus) {
       const names = Array.from(nativeInput.files).map((file) => file.name).join(", ");
-      dropzoneStatus.textContent = `Uploading ${names}…`;
+      dropzoneStatus.textContent = T("Uploading {0}…",names);
     }
     if (fileDropzone) {
       fileDropzone.classList.add("is-uploading");
@@ -248,7 +251,7 @@ applySegmentWidths(document);
   if (queueJobForm && queueJobBtn) {
     queueJobForm.addEventListener("submit", () => {
       queueJobBtn.disabled = true;
-      queueJobBtn.textContent = "Starting…";
+      queueJobBtn.textContent = T("Starting…");
     });
   }
 
@@ -293,14 +296,14 @@ applySegmentWidths(document);
         compBarEl.hidden = types.length === 0;
       }
       if (rowsEl) {
-        rowsEl.innerHTML = `<strong>${data ? data.total : 0}</strong> rows`;
+        rowsEl.innerHTML = `<strong>${H(data?.total === 1 ? "1 row" : "{0} rows", data?.total || 0)}</strong>`;
         rowsEl.hidden = types.length === 0;
       }
       if (fileTypesEl) {
         fileTypesEl.innerHTML = types
           .map(
             (t) =>
-              `<span class="tchip"><span class="tdot ${t.seg}"></span>${t.label} <b>${t.count}</b></span>`
+              `<span class="tchip"><span class="tdot ${t.seg}"></span>${H(t.label)} <b>${N(t.count)}</b></span>`
           )
           .join("");
       }
@@ -378,9 +381,9 @@ applySegmentWidths(document);
         return;
       }
       openConfirmModal({
-        title: "Delete input file?",
-        message: `Delete ${name}? This cannot be undone.`,
-        confirmLabel: "Delete",
+        title: T("Delete input file?"),
+        message: T("Delete {0}? This cannot be undone.",name),
+        confirmLabel: T("Delete"),
         submitCallback: () => {
           deleteInputFilename.value = name;
           deleteInputForm.submit();
@@ -391,17 +394,17 @@ applySegmentWidths(document);
 
   document.querySelectorAll(".js-confirm-cancel").forEach((form) => {
     confirmFormSubmit(form, {
-      title: "Cancel run?",
-      message: `Stop ${form.dataset.jobId || "this run"}? Progress so far is kept.`,
-      confirmLabel: "Cancel run",
+      title: T("Cancel run?"),
+      message: T("Stop {0}? Progress so far is kept.",form.dataset.jobId || T("this run")),
+      confirmLabel: T("Cancel run"),
     });
   });
 
   document.querySelectorAll(".js-confirm-job-delete").forEach((form) => {
     confirmFormSubmit(form, {
-      title: "Delete run?",
-      message: `Delete ${form.dataset.jobId || "this run"} and its results? This cannot be undone.`,
-      confirmLabel: "Delete",
+      title: T("Delete run?"),
+      message: T("Delete {0} and its results? This cannot be undone.",form.dataset.jobId || T("this run")),
+      confirmLabel: T("Delete"),
     });
   });
 
@@ -411,10 +414,10 @@ applySegmentWidths(document);
   // still posts the same form straight away.
   document.querySelectorAll(".js-confirm-sign-out").forEach((form) => {
     confirmFormSubmit(form, {
-      title: "Sign out?",
-      message: "You'll be signed out of all your apps, not just Lens.",
-      confirmLabel: "Sign out",
-      cancelLabel: "Cancel",
+      title: T("Sign out?"),
+      message: T("You'll be signed out of all your apps, not just Lens."),
+      confirmLabel: T("Sign out"),
+      cancelLabel: T("Cancel"),
       tone: "primary",
     });
   });
@@ -427,18 +430,18 @@ applySegmentWidths(document);
     }
     const safe = (statusText || "idle").toLowerCase();
     node.className = `status-badge status-${safe}`;
-    node.innerHTML = `<span class="status-dot"></span>${safe}`;
+    node.innerHTML = `<span class="status-dot"></span>${H(safe)}`;
   }
 
   function formatElapsed(seconds) {
     const safe = Math.max(0, Math.floor(seconds));
     if (safe < 60) {
-      return `${safe}s`;
+      return T("{0} s",safe);
     }
     if (safe < 3600) {
-      return `${Math.floor(safe / 60)}m ${safe % 60}s`;
+      return T("{0} min {1} s",Math.floor(safe / 60), safe % 60);
     }
-    return `${Math.floor(safe / 3600)}h ${Math.floor((safe % 3600) / 60)}m`;
+    return T("{0} h {1} min",Math.floor(safe / 3600), Math.floor((safe % 3600) / 60));
   }
 
   // Fallback per-item retry cost (single-session headless Chrome, ~15s per
@@ -449,10 +452,10 @@ applySegmentWidths(document);
   function estimateEta(progress, startedAt, status) {
     const normalizedStatus = String(status || "").toLowerCase();
     if (["completed", "failed", "cancelled", "archived"].includes(normalizedStatus)) {
-      return "Done";
+      return T("Done");
     }
     if (normalizedStatus === "queued") {
-      return "Queued";
+      return T("Queued");
     }
 
     const total = Number(progress.total_domains || 0);
@@ -461,17 +464,17 @@ applySegmentWidths(document);
     const attempts = processed + retrying;
 
     if (!startedAt || total <= 0 || attempts <= 0) {
-      return "Estimating…";
+      return T("Estimating…");
     }
 
     const started = new Date(startedAt);
     if (Number.isNaN(started.getTime())) {
-      return "Estimating…";
+      return T("Estimating…");
     }
 
     const elapsed = (Date.now() - started.getTime()) / 1000;
     if (elapsed <= 5) {
-      return "Estimating…";
+      return T("Estimating…");
     }
 
     // Two-rate model: unattempted items at the measured fast-crawl rate,
@@ -483,12 +486,12 @@ applySegmentWidths(document);
     const remaining = remainingFresh * fastRate + retrying * retrySeconds;
 
     if (remaining < 60) {
-      return "< 1m left";
+      return T("< 1m left");
     }
     if (remaining < 3600) {
-      return `~${Math.round(remaining / 60)}m left`;
+      return T("~{0} min left",Math.round(remaining / 60));
     }
-    return `~${Math.floor(remaining / 3600)}h ${Math.round((remaining % 3600) / 60)}m left`;
+    return T("~{0} h {1} min left",Math.floor(remaining / 3600), Math.round((remaining % 3600) / 60));
   }
 
   function setBarSegments(container, progress) {
@@ -531,14 +534,14 @@ applySegmentWidths(document);
       const retrying = Number(progress.retrying || 0);
       if (total > 0) {
         text.textContent = retrying > 0
-          ? `${processed} / ${total} · ${retrying} to retry`
-          : `${processed} / ${total}`;
+          ? T("{0} / {1} · {2} to retry",processed,total,retrying)
+          : T("{0} / {1}",processed,total);
       } else if (processed > 0) {
-        text.textContent = `${processed} processed`;
+        text.textContent = T("{0} processed",processed);
       } else if (job.status === "queued") {
-        text.textContent = "Waiting";
+        text.textContent = T("Waiting");
       } else {
-        text.textContent = "Starting…";
+        text.textContent = T("Starting…");
       }
     }
 
@@ -549,8 +552,8 @@ applySegmentWidths(document);
 
     const cost = jobRow.querySelector(".queue-progress-cost");
     if (cost && progress.cost_text) {
-      cost.textContent = progress.cost_text;
-      cost.title = progress.cost_title || "";
+      cost.textContent = C(progress.cost_text);
+      cost.title = CT(progress.cost_title) || "";
     }
 
     setBadge(jobRow.querySelector(".status-badge"), job.status);
@@ -564,7 +567,7 @@ applySegmentWidths(document);
     }
     if (!hasJob) {
       setBarSegments(liveBar, {});
-      liveProgressSummary.textContent = "No progress data yet.";
+      liveProgressSummary.textContent = T("No progress data yet.");
       return;
     }
 
@@ -577,19 +580,19 @@ applySegmentWidths(document);
 
     if (total > 0) {
       const retryDetail = retrying > 0
-        ? `<span class="progress-retry">${retrying} to retry</span>`
+        ? `<span class="progress-retry">${H("{0} to retry",retrying)}</span>`
         : "";
       liveProgressSummary.innerHTML =
-        `<span class="progress-counter">${processed} / ${total}</span>` +
+        `<span class="progress-counter">${H("{0} / {1}",processed,total)}</span>` +
         `<span class="progress-detail">` +
-        `<span class="progress-success">${successful} ok</span>` +
-        `<span class="progress-fail">${errors} failed</span>` +
+        `<span class="progress-success">${H("{0} classified",successful)}</span>` +
+        `<span class="progress-fail">${H("{0} failed",errors)}</span>` +
         retryDetail +
         `</span>`;
     } else if (processed > 0) {
-      liveProgressSummary.textContent = `${processed} processed`;
+      liveProgressSummary.textContent = T("{0} processed",processed);
     } else {
-      liveProgressSummary.textContent = "Starting…";
+      liveProgressSummary.textContent = T("Starting…");
     }
   }
 
@@ -602,15 +605,15 @@ applySegmentWidths(document);
       monitorJobId.textContent = String(jobName || "").trim() || String(jobId);
     }
     if (monitorJobInput) {
-      monitorJobInput.textContent = "Input: loading…";
+      monitorJobInput.textContent = T("Input: loading…");
     }
     if (monitorJobTiming) {
-      monitorJobTiming.textContent = "Elapsed — · ETA —";
+      monitorJobTiming.textContent = T("Elapsed — · ETA —");
     }
     setBadge(monitorJobStatus, "queued");
     updateLiveProgress({}, false);
     if (liveLog) {
-      liveLog.textContent = "Loading log output…";
+      liveLog.textContent = T("Loading log output…");
       liveLog.classList.remove("is-active");
     }
     const completionBanner = document.getElementById("monitor-completion-banner");
@@ -633,7 +636,7 @@ applySegmentWidths(document);
     const response = await fetch(`/api/jobs/live${query}`, { credentials: "same-origin" });
     if (!response.ok) {
       if (monitorJobTiming) {
-        monitorJobTiming.textContent = "Live view unavailable";
+        monitorJobTiming.textContent = T("Live view unavailable");
       }
       updateLiveProgress({}, false);
       return;
@@ -642,12 +645,12 @@ applySegmentWidths(document);
     const payload = await response.json();
     if (!payload.job) {
       if (monitorJobTiming) {
-        monitorJobTiming.textContent = payload.message || "No active data";
+        monitorJobTiming.textContent = T(payload.message || "No active data");
       }
       setBadge(monitorJobStatus, "idle");
       updateLiveProgress({}, false);
       if (liveLog) {
-        liveLog.textContent = "No log output yet.";
+        liveLog.textContent = T("No log output yet.");
         liveLog.classList.remove("is-active");
       }
       return;
@@ -657,7 +660,7 @@ applySegmentWidths(document);
       monitorJobId.textContent = String(payload.job.name || "").trim() || String(payload.job.id);
     }
     if (monitorJobInput) {
-      monitorJobInput.textContent = `Input: ${payload.job.input_file || "unknown"}`;
+      monitorJobInput.textContent = T("Input: {0}",payload.job.input_file || T("unknown"));
     }
     if (monitorJobTiming) {
       const normalizedStatus = String(payload.job.status || "").toLowerCase();
@@ -671,7 +674,7 @@ applySegmentWidths(document);
         elapsed = formatElapsed((Date.now() - started.getTime()) / 1000);
       }
       const eta = estimateEta(payload.progress || {}, payload.job.started_at, payload.job.status);
-      monitorJobTiming.textContent = `Elapsed ${elapsed} · ETA ${eta}`;
+      monitorJobTiming.textContent = T("Elapsed {0} · ETA {1}",elapsed,eta);
     }
 
     updateQueueRowProgress(payload.job, payload.progress || {});
@@ -680,7 +683,7 @@ applySegmentWidths(document);
 
     const lines = payload.log_lines || [];
     if (liveLog) {
-      liveLog.textContent = lines.length ? lines.join("\n") : "No log output yet.";
+      liveLog.textContent = lines.length ? lines.join("\n") : T("No log output yet.");
       liveLog.scrollTop = liveLog.scrollHeight;
       liveLog.classList.toggle("is-active", payload.job.status === "running");
     }
@@ -702,12 +705,12 @@ applySegmentWidths(document);
 
         completionBanner.innerHTML =
           `<div class="completion-grid">` +
-          `<div class="completion-stat"><span class="completion-label">Total</span><span class="completion-value">${t}</span></div>` +
-          `<div class="completion-stat"><span class="completion-label">Succeeded</span><span class="completion-value completion-success">${s}</span></div>` +
-          `<div class="completion-stat"><span class="completion-label">Failed</span><span class="completion-value completion-fail">${e}</span></div>` +
-          `<div class="completion-stat"><span class="completion-label">Duration</span><span class="completion-value">${durationText}</span></div>` +
+          `<div class="completion-stat"><span class="completion-label">${H("Total")}</span><span class="completion-value">${N(t)}</span></div>` +
+          `<div class="completion-stat"><span class="completion-label">${H("Succeeded")}</span><span class="completion-value completion-success">${N(s)}</span></div>` +
+          `<div class="completion-stat"><span class="completion-label">${H("Failed")}</span><span class="completion-value completion-fail">${N(e)}</span></div>` +
+          `<div class="completion-stat"><span class="completion-label">${H("Duration")}</span><span class="completion-value">${durationText}</span></div>` +
           (prog.cost_text
-            ? `<div class="completion-stat" title="${escapeHtml(prog.cost_title || "")}"><span class="completion-label">Cost</span><span class="completion-value">${escapeHtml(prog.cost_text)}</span></div>`
+            ? `<div class="completion-stat" title="${escapeHtml(CT(prog.cost_title))}"><span class="completion-label">${H("Cost")}</span><span class="completion-value">${escapeHtml(C(prog.cost_text))}</span></div>`
             : "") +
           `</div>`;
         completionBanner.hidden = false;

@@ -5,7 +5,6 @@ package web
 
 import (
 	"encoding/json"
-	"fmt"
 	"html/template"
 	"math"
 	"net/http"
@@ -16,6 +15,7 @@ import (
 	"time"
 
 	"github.com/ElcanoTek/lens/internal/catalog"
+	"github.com/ElcanoTek/lens/internal/i18n"
 	"github.com/ElcanoTek/lens/internal/jobs"
 )
 
@@ -129,17 +129,18 @@ var (
 // formatCreatedAt renders a stored created_at for the Runs table. Like the
 // Python it prints the stored wall time labelled UTC (Lens only ever stores
 // UTC).
-func formatCreatedAt(createdAt string) string {
+func formatCreatedAt(createdAt string, languages ...string) string {
+	language := selectedLanguage(languages)
 	raw := strings.TrimSpace(createdAt)
 	if raw == "" {
-		return "Unknown date"
+		return i18n.T(language, "Unknown date")
 	}
 	if t, ok := parseISO(raw); ok {
-		return t.Format(displayLayout)
+		return displayTimestamp(t, language)
 	}
 	if m := compactStampRe.FindStringSubmatch(raw); m != nil {
 		if t, err := time.Parse("20060102150405", m[1]); err == nil {
-			return t.Format(displayLayout)
+			return displayTimestamp(t, language)
 		}
 	}
 	return raw
@@ -155,11 +156,12 @@ func jobIDTime(jobID string) (time.Time, bool) {
 	return t, err == nil
 }
 
-func formatJobIDTimestamp(jobID string) string {
+func formatJobIDTimestamp(jobID string, languages ...string) string {
+	language := selectedLanguage(languages)
 	if t, ok := jobIDTime(jobID); ok {
-		return t.Format(displayLayout)
+		return displayTimestamp(t, language)
 	}
-	return "Unknown date"
+	return i18n.T(language, "Unknown date")
 }
 
 // jobIDTimestampISO is datetime.isoformat() of the job-id stamp.
@@ -193,12 +195,13 @@ func countOf(progress map[string]any, key string) int {
 // etaText is the two-rate ETA: items not yet attempted run at the measured
 // fast-crawler rate; items queued for the retry pass each cost a roughly
 // constant amount (single-session headless Chrome).
-func etaText(job *jobs.Job, progress map[string]any, now time.Time) string {
+func etaText(job *jobs.Job, progress map[string]any, now time.Time, languages ...string) string {
+	language := selectedLanguage(languages)
 	switch {
 	case jobs.IsTerminal(job.Status):
-		return "Done"
+		return i18n.T(language, "Done")
 	case job.Status == jobs.StatusQueued:
-		return "Queued"
+		return i18n.T(language, "Queued")
 	}
 	total := countOf(progress, "total_domains")
 	processed := countOf(progress, "processed")
@@ -206,28 +209,28 @@ func etaText(job *jobs.Job, progress map[string]any, now time.Time) string {
 	// Every item with any status has been through the fast crawler once.
 	attempts := processed + retrying
 	if total <= 0 || attempts <= 0 || job.StartedAt == "" {
-		return "Estimating..."
+		return i18n.T(language, "Estimating...")
 	}
 	started, ok := parseISO(job.StartedAt)
 	if !ok {
-		return "Estimating..."
+		return i18n.T(language, "Estimating...")
 	}
 	elapsed := now.Sub(started).Seconds()
 	if elapsed <= 5 {
-		return "Estimating..."
+		return i18n.T(language, "Estimating...")
 	}
 	fastRate := elapsed / float64(attempts)
 	remainingFresh := max(0, total-attempts)
 	remaining := float64(remainingFresh)*fastRate + float64(retrying)*jobs.DeepRetrySecondsPerItem
 	switch {
 	case remaining < 60:
-		return "< 1m remaining"
+		return i18n.T(language, "< 1m remaining")
 	case remaining < 3600:
-		return fmt.Sprintf("~%dm remaining", int(math.RoundToEven(remaining/60.0)))
+		return i18n.T(language, "~{0}m remaining", int(math.RoundToEven(remaining/60.0)))
 	}
 	hours := int(math.Floor(remaining / 3600))
 	minutes := int(math.RoundToEven(math.Mod(remaining, 3600) / 60.0))
-	return fmt.Sprintf("~%dh %dm remaining", hours, minutes)
+	return i18n.T(language, "~{0}h {1}m remaining", hours, minutes)
 }
 
 // strictInt is int(str(v)) for a present value, or 0 for an absent one; ok
@@ -245,7 +248,8 @@ func stringOf(m map[string]any, key string) string {
 	return s
 }
 
-func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time) progressView {
+func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time, languages ...string) progressView {
+	language := selectedLanguage(languages)
 	progress := map[string]any{}
 	if job.ProgressFile != "" {
 		progress = jobs.ReadProgress(filepath.Join(dirs.Outputs, job.ProgressFile))
@@ -281,16 +285,16 @@ func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time) progressView 
 	var text string
 	switch {
 	case total > 0:
-		text = fmt.Sprintf("%d / %d", processed, total)
+		text = i18n.T(language, "{0} / {1}", processed, total)
 		if retrying > 0 {
-			text += fmt.Sprintf(" · %d to retry", retrying)
+			text += i18n.T(language, " · {0} to retry", retrying)
 		}
 	case processed > 0:
-		text = fmt.Sprintf("%d processed", processed)
+		text = i18n.T(language, "{0} processed", processed)
 	case job.Status == jobs.StatusQueued:
-		text = "Waiting"
+		text = i18n.T(language, "Waiting")
 	case job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling:
-		text = "Starting"
+		text = i18n.T(language, "Starting")
 	default:
 		text = "—"
 	}
@@ -303,21 +307,22 @@ func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time) progressView 
 	return progressView{
 		Percentage: pyRound(pct, 1),
 		Text:       text,
-		ETA:        etaText(job, progress, now),
+		ETA:        etaText(job, progress, now, language),
 		Successful: successful,
 		Errors:     errorsN,
 		Retrying:   retrying,
 		OKPct:      seg(successful),
 		RetryPct:   seg(retrying),
 		FailPct:    seg(errorsN),
-		CostText:   stringOf(progress, "cost_text"),
-		CostTitle:  stringOf(progress, "cost_title"),
+		CostText:   displayCost(stringOf(progress, "cost_text"), language),
+		CostTitle:  displayCostTitle(stringOf(progress, "cost_title"), language),
 	}
 }
 
 // archivedProgress is the progress cell for a run that is only artifacts on
 // disk: final counts, no ETA.
-func archivedProgress(progress map[string]any) progressView {
+func archivedProgress(progress map[string]any, languages ...string) progressView {
+	language := selectedLanguage(languages)
 	asInt := func(key string) int {
 		v := progress[key]
 		if !pyTruthy(v) {
@@ -335,11 +340,11 @@ func archivedProgress(progress map[string]any) progressView {
 	view := progressView{
 		Percentage: 0, Text: "—", Successful: successful, Errors: errorsN,
 		OKPct: pyFloat(0), RetryPct: pyFloat(0), FailPct: pyFloat(0),
-		CostText: stringOf(progress, "cost_text"), CostTitle: stringOf(progress, "cost_title"),
+		CostText: displayCost(stringOf(progress, "cost_text"), language), CostTitle: displayCostTitle(stringOf(progress, "cost_title"), language),
 	}
 	if total != 0 {
 		view.Percentage = 100
-		view.Text = fmt.Sprintf("%d ok · %d failed", successful, errorsN)
+		view.Text = i18n.T(language, "{0} ok · {1} failed", successful, errorsN)
 		view.OKPct = pyFloat(pyRound(float64(successful)/float64(total)*100.0, 2))
 		view.FailPct = pyFloat(pyRound(float64(errorsN)/float64(total)*100.0, 2))
 	}
@@ -350,10 +355,11 @@ func archivedProgress(progress map[string]any) progressView {
 // settings. Most jobs run with pure defaults and show nothing; the line
 // exists so a run that used a different model or disabled the research
 // fallback is distinguishable from its neighbours after the fact.
-func settingsSummary(job *jobs.Job) string {
+func settingsSummary(job *jobs.Job, languages ...string) string {
+	language := selectedLanguage(languages)
 	var parts []string
 	if job.SubmittedBy != "" {
-		parts = append(parts, "via API: "+job.SubmittedBy)
+		parts = append(parts, i18n.T(language, "via API: {0}", job.SubmittedBy))
 	}
 	if job.HasCategories() {
 		var spec struct {
@@ -366,38 +372,39 @@ func settingsSummary(job *jobs.Job) string {
 		for _, c := range spec.Categories {
 			names = append(names, c.Name)
 		}
-		parts = append(parts, "custom: "+strings.Join(names, ", "))
+		parts = append(parts, i18n.T(language, "custom: {0}", strings.Join(names, ", ")))
 		if job.DecisionModel != "" {
-			parts = append(parts, "decision: "+job.DecisionModel)
+			parts = append(parts, i18n.T(language, "decision: {0}", job.DecisionModel))
 		}
 	}
 	if job.LLMModel != "" {
-		parts = append(parts, "model: "+job.LLMModel)
+		parts = append(parts, i18n.T(language, "model: {0}", job.LLMModel))
 	}
 	if !job.DeepRetry {
-		parts = append(parts, "headless Chrome retry off")
+		parts = append(parts, i18n.T(language, "headless Chrome retry off"))
 	}
 	if !job.ResearchFallback {
-		parts = append(parts, "research fallback off")
+		parts = append(parts, i18n.T(language, "research fallback off"))
 	} else if job.ResearchModel != "" {
-		parts = append(parts, "research: "+job.ResearchModel)
+		parts = append(parts, i18n.T(language, "research: {0}", job.ResearchModel))
 	}
 	return strings.Join(parts, " · ")
 }
 
-func fileViews(files []jobs.InputFile) []fileView {
+func fileViews(files []jobs.InputFile, languages ...string) []fileView {
+	language := selectedLanguage(languages)
 	out := make([]fileView, 0, len(files))
 	for _, f := range files {
 		chips := make([]chipView, 0, len(f.BreakdownChips))
 		types := make([]any, 0, len(f.BreakdownChips))
 		for _, c := range f.BreakdownChips {
-			chips = append(chips, chipView{Seg: c.Seg, Label: c.Label, Count: c.Count, Pct: pyFloat(c.Pct)})
+			chips = append(chips, chipView{Seg: c.Seg, Label: i18n.T(language, c.Label), Count: c.Count, Pct: pyFloat(c.Pct)})
 			types = append(types, map[string]any{"key": c.Key, "seg": c.Seg, "label": c.Label, "count": c.Count, "pct": c.Pct})
 		}
 		attr := "data-breakdown='" + htmlSafeJSON(map[string]any{"total": f.BreakdownTotal, "types": types}) + "'"
 		out = append(out, fileView{
-			Name: f.Name, Size: f.Size, Uploaded: f.Uploaded,
-			BreakdownTotal: f.BreakdownTotal, BreakdownLabel: f.BreakdownLabel, BreakdownChips: chips,
+			Name: f.Name, Size: displaySize(f.Size, language), Uploaded: displayUploaded(f.Uploaded, f.ModTime, language),
+			BreakdownTotal: f.BreakdownTotal, BreakdownLabel: displayBreakdown(f.BreakdownChips, language), BreakdownChips: chips,
 			BreakdownAttr: template.HTMLAttr(attr), //nolint:gosec // JSON with every quote/markup character \u-escaped
 		})
 	}
@@ -412,7 +419,8 @@ type artifactGroup struct {
 // one list, newest first. Artifacts whose job is no longer in state (e.g.
 // pre-restart) appear as archived runs so nothing on disk is orphaned from
 // the UI.
-func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time) []runView {
+func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time, languages ...string) []runView {
+	language := selectedLanguage(languages)
 	known := map[string]bool{}
 	for _, j := range list {
 		known[j.ID] = true
@@ -451,11 +459,11 @@ func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time) []runView {
 			ID: job.ID, Title: firstNonEmpty(job.Name, job.ID), HasName: job.Name != "",
 			InputFile: job.InputFile, Status: job.Status,
 			IsActive:   job.Status == jobs.StatusQueued || job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling,
-			Progress:   progressViewFor(dirs, job, now),
+			Progress:   progressViewFor(dirs, job, now, language),
 			OutputFile: firstNonEmpty(job.OutputFile, g.output), ProgressFile: firstNonEmpty(job.ProgressFile, g.progress),
 			LogFile: firstNonEmpty(job.LogFile, g.log), CategoryFile: g.category,
-			CreatedAtISO: job.CreatedAt, CreatedAtDisplay: formatCreatedAt(job.CreatedAt),
-			SettingsSummary: settingsSummary(job),
+			CreatedAtISO: job.CreatedAt, CreatedAtDisplay: formatCreatedAt(job.CreatedAt, language),
+			SettingsSummary: settingsSummary(job, language),
 		})
 	}
 
@@ -474,9 +482,9 @@ func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time) []runView {
 		}
 		runs = append(runs, runView{
 			ID: id, Title: id, Status: "archived", IsArchived: true,
-			Progress:   archivedProgress(progress),
+			Progress:   archivedProgress(progress, language),
 			OutputFile: g.output, ProgressFile: g.progress, LogFile: g.log, CategoryFile: g.category,
-			CreatedAtISO: jobIDTimestampISO(id), CreatedAtDisplay: formatJobIDTimestamp(id),
+			CreatedAtISO: jobIDTimestampISO(id), CreatedAtDisplay: formatJobIDTimestamp(id, language),
 		})
 	}
 	// Stable, so equal stamps keep the order above (Python's sort is too).
@@ -499,6 +507,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now()
+	language := i18n.RequestLanguage(r)
 	cat := s.catalog.Get(r.Context())
 	label := func(kind, fallback string) string {
 		if l := cat.Label(kind, catalog.Recommended(kind)); l != "" {
@@ -506,11 +515,16 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		return fallback
 	}
-	lastQuery := func(key string) string { return queryLast(r, key) }
+	lastQuery := func(key string) string {
+		if key == "files_scope" {
+			return queryLast(r, key)
+		}
+		return i18n.Message(language, queryLast(r, key))
+	}
 	page := indexPage{
 		Nonce:                             Nonce(r),
-		Runs:                              buildRuns(s.dirs, s.manager.List(), now),
-		InputFiles:                        fileViews(s.dirs.ListInputFiles(now)),
+		Runs:                              buildRuns(s.dirs, s.manager.List(), now, language),
+		InputFiles:                        fileViews(s.dirs.ListInputFiles(now), language),
 		Catalog:                           cat,
 		RecommendedModel:                  catalog.RecommendedModel,
 		RecommendedClassifyLabel:          label("classify", "OpenAI: GPT Luna Latest"),

@@ -304,7 +304,7 @@ func TestBatchDeleteAndDownload(t *testing.T) {
 		}
 	}
 	del := h.postForm("/files/batch-delete", url.Values{"destination": {"inputs"}, "filenames": {"a.csv", "b.csv"}})
-	if del.StatusCode != 303 || location(del) != "/?files_message=Deleted+2+file%28s%29&files_scope=inputs" {
+	if del.StatusCode != 303 || location(del) != "/?files_message=Deleted+2+files&files_scope=inputs" {
 		t.Fatal(del.StatusCode, location(del))
 	}
 	if exists(filepath.Join(h.dirs.Inputs, "a.csv")) || exists(filepath.Join(h.dirs.Inputs, "b.csv")) {
@@ -583,7 +583,7 @@ func TestIndexRequiresSignIn(t *testing.T) {
 		return roundTrip(t, anon, req)
 	}
 	r, _ := do(http.MethodGet, "/?x=1", "")
-	want := "https://auth.elcanotek.com/?return_to=" + pyQuote(h.ts.URL+"/?x=1", "")
+	want := "https://auth.elcanotek.com/?return_to=" + pyQuote(h.ts.URL+"/?x=1", "") + "&lang=en"
 	if r.StatusCode != 303 || location(r) != want {
 		t.Fatalf("%d %s", r.StatusCode, location(r))
 	}
@@ -646,7 +646,7 @@ func TestBreakdownRendering(t *testing.T) {
 	_, body := h.get("/")
 	for _, want := range []string{
 		`<span class="comp-seg seg-site" data-pct="60.0"></span>`,
-		`<strong>5</strong> rows`,
+		`<strong>5 rows</strong>`,
 		`<span class="tchip"><span class="tdot seg-site"></span>Websites <b>3</b></span>`,
 		`<span class="tchip"><span class="tdot seg-ios"></span>iOS <b>1</b></span>`,
 		`aria-label="3 Websites · 1 iOS · 1 Android"`,
