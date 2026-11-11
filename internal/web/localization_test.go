@@ -87,3 +87,26 @@ func TestLocaleFormattingAndProviderNames(t *testing.T) {
 		t.Fatal(got)
 	}
 }
+
+func TestHTTPDeploymentKeepsLanguageAcrossFormActions(t *testing.T) {
+	// This harness is an explicitly supported plain-HTTP deployment. Browser
+	// forms omit lang, so the server must receive the saved display preference.
+	h := newHarness(t, false)
+	h.writeInput("customer.csv", "Domain\nexample.com\n")
+	response, _ := h.get("/?lang=es")
+	if strings.Contains(response.Header.Get("Set-Cookie"), "Secure") {
+		t.Fatal("HTTP preference cookie would be discarded")
+	}
+	result := h.postForm("/files/batch-delete", url.Values{"destination": {"inputs"}, "filenames": {"customer.csv"}})
+	target, err := url.Parse(result.Header.Get("Location"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target.Query().Get("files_message") != "Se ha eliminado 1 archivo" {
+		t.Fatal("form action lost locale", target)
+	}
+	_, body := h.get(target.String())
+	if !strings.Contains(body, `<html lang="es">`) || !strings.Contains(body, "Se ha eliminado 1 archivo") {
+		t.Fatal("post-action page lost locale")
+	}
+}

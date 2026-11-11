@@ -8,8 +8,7 @@ selection. Portuguese uses European terminology.
 An explicit `?lang=en|es|pt` takes precedence over the browser's saved choice,
 then its preferred languages, then English. Regional tags such as `es-MX` and
 `pt-BR` select the corresponding base language. Browser preferences use the
-shared `elcano.language` localStorage key. A host-only, Secure, HttpOnly,
-SameSite=Lax `elcano_language` cookie lets the server render subsequent pages
+shared `elcano.language` localStorage key. A host-only, HttpOnly, SameSite=Lax `elcano_language` cookie (Secure on HTTPS) lets the server render subsequent pages
 and action messages in the same language. Storage being disabled does not
 prevent explicit links or the native language form from working.
 

@@ -162,12 +162,14 @@ func Language(w http.ResponseWriter) string {
 }
 
 // Middleware keeps a host-only preference cookie for server-rendered pages and
-// requests. It does not change session cookies, redirect validation or CSRF.
+// requests. The outer trusted-proxy middleware resolves the public scheme;
+// supported HTTP deployments must also retain this non-credential preference.
+// It does not change session cookies, redirect validation or CSRF.
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		language := RequestLanguage(r)
 		if Normalize(r.URL.Query().Get("lang")) != "" && !strings.HasPrefix(r.URL.Path, "/static/") {
-			http.SetCookie(w, &http.Cookie{Name: "elcano_language", Value: language, Path: "/", MaxAge: 31536000, Secure: true, HttpOnly: true, SameSite: http.SameSiteLaxMode})
+			http.SetCookie(w, &http.Cookie{Name: "elcano_language", Value: language, Path: "/", MaxAge: 31536000, Secure: r.TLS != nil || r.URL.Scheme == "https", HttpOnly: true, SameSite: http.SameSiteLaxMode})
 		}
 		next.ServeHTTP(&languageWriter{ResponseWriter: w, language: language}, r)
 	})
