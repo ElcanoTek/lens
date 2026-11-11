@@ -39,6 +39,7 @@ import (
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/detect"
 	"github.com/ElcanoTek/lens/internal/dotenv"
+	"github.com/ElcanoTek/lens/internal/i18n"
 	"github.com/ElcanoTek/lens/internal/jobs"
 	"github.com/ElcanoTek/lens/internal/logx"
 	"github.com/ElcanoTek/lens/internal/mcp"
@@ -113,7 +114,7 @@ type Server struct {
 	auth          AuthProvider
 	catalog       ModelCatalog
 	manager       *jobs.Manager
-	templates     *template.Template
+	templates     map[string]*template.Template
 	staticVersion string
 	mux           *http.ServeMux
 	handler       http.Handler
@@ -227,11 +228,14 @@ func New(opts Options) (*Server, error) {
 	if s.spoolInterval <= 0 {
 		s.spoolInterval = SpoolPollInterval
 	}
-	tmpl, err := loadTemplates(templatesFS, staticURLFunc(s.staticVersion))
-	if err != nil {
-		return nil, fmt.Errorf("templates: %w", err)
+	s.templates = map[string]*template.Template{}
+	for _, language := range []string{"en", "es", "pt"} {
+		tmpl, err := loadTemplates(templatesFS, staticURLFunc(s.staticVersion), language)
+		if err != nil {
+			return nil, fmt.Errorf("templates: %w", err)
+		}
+		s.templates[language] = tmpl
 	}
-	s.templates = tmpl
 	if err := s.dirs.Ensure(); err != nil {
 		return nil, err
 	}
@@ -246,7 +250,7 @@ func New(opts Options) (*Server, error) {
 			s.Mount(m.Pattern, m.Handler)
 		}
 	}
-	s.handler = proxyHeaders(headerPolicy(s.staticVersion, limitBackchannelBody(s.mux)))
+	s.handler = proxyHeaders(headerPolicy(s.staticVersion, i18n.Middleware(limitBackchannelBody(s.mux))))
 	return s, nil
 }
 

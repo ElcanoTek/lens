@@ -1,11 +1,13 @@
 {{ comment "SPDX-License-Identifier: BUSL-1.1" }}
 {{ comment "Copyright (c) 2026 ElcanoTek, Inc." }}
 <!doctype html>
-<html lang="en">
+<html lang="{{language}}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Signed out — Lens</title>
+  <meta name="elcano-translations" content="{{catalog}}">
+  <script nonce="{{.Nonce}}" src="{{static_url "language.js"}}"></script>
+  <title>{{tr "Signed out — Lens"}}</title>
   <script nonce="{{ .Nonce }}">
     (function () {
       var storageKey = "flag-theme-preference";
@@ -37,12 +39,13 @@
 <body>
   <div class="page-shell signed-out-shell">
     <main class="panel signed-out-panel">
-      <img class="signed-out-mark" src="{{ static_url "design-system/logos/elcano-mark-primary.svg" }}" alt="Elcano">
-      <p class="ds-app-header__eyebrow">Lens</p>
-      <h1>You are signed out</h1>
-      <p class="signed-out-copy">Your Lens session has ended. Sign in again when you are ready to return.</p>
-      <a class="btn btn-primary" href="/auth/login?next=%2F">Sign in again</a>
-      <p class="signed-out-copy"><a href="{{ .AccountURL }}">Manage your central account</a></p>
+      {{template "language-choice" .}}
+      <img class="signed-out-mark" src="{{ static_url "design-system/logos/elcano-mark-primary.svg" }}" alt="{{tr "Elcano"}}">
+      <p class="ds-app-header__eyebrow">{{tr "Lens"}}</p>
+      <h1>{{tr "You are signed out"}}</h1>
+      <p class="signed-out-copy">{{tr "Your Lens session has ended. Sign in again when you are ready to return."}}</p>
+      <a class="btn btn-primary" href="{{languageURL "/auth/login?next=%2F"}}">{{tr "Sign in again"}}</a>
+      <p class="signed-out-copy"><a href="{{languageURL .AccountURL}}">{{tr "Manage your central account"}}</a></p>
     </main>
   </div>
 </body>

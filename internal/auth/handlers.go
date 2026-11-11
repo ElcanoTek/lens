@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/ElcanoTek/lens/internal/i18n"
 	"github.com/ElcanoTek/lens/internal/logx"
 )
 
@@ -66,7 +67,7 @@ func (h *Handlers) provider(w http.ResponseWriter, r *http.Request) (Provider, b
 	if err != nil {
 		// A misconfiguration: the message names the setting, never a value.
 		logger.Error("authentication provider unavailable", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 		return nil, false
 	}
 	return p, true
@@ -130,7 +131,7 @@ func (h *Handlers) Callback(w http.ResponseWriter, r *http.Request) {
 			h.fail(w, r, http.StatusBadGateway, "The authentication service is unavailable")
 		default:
 			logger.Error("central sign-in failed", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 		}
 		return
 	}
@@ -211,7 +212,7 @@ func (h *Handlers) BackchannelLogout(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := central.Store.ApplyAccessProvisioning(ctx, event); err != nil {
 			logger.Error("could not apply access provisioning", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -224,7 +225,7 @@ func (h *Handlers) BackchannelLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, err := central.Store.ConsumeLogoutEvent(ctx, event); err != nil {
 		logger.Error("could not record back-channel logout", "error", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -244,7 +245,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	}
 	switch prov := p.(type) {
 	case *ElcanoProvider:
-		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther) //nolint:gosec // G710: the configured AUTH_LOGIN_URL, not request input
+		http.Redirect(w, r, i18n.URL(prov.LogoutURL(), i18n.RequestLanguage(r), "lang"), http.StatusSeeOther) //nolint:gosec // G710: the configured AUTH_LOGIN_URL, not request input
 	case *CentralProvider:
 		r.Body = http.MaxBytesReader(w, r.Body, maxLogoutFormBytes)
 		//nolint:gosec // G120: the body is wrapped in http.MaxBytesReader on the line above
@@ -258,16 +259,16 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := prov.Store.RevokeSession(r.Context(), prov.sessionToken(r)); err != nil {
 			logger.Error("could not revoke session at logout", "error", err)
-			http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+			http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 			return
 		}
 		if prov.Transactions.Present(r) {
 			prov.Transactions.Clear(w)
 		}
 		prov.ClearSessionCookie(w)
-		http.Redirect(w, r, prov.LogoutURL(), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
+		http.Redirect(w, r, i18n.URL(prov.LogoutURL(), i18n.RequestLanguage(r), "lang"), http.StatusSeeOther) //nolint:gosec // G710: the configured Auth origin, not request input
 	default:
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(i18n.RequestLanguage(r), "Internal Server Error"), http.StatusInternalServerError)
 	}
 }
 

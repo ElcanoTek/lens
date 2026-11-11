@@ -535,12 +535,12 @@ func TestHealthLogoutAndSignedOut(t *testing.T) {
 	}
 	// The legacy logout still hands over to the Elcano auth logout.
 	logout := h.postForm("/logout", nil)
-	if logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout" {
+	if logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout?lang=en" {
 		t.Fatal(logout.StatusCode, location(logout))
 	}
 	resp, body = h.get("/signed-out")
-	if resp.StatusCode != 200 || !strings.Contains(body, "You are signed out") || !strings.Contains(body, `href="/auth/login?next=%2F"`) ||
-		!strings.Contains(body, `href="https://auth.elcanotek.com"`) || resp.Header.Get("Location") != "" ||
+	if resp.StatusCode != 200 || !strings.Contains(body, "You are signed out") || !strings.Contains(body, `href="/auth/login?lang=en&amp;next=%2F"`) ||
+		!strings.Contains(body, `href="https://auth.elcanotek.com?lang=en"`) || resp.Header.Get("Location") != "" ||
 		!strings.HasPrefix(body, "<!-- SPDX-License-Identifier: BUSL-1.1 -->\n") {
 		t.Fatal(resp.StatusCode, body)
 	}
@@ -588,10 +588,10 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 	js := string(mainJS)
 	for _, want := range []string{
 		`document.querySelectorAll(".js-confirm-sign-out").forEach((form) => {`,
-		`title: "Sign out?"`,
-		`message: "You'll be signed out of all your apps, not just Lens."`,
-		`confirmLabel: "Sign out"`,
-		`cancelLabel: "Cancel"`,
+		`title: T("Sign out?")`,
+		`message: T("You'll be signed out of all your apps, not just Lens.")`,
+		`confirmLabel: T("Sign out")`,
+		`cancelLabel: T("Cancel")`,
 		`confirmModalCancel.textContent = cancelLabel`,
 		// Escape leaves returnValue as it was; a stale "confirm" must not
 		// sign anyone out.
@@ -612,7 +612,7 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 		t.Error("the modal background has no opaque layer under the elevated gradient")
 	}
 	// The no-script path still signs out.
-	if logout := h.postForm("/logout", nil); logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout" {
+	if logout := h.postForm("/logout", nil); logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout?lang=en" {
 		t.Fatal(logout.StatusCode, location(logout))
 	}
 }
@@ -683,7 +683,7 @@ func TestCentralModeEndToEndWiring(t *testing.T) {
 		return resp
 	}
 	// Anonymous page visit → local login route with the path preserved.
-	if resp := get("/?x=1"); resp.StatusCode != 303 || location(resp) != "/auth/login?next="+url.QueryEscape("/?x=1") {
+	if resp := get("/?x=1"); resp.StatusCode != 303 || location(resp) != "/auth/login?next="+url.QueryEscape("/?x=1")+"&lang=en" {
 		t.Fatal(resp.StatusCode, location(resp))
 	}
 	// /auth/login starts a transaction and redirects to Auth.

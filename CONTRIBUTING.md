@@ -210,3 +210,7 @@ For anything security-related, do **not** open an issue — see
 ## Code of conduct
 
 Participation is covered by [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md).
+
+Dashboard UI changes must include reviewed Spanish and Portuguese messages. See
+[the localization contract](docs/LOCALIZATION.md) for message, formatting,
+authentication-handoff and verification requirements.

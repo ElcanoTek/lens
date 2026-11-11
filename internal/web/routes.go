@@ -19,6 +19,7 @@ import (
 
 	"github.com/ElcanoTek/lens/internal/catalog"
 	"github.com/ElcanoTek/lens/internal/categories"
+	"github.com/ElcanoTek/lens/internal/i18n"
 	"github.com/ElcanoTek/lens/internal/jobs"
 )
 
@@ -90,7 +91,7 @@ func missingField(w http.ResponseWriter, names ...string) {
 	detail := make([]map[string]any, 0, len(names))
 	for _, name := range names {
 		detail = append(detail, map[string]any{
-			"type": "missing", "loc": []string{"body", name}, "msg": "Field required", "input": nil,
+			"type": "missing", "loc": []string{"body", name}, "msg": i18n.T(i18n.Language(w), "Field required"), "input": nil,
 		})
 	}
 	writeJSON(w, http.StatusUnprocessableEntity, map[string]any{"detail": detail})
@@ -391,19 +392,19 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				name = "unnamed-file"
 			}
-			failed = append(failed, fmt.Sprintf("%s (%s)", name, o.failure))
+			failed = append(failed, fmt.Sprintf("%s (%s)", name, i18n.Message(i18n.Language(w), o.failure)))
 		}
 	}
 	params := []param{{"files_scope", "inputs"}}
 	switch len(stored) {
 	case 0:
 	case 1:
-		params = append(params, param{"files_message", "Uploaded " + stored[0]})
+		params = append(params, param{"files_message", i18n.T(i18n.Language(w), "Uploaded {0}", stored[0])})
 	default:
-		params = append(params, param{"files_message", fmt.Sprintf("Uploaded %d files", len(stored))})
+		params = append(params, param{"files_message", i18n.T(i18n.Language(w), "Uploaded {0} files", len(stored))})
 	}
 	if len(failed) > 0 {
-		params = append(params, param{"files_error", "Skipped: " + strings.Join(failed[:min(3, len(failed))], "; ")})
+		params = append(params, param{"files_error", i18n.T(i18n.Language(w), "Skipped: {0}", strings.Join(failed[:min(3, len(failed))], "; "))})
 	} else if len(stored) == 0 {
 		params = append(params, param{"files_error", "No files uploaded"})
 	}
@@ -496,14 +497,14 @@ func (s *Server) handleRename(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if exists(newPath) {
-		redirectWithParams(w, param{"files_error", fmt.Sprintf("A file named %s already exists", safeNew)}, scope)
+		redirectWithParams(w, param{"files_error", i18n.T(i18n.Language(w), "A file named {0} already exists", safeNew)}, scope)
 		return
 	}
 	if err := os.Rename(oldPath, newPath); err != nil {
 		redirectWithParams(w, param{"files_error", err.Error()}, scope)
 		return
 	}
-	redirectWithParams(w, param{"files_message", "Renamed to " + safeNew}, scope)
+	redirectWithParams(w, param{"files_message", i18n.T(i18n.Language(w), "Renamed to {0}", safeNew)}, scope)
 }
 
 func (s *Server) dirFor(destination string) (string, bool) {
@@ -614,7 +615,7 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		redirectWithParams(w, param{"files_error", err.Error()}, scope)
 		return
 	}
-	redirectWithParams(w, param{"files_message", "Deleted " + safeName}, scope)
+	redirectWithParams(w, param{"files_message", i18n.T(i18n.Language(w), "Deleted {0}", safeName)}, scope)
 }
 
 // selectedFiles resolves a batch selection to existing regular files,
@@ -664,7 +665,11 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 			deleted++
 		}
 	}
-	redirectWithParams(w, param{"files_message", fmt.Sprintf("Deleted %d file(s)", deleted)}, scope)
+	message := i18n.T(i18n.Language(w), "Deleted {0} files", deleted)
+	if deleted == 1 {
+		message = i18n.T(i18n.Language(w), "Deleted 1 file")
+	}
+	redirectWithParams(w, param{"files_message", message}, scope)
 }
 
 // handleBatchDownload streams a zip of the selection straight to the

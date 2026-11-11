@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 ElcanoTek, Inc.
 document.addEventListener("DOMContentLoaded", () => {
+  const { text: T, html: H } = window.LensI18n;
   const form = document.getElementById("queue-job-form");
   const enabled = document.getElementById("custom-categories-enabled");
   if (!form || !enabled) return;
@@ -48,16 +49,16 @@ document.addEventListener("DOMContentLoaded", () => {
     row.className = "custom-category-card";
     // Static markup only; user values are assigned through DOM properties.
     row.innerHTML = `
-      <legend>Category</legend>
-      <label class="run-advanced-field"><span class="run-advanced-label">Category name · CSV column label</span>
-        <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="e.g. Brand safe" title="Start with a letter; use letters, digits, spaces, underscores or hyphens."></label>
-      <label class="run-advanced-field"><span class="run-advanced-label">Answer format</span>
-        <select data-field="type"><option value="boolean">Yes / no · independent label</option><option value="choice">Multiple choice · select one option</option></select></label>
-      <label class="run-advanced-field"><span class="run-advanced-label">What should the model decide?</span>
-        <textarea data-field="question" required maxlength="1000" rows="3" placeholder="Would a mainstream brand be comfortable appearing beside this content? Judge trust and respect for the audience, not topic alone."></textarea></label>
-      <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">Options · 2–12 choices, one per line</span>
-        <textarea data-field="options" required maxlength="972" rows="4" placeholder="News\nEntertainment\nShopping\nOther\nUnknown"></textarea></label>
-      <button type="button" class="btn btn-ghost">Remove category</button>`;
+      <legend>${H("Category")}</legend>
+      <label class="run-advanced-field"><span class="run-advanced-label">${H("Category name · CSV column label")}</span>
+        <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="${H("e.g. Brand safe")}" title="${H("Start with a letter; use letters, digits, spaces, underscores or hyphens.")}"></label>
+      <label class="run-advanced-field"><span class="run-advanced-label">${H("Answer format")}</span>
+        <select data-field="type"><option value="boolean">${H("Yes / no · independent label")}</option><option value="choice">${H("Multiple choice · select one option")}</option></select></label>
+      <label class="run-advanced-field"><span class="run-advanced-label">${H("What should the model decide?")}</span>
+        <textarea data-field="question" required maxlength="1000" rows="3" placeholder="${H("Would a mainstream brand be comfortable appearing beside this content? Judge trust and respect for the audience, not topic alone.")}"></textarea></label>
+      <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">${H("Options · 2–12 choices, one per line")}</span>
+        <textarea data-field="options" required maxlength="972" rows="4" placeholder="${H("News\nEntertainment\nShopping\nOther\nUnknown")}"></textarea></label>
+      <button type="button" class="btn btn-ghost">${H("Remove category")}</button>`;
     for (const field of ["name", "question"]) row.querySelector(`[data-field=${field}]`).value = typeof value[field] === "string" ? value[field] : "";
     row.querySelector("[data-field=type]").value = value.type === "choice" ? "choice" : "boolean";
     row.querySelector("[data-field=options]").value = Array.isArray(value.options) ? value.options.join("\n") : "";
@@ -102,13 +103,13 @@ document.addEventListener("DOMContentLoaded", () => {
       const category = spec.categories[i];
       const row = list.children[i];
       const name = row.querySelector("[data-field=name]");
-      if (!category.name || names.has(category.name.toLowerCase())) name.setCustomValidity("Give each category a unique name.");
+      if (!category.name || names.has(category.name.toLowerCase())) name.setCustomValidity(T("Give each category a unique name."));
       names.add(category.name.toLowerCase());
-      if (!category.question) row.querySelector("[data-field=question]").setCustomValidity("Enter a question.");
+      if (!category.question) row.querySelector("[data-field=question]").setCustomValidity(T("Enter a question."));
       if (category.type === "choice") {
         const options = category.options;
         if (options.length < 2 || options.length > 12 || new Set(options.map(o => o.toLowerCase())).size !== options.length || options.some(o => o.length > 80 || /^[=+@-]/.test(o))) {
-          row.querySelector("[data-field=options]").setCustomValidity("Enter 2–12 unique options, at most 80 characters each, not starting with =, +, - or @.");
+          row.querySelector("[data-field=options]").setCustomValidity(T("Enter 2–12 unique options, at most 80 characters each, not starting with =, +, - or @."));
         }
       }
     }

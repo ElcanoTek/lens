@@ -101,7 +101,7 @@ func TestLoginRedirectPointsAtAuthWithReturnTo(t *testing.T) {
 	if rec.Code != http.StatusSeeOther {
 		t.Fatalf("status %d", rec.Code)
 	}
-	want := "https://auth.elcanotek.com/?return_to=https%3A%2F%2Fexplorer.elcanotek.com%2Femail%3Fs3_key%3Dx"
+	want := "https://auth.elcanotek.com/?return_to=https%3A%2F%2Fexplorer.elcanotek.com%2Femail%3Fs3_key%3Dx&lang=en"
 	if got := rec.Header().Get("Location"); got != want {
 		t.Fatalf("location %q, want %q", got, want)
 	}

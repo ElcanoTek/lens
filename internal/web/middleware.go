@@ -12,6 +12,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/ElcanoTek/lens/internal/i18n"
 )
 
 // maxBackchannelBodyBytes caps a back-channel logout/provisioning POST.
@@ -256,7 +258,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	if err := enc.Encode(v); err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, i18n.T(i18n.Language(w), "Internal Server Error"), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -270,7 +272,7 @@ func writeDetail(w http.ResponseWriter, status int, detail string) {
 	if detail == "" {
 		detail = http.StatusText(status)
 	}
-	writeJSON(w, status, map[string]string{"detail": detail})
+	writeJSON(w, status, map[string]string{"detail": i18n.Message(i18n.Language(w), detail)})
 }
 
 // seeOther is Starlette's RedirectResponse(url, 303): an empty body and a
