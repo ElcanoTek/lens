@@ -519,6 +519,51 @@ func TestNumericReadoutsRequestTabularFigures(t *testing.T) {
 	}
 }
 
+func TestVendoredFlagComponentsPreserveAnchorButtonAndIconActionContracts(t *testing.T) {
+	componentsCSS, err := fs.ReadFile(lens.Static, "static/design-system/components/components.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`[hidden]:not([hidden="until-found"])`,
+		`a:where(:not(.btn, .icon-action,`,
+		`[data-theme="light"] a:where(:not(.btn, .icon-action,`,
+	} {
+		if !bytes.Contains(componentsCSS, []byte(want)) {
+			t.Errorf("components.css lacks %q", want)
+		}
+	}
+	btnBlock := regexp.MustCompile(`(?m)^\.btn\s*\{([^}]*)\}`).FindSubmatch(componentsCSS)
+	if btnBlock == nil {
+		t.Fatal("components.css lacks .btn rule block")
+	}
+	for _, want := range []string{"justify-content: center;", "text-decoration: none;"} {
+		if !bytes.Contains(btnBlock[1], []byte(want)) {
+			t.Errorf(".btn rule lacks %q", want)
+		}
+	}
+	iconActionBlock := regexp.MustCompile(`(?m)^\.icon-action\s*\{([^}]*)\}`).FindSubmatch(componentsCSS)
+	if iconActionBlock == nil || !bytes.Contains(iconActionBlock[1], []byte("padding: 0;")) {
+		t.Errorf(".icon-action rule lacks padding: 0;")
+	}
+	parityCSS, err := fs.ReadFile(lens.Static, "static/design-system/components/shadcn-parity.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(parityCSS, []byte(`.btn-link:where(:not(:disabled, [aria-disabled="true"], .is-disabled)):hover`)) {
+		t.Errorf("shadcn-parity.css lacks enabled .btn-link hover rule")
+	}
+	productCSS, err := fs.ReadFile(lens.Static, "static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{"a.btn", ".empty-state", "[hidden]"} {
+		if bytes.Contains(productCSS, []byte(forbidden)) {
+			t.Errorf("styles.css must not override shared Flag %q contract", forbidden)
+		}
+	}
+}
+
 // ---- sign-in, health, startup (test_central_auth_endpoints.py, web side) --
 
 func TestHealthLogoutAndSignedOut(t *testing.T) {
