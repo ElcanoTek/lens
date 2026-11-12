@@ -43,22 +43,28 @@ document.addEventListener("DOMContentLoaded", () => {
     try { localStorage.setItem(storageKey, JSON.stringify(spec)); } catch (_) { /* Storage is optional. */ }
   }
 
+  const spriteHref =
+    document.querySelector('use[href*="core-icons.svg"]')?.getAttribute("href")?.split("#")[0] || "";
+
   function addCategory(value = {}) {
     if (list.children.length >= 12) return;
     const row = document.createElement("fieldset");
-    row.className = "custom-category-card";
+    row.className = "card custom-category-card";
+    const selectIcon = spriteHref
+      ? `<svg class="select-icon" aria-hidden="true"><use href="${spriteHref.replaceAll('"', "&quot;")}#chevron-down"></use></svg>`
+      : "";
     // Static markup only; user values are assigned through DOM properties.
     row.innerHTML = `
       <legend>${H("Category")}</legend>
-      <label class="run-advanced-field"><span class="run-advanced-label">${H("Category name · CSV column label")}</span>
+      <label class="field run-advanced-field"><span class="run-advanced-label">${H("Category name · CSV column label")}</span>
         <input data-field="name" required maxlength="48" pattern="[A-Za-z][A-Za-z0-9 _\\-]{0,47}" placeholder="${H("e.g. Brand safe")}" title="${H("Start with a letter; use letters, digits, spaces, underscores or hyphens.")}"></label>
-      <label class="run-advanced-field"><span class="run-advanced-label">${H("Answer format")}</span>
-        <select data-field="type"><option value="boolean">${H("Yes / no · independent label")}</option><option value="choice">${H("Multiple choice · select one option")}</option></select></label>
-      <label class="run-advanced-field"><span class="run-advanced-label">${H("What should the model decide?")}</span>
+      <label class="field run-advanced-field"><span class="run-advanced-label">${H("Answer format")}</span>
+        <div class="select-wrap"><select data-field="type"><option value="boolean">${H("Yes / no · independent label")}</option><option value="choice">${H("Multiple choice · select one option")}</option></select>${selectIcon}</div></label>
+      <label class="field run-advanced-field"><span class="run-advanced-label">${H("What should the model decide?")}</span>
         <textarea data-field="question" required maxlength="1000" rows="3" placeholder="${H("Would a mainstream brand be comfortable appearing beside this content? Judge trust and respect for the audience, not topic alone.")}"></textarea></label>
-      <label class="run-advanced-field" data-options hidden><span class="run-advanced-label">${H("Options · 2–12 choices, one per line")}</span>
+      <label class="field run-advanced-field" data-options hidden><span class="run-advanced-label">${H("Options · 2–12 choices, one per line")}</span>
         <textarea data-field="options" required maxlength="972" rows="4" placeholder="${H("News\nEntertainment\nShopping\nOther\nUnknown")}"></textarea></label>
-      <button type="button" class="btn btn-ghost">${H("Remove category")}</button>`;
+      <button type="button" class="btn btn-ghost btn-sm">${H("Remove category")}</button>`;
     for (const field of ["name", "question"]) row.querySelector(`[data-field=${field}]`).value = typeof value[field] === "string" ? value[field] : "";
     row.querySelector("[data-field=type]").value = value.type === "choice" ? "choice" : "boolean";
     row.querySelector("[data-field=options]").value = Array.isArray(value.options) ? value.options.join("\n") : "";

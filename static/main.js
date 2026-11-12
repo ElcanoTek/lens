@@ -117,20 +117,36 @@ applySegmentWidths(document);
 
   // ── Toasts + confirm modal ──
 
+  const spriteHref =
+    document.querySelector('use[href*="core-icons.svg"]')?.getAttribute("href")?.split("#")[0] || "";
+  const TOAST_ICON = {
+    success: "check",
+    error: "alert-circle",
+    warning: "alert-triangle",
+    info: "info",
+  };
+
   function showToast(text, tone = "info") {
     if (!toastRoot || !text) {
       return;
     }
+    const safeTone = Object.prototype.hasOwnProperty.call(TOAST_ICON, tone) ? tone : "info";
     const toast = document.createElement("div");
-    toast.className = `toast toast-${tone}`;
-    toast.innerHTML = `<span>${escapeHtml(text)}</span><button type="button" class="toast-close" aria-label="${H("Dismiss notification")}">×</button>`;
+    toast.className = spriteHref ? `toast has-icon toast--${safeTone}` : `toast toast--${safeTone}`;
+    const iconMarkup = spriteHref
+      ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#${TOAST_ICON[safeTone]}"></use></svg>`
+      : "";
+    const closeMarkup = spriteHref
+      ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#close"></use></svg>`
+      : "×";
+    toast.innerHTML = `${iconMarkup}<div class="toast__row"><span>${escapeHtml(text)}</span><button type="button" class="icon-action toast__close" aria-label="${H("Dismiss notification")}">${closeMarkup}</button></div>`;
     toastRoot.appendChild(toast);
 
     const remove = () => {
       toast.classList.add("toast-leave");
       setTimeout(() => toast.remove(), 180);
     };
-    toast.querySelector(".toast-close").addEventListener("click", remove);
+    toast.querySelector(".toast__close").addEventListener("click", remove);
     setTimeout(remove, 5200);
   }
 
@@ -205,7 +221,8 @@ applySegmentWidths(document);
       dropzoneStatus.textContent = T("Uploading {0}…",names);
     }
     if (fileDropzone) {
-      fileDropzone.classList.add("is-uploading");
+      fileDropzone.classList.add("is-disabled");
+      fileDropzone.setAttribute("aria-disabled", "true");
     }
     inputUploadForm.submit();
   }
@@ -215,8 +232,12 @@ applySegmentWidths(document);
   }
 
   if (fileDropzone && nativeInput) {
-    fileDropzone.addEventListener("click", () => nativeInput.click());
+    fileDropzone.addEventListener("click", () => {
+      if (fileDropzone.getAttribute("aria-disabled") === "true") return;
+      nativeInput.click();
+    });
     fileDropzone.addEventListener("keydown", (event) => {
+      if (fileDropzone.getAttribute("aria-disabled") === "true") return;
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         nativeInput.click();
@@ -226,6 +247,7 @@ applySegmentWidths(document);
     ["dragenter", "dragover"].forEach((eventName) => {
       fileDropzone.addEventListener(eventName, (event) => {
         event.preventDefault();
+        if (fileDropzone.getAttribute("aria-disabled") === "true") return;
         fileDropzone.classList.add("is-dragover");
       });
     });
@@ -238,6 +260,7 @@ applySegmentWidths(document);
     });
 
     fileDropzone.addEventListener("drop", (event) => {
+      if (fileDropzone.getAttribute("aria-disabled") === "true") return;
       const dropped = event.dataTransfer && event.dataTransfer.files;
       if (dropped && dropped.length > 0) {
         nativeInput.files = dropped;
@@ -424,13 +447,25 @@ applySegmentWidths(document);
 
   // ── Live progress: table rows + monitor modal ──
 
+  const BADGE_VARIANT = {
+    queued: "badge-pending",
+    idle: "badge-pending",
+    running: "badge-running",
+    cancelling: "badge-warning",
+    completed: "badge-success",
+    failed: "badge-danger",
+    cancelled: "badge-cancelled",
+    archived: "badge-cancelled",
+  };
+
   function setBadge(node, statusText) {
     if (!node) {
       return;
     }
     const safe = (statusText || "idle").toLowerCase();
-    node.className = `status-badge status-${safe}`;
-    node.innerHTML = `<span class="status-dot"></span>${H(safe)}`;
+    const variant = BADGE_VARIANT[safe] || "badge-pending";
+    node.className = `badge ${variant}`;
+    node.textContent = T(safe);
   }
 
   function formatElapsed(seconds) {
@@ -556,7 +591,7 @@ applySegmentWidths(document);
       cost.title = CT(progress.cost_title) || "";
     }
 
-    setBadge(jobRow.querySelector(".status-badge"), job.status);
+    setBadge(jobRow.querySelector("[data-status-badge], .badge"), job.status);
     jobRow.dataset.status = String(job.status || "").toLowerCase();
   }
 
@@ -703,6 +738,12 @@ applySegmentWidths(document);
           durationText = formatElapsed((finished.getTime() - started.getTime()) / 1000);
         }
 
+        completionBanner.className =
+          normalizedStatus === "failed"
+            ? "alert alert--destructive"
+            : normalizedStatus === "cancelled"
+              ? "alert alert--warning"
+              : "alert alert--success";
         completionBanner.innerHTML =
           `<div class="completion-grid">` +
           `<div class="completion-stat"><span class="completion-label">${H("Total")}</span><span class="completion-value">${N(t)}</span></div>` +
