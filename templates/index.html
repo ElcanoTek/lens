@@ -144,7 +144,7 @@
           </div>
           {{ end }}
         </div>
-        <p class="empty-state lib-empty" id="files-no-match" hidden>{{tr "No files match your search."}}</p>
+        <p class="panel-empty lib-empty" id="files-no-match" hidden>{{tr "No files match your search."}}</p>
 
         <div class="format-key">
           <span class="tchip"><span class="tdot seg-site"></span>{{tr "Websites"}}</span>
@@ -154,7 +154,7 @@
         </div>
 
         {{ else }}
-        <p class="empty-state lib-empty">{{tr "No files yet — upload one above to get started."}}</p>
+        <p class="panel-empty lib-empty">{{tr "No files yet — upload one above to get started."}}</p>
         {{ end }}
       </section>
 
@@ -163,7 +163,7 @@
         <h2>{{tr "Ready to analyze"}}</h2>
 
         <div class="launch-empty" id="ready-empty">
-          <div class="empty-state">
+          <div class="panel-empty">
             <b>{{tr "No file selected"}}</b>
             <span>{{tr "Select a file from your library above and its details will appear here, ready to run."}}</span>
           </div>
@@ -382,7 +382,7 @@
           </table>
         </div>
         {{ else }}
-        <p class="empty-state">{{tr "No runs yet. Select a file above and hit Analyze."}}</p>
+        <p class="panel-empty">{{tr "No runs yet. Select a file above and hit Analyze."}}</p>
         {{ end }}
       </section>
     </main>

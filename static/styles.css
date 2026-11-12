@@ -1,12 +1,6 @@
 /* SPDX-License-Identifier: BUSL-1.1 */
 /* Copyright (c) 2026 ElcanoTek, Inc. */
 
-/* The hidden attribute must win over component display rules
-   (e.g. .ready-content/.launch-empty set display: grid). */
-[hidden] {
-  display: none !important;
-}
-
 html,
 body {
   max-width: 100%;
@@ -195,7 +189,7 @@ table {
   color: var(--color-text-secondary);
 }
 
-.empty-state {
+.panel-empty {
   border: 2px dashed var(--color-border-strong);
   border-radius: var(--radius-md);
   padding: var(--space-4);
@@ -434,13 +428,13 @@ select option {
 
 /* ── Ready to analyze + run controls ────────────────────────────────── */
 
-.launch-empty .empty-state {
+.launch-empty .panel-empty {
   text-align: left;
   display: grid;
   gap: var(--space-1);
 }
 
-.launch-empty .empty-state b {
+.launch-empty .panel-empty b {
   color: var(--color-text-secondary);
 }
 
