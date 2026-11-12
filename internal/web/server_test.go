@@ -519,6 +519,39 @@ func TestNumericReadoutsRequestTabularFigures(t *testing.T) {
 	}
 }
 
+func TestVendoredFlagComponentsPreserveAnchorButtonAndIconActionContracts(t *testing.T) {
+	componentsCSS, err := fs.ReadFile(lens.Static, "static/design-system/components/components.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`[hidden]:not([hidden="until-found"])`,
+		"justify-content: center;",
+		"text-decoration: none;",
+		".icon-action {\n  flex: 0 0 2rem;\n  width: 2rem;\n  height: 2rem;\n  min-width: 2rem;\n  min-height: 2rem;\n  padding: 0;",
+		`a:where(:not(.btn, .icon-action,`,
+		`[data-theme="light"] a:where(:not(.btn, .icon-action,`,
+	} {
+		if !bytes.Contains(componentsCSS, []byte(want)) {
+			t.Errorf("components.css lacks %q", want)
+		}
+	}
+	parityCSS, err := fs.ReadFile(lens.Static, "static/design-system/components/shadcn-parity.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(parityCSS, []byte(`.btn-link:where(:not(:disabled, [aria-disabled="true"], .is-disabled)):hover`)) {
+		t.Errorf("shadcn-parity.css lacks enabled .btn-link hover rule")
+	}
+	productCSS, err := fs.ReadFile(lens.Static, "static/styles.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(productCSS, []byte("a.btn")) {
+		t.Errorf("styles.css must not fork shared Flag .btn anchor rules")
+	}
+}
+
 // ---- sign-in, health, startup (test_central_auth_endpoints.py, web side) --
 
 func TestHealthLogoutAndSignedOut(t *testing.T) {
