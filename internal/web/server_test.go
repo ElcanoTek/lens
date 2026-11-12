@@ -581,7 +581,7 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 		!strings.Contains(form[2], `<button class="icon-action" type="submit" aria-label="Sign out"`) {
 		t.Errorf("the logout form lost its token or its submit button:\n%s", form[2])
 	}
-	if !strings.Contains(body, `<dialog class="confirm-modal" id="confirm-delete-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-delete-text">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
+	if !strings.Contains(body, `<dialog class="modal modal--sm" id="confirm-delete-modal" aria-labelledby="confirm-modal-title" aria-describedby="confirm-delete-text">`) || !strings.Contains(body, `id="confirm-modal-cancel"`) {
 		t.Error("the shared confirm modal, its name or its cancel button is missing")
 	}
 	mainJS, _ := fs.ReadFile(lens.Static, "static/main.js")
@@ -605,11 +605,13 @@ func TestSignOutAsksFirstAndStillPostsWithoutScript(t *testing.T) {
 			t.Errorf("main.js lacks %q", want)
 		}
 	}
-	// The popup is opaque in both themes: the dark elevated gradient alone
-	// lets the page read through it.
-	css, _ := fs.ReadFile(lens.Static, "static/styles.css")
-	if !strings.Contains(string(css), "background: var(--gradient-surface-elevated), var(--color-bg);") {
-		t.Error("the modal background has no opaque layer under the elevated gradient")
+	// The popup is opaque in both themes: Flag's .modal uses solid
+	// --color-surface-1 rather than the translucent elevated gradient.
+	parityCSS, _ := fs.ReadFile(lens.Static, "static/design-system/components/shadcn-parity.css")
+	productCSS, _ := fs.ReadFile(lens.Static, "static/styles.css")
+	if !regexp.MustCompile(`(?s)\.modal\s*\{[^}]*background:\s*var\(--color-surface-1\);`).Match(parityCSS) ||
+		strings.Contains(string(productCSS), "--gradient-surface-elevated") {
+		t.Error("the modal background is not backed by an opaque surface token")
 	}
 	// The no-script path still signs out.
 	if logout := h.postForm("/logout", nil); logout.StatusCode != 303 || location(logout) != "https://auth.elcanotek.com/logout?lang=en" {

@@ -32,7 +32,7 @@ a PR that assumes otherwise.
 ## Setup
 
 Go, version 1.21 or newer, and `make`. `go.mod` pins the exact toolchain
-(currently 1.27.3); the Makefile exports `GOTOOLCHAIN=auto`, so an older local
+(currently 1.27.4); the Makefile exports `GOTOOLCHAIN=auto`, so an older local
 Go downloads the pinned release on first use instead of failing. CI builds with
 the pinned release, and the deploy-build job also proves an older distro Go
 (1.24) still gets there.

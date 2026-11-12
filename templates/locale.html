@@ -1,11 +1,14 @@
 {{ comment "SPDX-License-Identifier: BUSL-1.1" }}
 {{ comment "Copyright (c) 2026 ElcanoTek, Inc." }}
 {{define "language-choice"}}<form class="language-choice" method="get" data-language-choice aria-label="{{tr "Language"}}">
-  <label class="visually-hidden" for="page-language">{{tr "Language"}}</label>
-  <select id="page-language" name="lang">
-    <option value="en" lang="en"{{if eq language "en"}} selected{{end}}>English</option>
-    <option value="es" lang="es"{{if eq language "es"}} selected{{end}}>Español</option>
-    <option value="pt" lang="pt"{{if eq language "pt"}} selected{{end}}>Português</option>
-  </select>
-  <button class="btn btn-ghost" type="submit">{{tr "Apply"}}</button>
+  <label class="sr-only" for="page-language">{{tr "Language"}}</label>
+  <div class="select-wrap select-wrap--sm">
+    <select id="page-language" name="lang">
+      <option value="en" lang="en"{{if eq language "en"}} selected{{end}}>English</option>
+      <option value="es" lang="es"{{if eq language "es"}} selected{{end}}>Español</option>
+      <option value="pt" lang="pt"{{if eq language "pt"}} selected{{end}}>Português</option>
+    </select>
+    <svg class="select-icon" aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#chevron-down"></use></svg>
+  </div>
+  <button class="btn btn-ghost btn-sm" type="submit">{{tr "Apply"}}</button>
 </form>{{end}}
