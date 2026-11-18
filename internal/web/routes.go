@@ -792,7 +792,7 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 	progress := map[string]any{}
 	logLines := []string{}
 	if job.ProgressFile != "" {
-		progress = jobs.ReadProgress(filepath.Join(s.dirs.Outputs, job.ProgressFile))
+		progress = dashboardProgress(filepath.Join(s.dirs.Outputs, job.ProgressFile))
 	}
 	if job.LogFile != "" {
 		logLines = jobs.TailLines(filepath.Join(s.dirs.Outputs, job.LogFile), 50)
@@ -825,7 +825,7 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 	for _, job := range list {
 		progress := map[string]any{}
 		if job.ProgressFile != "" {
-			progress = jobs.ReadProgress(filepath.Join(s.dirs.Outputs, job.ProgressFile))
+			progress = dashboardProgress(filepath.Join(s.dirs.Outputs, job.ProgressFile))
 		}
 		items = append(items, queueItem{
 			ID: job.ID, Name: nullable(job.Name), Status: job.Status,

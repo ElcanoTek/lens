@@ -465,7 +465,7 @@ useful from a deploy pipeline.
 ### Submitting runs from the host
 
 `lens submit` queues a run exactly as if the file had been uploaded in the
-dashboard, so it shows in the Runs table with live progress, cost and
+dashboard, so it shows in the Runs table with live progress and
 downloads, and the input lands in the file library:
 
 ```bash

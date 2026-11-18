@@ -703,3 +703,50 @@ func TestFilenameRules(t *testing.T) {
 		t.Error("valid payload refused")
 	}
 }
+
+// Run spend is tracked in the progress file but the dashboard's page and
+// progress JSON never carry it. (The run log keeps its spend line.)
+func TestDashboardNeverShowsRunCost(t *testing.T) {
+	h := newHarness(t, true, func(o *Options) {
+		m := jobs.NewManager(o.Home)
+		m.Executable = fakeExecutable(t, o.Home, `for a in "$@"; do case "$prev" in --progress-file) p="$a";; --log-file) l="$a";; esac; prev="$a"; done
+printf '{"summary": {"processed": 3, "total_domains": 10}, "cost": {"usd": 1.2345, "calls": 7, "unpriced_calls": 0}}' > "$p"; printf 'line1\nline2\n' > "$l"; trap 'exit 0' INT; sleep 30 & wait`)
+		m.BaseArgs = nil
+		o.Manager = m
+	})
+	h.writeInput("sample.csv", "pageURL\nexample.com\n")
+	h.postForm("/jobs", url.Values{"input_file": {"sample.csv"}, "mode": {"direct"}})
+	job := h.jobs()[0]
+	waitStatus(t, h, job.ID, jobs.StatusRunning)
+	t.Cleanup(func() { _ = h.srv.Manager().Cancel(job.ID) })
+	var live string
+	for range 200 {
+		_, live = h.get("/api/jobs/live")
+		if strings.Contains(live, "line2") && strings.Contains(live, `"processed"`) {
+			break
+		}
+		waitShort()
+	}
+	var payload struct {
+		Progress map[string]any `json:"progress"`
+	}
+	if err := json.Unmarshal([]byte(live), &payload); err != nil {
+		t.Fatal(err)
+	}
+	progressJSON, _ := json.Marshal(payload.Progress)
+	_, queue := h.get("/api/jobs/queue")
+	_, page := h.get("/")
+	for name, body := range map[string]string{"live progress": string(progressJSON), "queue": queue, "page": page} {
+		for _, leak := range []string{"cost_", "1.2345", "$1.23", "queue-progress-cost"} {
+			if strings.Contains(body, leak) {
+				t.Errorf("%s response contains %q", name, leak)
+			}
+		}
+	}
+	// The backend still has it.
+	current, _ := h.srv.Manager().Get(job.ID)
+	progress := jobs.ReadProgress(filepath.Join(h.srv.dirs.Outputs, current.ProgressFile))
+	if progress["cost_text"] != "$1.23" {
+		t.Fatalf("stored progress lost the cost: %v", progress)
+	}
+}

@@ -51,11 +51,9 @@ type progressView struct {
 	Retrying   int
 	// Segment widths for the stacked status bar: green ok, amber queued for
 	// retry, red failed; the empty remainder is unstarted.
-	OKPct     string
-	RetryPct  string
-	FailPct   string
-	CostText  string
-	CostTitle string
+	OKPct    string
+	RetryPct string
+	FailPct  string
 }
 
 type runView struct {
@@ -243,16 +241,25 @@ func strictInt(progress map[string]any, key string) (int, bool) {
 	return jobs.AsInt(v)
 }
 
-func stringOf(m map[string]any, key string) string {
-	s, _ := m[key].(string)
-	return s
+// dashboardProgress reads a job's progress for the browser dashboard. Run
+// spend is still tracked (progress file, the CSV's Cost_USD, the run log,
+// the bearer-token API) but the dashboard does not show it, so the cost
+// fields are dropped before they reach a page or the dashboard's JSON.
+func dashboardProgress(path string) map[string]any {
+	progress := jobs.ReadProgress(path)
+	for key := range progress {
+		if strings.HasPrefix(key, "cost_") {
+			delete(progress, key)
+		}
+	}
+	return progress
 }
 
 func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time, languages ...string) progressView {
 	language := selectedLanguage(languages)
 	progress := map[string]any{}
 	if job.ProgressFile != "" {
-		progress = jobs.ReadProgress(filepath.Join(dirs.Outputs, job.ProgressFile))
+		progress = dashboardProgress(filepath.Join(dirs.Outputs, job.ProgressFile))
 	}
 	total, ok1 := strictInt(progress, "total_domains")
 	processed, ok2 := strictInt(progress, "processed")
@@ -314,8 +321,6 @@ func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time, languages ...
 		OKPct:      seg(successful),
 		RetryPct:   seg(retrying),
 		FailPct:    seg(errorsN),
-		CostText:   displayCost(stringOf(progress, "cost_text"), language),
-		CostTitle:  displayCostTitle(stringOf(progress, "cost_title"), language),
 	}
 }
 
@@ -340,7 +345,6 @@ func archivedProgress(progress map[string]any, languages ...string) progressView
 	view := progressView{
 		Percentage: 0, Text: "—", Successful: successful, Errors: errorsN,
 		OKPct: pyFloat(0), RetryPct: pyFloat(0), FailPct: pyFloat(0),
-		CostText: displayCost(stringOf(progress, "cost_text"), language), CostTitle: displayCostTitle(stringOf(progress, "cost_title"), language),
 	}
 	if total != 0 {
 		view.Percentage = 100
@@ -478,7 +482,7 @@ func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time, languages ...stri
 		g := groups[id]
 		progress := map[string]any{}
 		if g.progress != "" {
-			progress = jobs.ReadProgress(filepath.Join(dirs.Outputs, g.progress))
+			progress = dashboardProgress(filepath.Join(dirs.Outputs, g.progress))
 		}
 		runs = append(runs, runView{
 			ID: id, Title: id, Status: "archived", IsArchived: true,

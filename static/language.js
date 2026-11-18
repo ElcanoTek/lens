@@ -30,23 +30,7 @@
   function html(source, ...values) {
     return text(source, ...values).replace(/[&<>"']/g, c => ({'&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;'}[c]));
   }
-  function cost(raw) {
-    if (language === 'en' || !raw) return raw || '';
-    const match = String(raw).match(/^(<)?\$([0-9,]+)(?:\.([0-9]+))?(\+)?$/);
-    if (!match) return raw;
-    const amount = Number(match[2].replaceAll(',', '') + (match[3] ? '.' + match[3] : ''));
-    return (match[1] || '') + number(amount, { style: 'currency', currency: 'USD', minimumFractionDigits: match[3]?.length || 0, maximumFractionDigits: match[3]?.length || 0 }) + (match[4] || '');
-  }
-  function costTitle(raw) {
-    if (language === 'en' || !raw) return raw || '';
-    const match = String(raw).match(/^OpenRouter spend reported for this run: (\$[0-9.]+) over ([0-9]+) model calls(?:; ([0-9]+) without a reported cost \(not included\))?$/);
-    if (!match) return raw;
-    const calls = Number(match[2]);
-    let result = calls === 1 ? text('OpenRouter spend reported for this run: {0} over 1 model call', cost(match[1])) : text('OpenRouter spend reported for this run: {0} over {1} model calls', cost(match[1]), calls);
-    if (match[3]) result += text('; {0} without a reported cost (not included)', Number(match[3]));
-    return result;
-  }
-  window.LensI18n = { text, html, number, cost, costTitle, language, locale };
+  window.LensI18n = { text, html, number, language, locale };
   document.addEventListener('DOMContentLoaded', () => {
     // Supply translated accessible labels without changing vendored Flag code.
     const toggles = document.querySelectorAll('[data-flag-theme-toggle]');

@@ -71,28 +71,6 @@ func displayCost(raw, language string) string {
 	return result + " US$" + match[4]
 }
 
-var costTitlePattern = regexp.MustCompile(`^OpenRouter spend reported for this run: (\$[0-9.]+) over ([0-9]+) model calls(?:; ([0-9]+) without a reported cost \(not included\))?$`)
-
-func displayCostTitle(raw, language string) string {
-	if language == "en" {
-		return raw
-	}
-	match := costTitlePattern.FindStringSubmatch(raw)
-	if match == nil {
-		return raw
-	}
-	calls, _ := strconv.Atoi(match[2])
-	title := i18n.T(language, "OpenRouter spend reported for this run: {0} over {1} model calls", displayCost(match[1], language), calls)
-	if calls == 1 {
-		title = i18n.T(language, "OpenRouter spend reported for this run: {0} over 1 model call", displayCost(match[1], language))
-	}
-	if match[3] != "" {
-		missing, _ := strconv.Atoi(match[3])
-		title += i18n.T(language, "; {0} without a reported cost (not included)", missing)
-	}
-	return title
-}
-
 // Model names and IDs are provider data; only Lens's appended price labels
 // are presentation text. Catalog/API values remain unchanged.
 var modelLabelPattern = regexp.MustCompile(`^(.*) · (\$[0-9.]+)/M in(?: · (\$[0-9.]+)/M out)?(?: · search from (\$[0-9.]+)/1K requests)?$`)

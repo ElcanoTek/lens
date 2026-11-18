@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 // Copyright (c) 2026 ElcanoTek, Inc.
 document.addEventListener("DOMContentLoaded", () => {
-  const { text: T, html: H, number: N, cost: C, costTitle: CT, locale } = window.LensI18n;
+  const { text: T, html: H, number: N, locale } = window.LensI18n;
   const nativeInput = document.getElementById("input-file-native");
   const fileDropzone = document.getElementById("fileDropzone");
   const dropzoneStatus = document.getElementById("dropzone-status");
@@ -585,12 +585,6 @@ applySegmentWidths(document);
       eta.textContent = estimateEta(progress, job.started_at, job.status);
     }
 
-    const cost = jobRow.querySelector(".queue-progress-cost");
-    if (cost && progress.cost_text) {
-      cost.textContent = C(progress.cost_text);
-      cost.title = CT(progress.cost_title) || "";
-    }
-
     setBadge(jobRow.querySelector("[data-status-badge], .badge"), job.status);
     jobRow.dataset.status = String(job.status || "").toLowerCase();
   }
@@ -750,9 +744,6 @@ applySegmentWidths(document);
           `<div class="completion-stat"><span class="completion-label">${H("Succeeded")}</span><span class="completion-value completion-success">${N(s)}</span></div>` +
           `<div class="completion-stat"><span class="completion-label">${H("Failed")}</span><span class="completion-value completion-fail">${N(e)}</span></div>` +
           `<div class="completion-stat"><span class="completion-label">${H("Duration")}</span><span class="completion-value">${durationText}</span></div>` +
-          (prog.cost_text
-            ? `<div class="completion-stat" title="${escapeHtml(CT(prog.cost_title))}"><span class="completion-label">${H("Cost")}</span><span class="completion-value">${escapeHtml(C(prog.cost_text))}</span></div>`
-            : "") +
           `</div>`;
         completionBanner.hidden = false;
       } else {
