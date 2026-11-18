@@ -159,6 +159,7 @@ The web service (`lens serve`) runs each job as a `lens run` subprocess of its o
 | `internal/stores` | iTunes Search API and Google Play clients; shared rate limits, bounded concurrency, retries |
 | `internal/categories` | Custom-category definitions (`Spec`), validation, and the OpenRouter Decisions API client with the TypeSafe fallback; `pyjson` writes JSON byte-for-byte as Python's `json` did |
 | `internal/cost` | Per-run and per-item OpenRouter spend meters on the context |
+| `internal/resultcsv` | Results-CSV downloads without the `Cost_USD` column (byte-exact cut; the file on disk keeps it) |
 | `internal/progress` | Progress-file persistence: atomic write + rename after every item; resume skips successes |
 | `internal/report` | Plain progress/metrics lines and the optional JSONL attempt log |
 | `internal/logx` | `log/slog` with the Python release's line format (the dashboard's log view and operators' greps expect it) |
@@ -279,6 +280,14 @@ and each processor entry point opens an item meter (`cost.WithItem`) that is
 read into `Cost_USD` when the row is written (`cost.ItemUSD`). A new processor
 entry point needs `WithItem`, and a new model call path must call
 `cost.Record` with the request's context. `make test-race` is the gate here.
+
+Spend is tracked, not shown to customers. The dashboard never displays it:
+`dashboardProgress` (`internal/web`) drops the `cost_*` fields from every page
+and dashboard JSON response. Every results-CSV download (the dashboard's single
+and zip downloads, the API's `files/output` and its signed links) drops the
+`Cost_USD` column on the way out (`internal/resultcsv`, a byte-level cut that
+keeps the rest of the file exactly as written). The CSV on disk, the progress
+file, the run log and the API's job view keep the cost.
 
 ### Web service spawns subprocesses
 

@@ -62,7 +62,7 @@ re-checks the scope.
 | `get_job` | `jobs:read` | Status, progress, `eta_seconds`, spend, settings, available files, queue position, and the log tail for failed or running jobs, plus a `next_step` hint |
 | `list_jobs` | `jobs:read` | Recent jobs from every source, optionally filtered by `status` |
 | `get_job_results` | `jobs:read` | Whole-file summary (by quality tier, content type, and top IAB tier 1) plus a page of rows; filter by `quality`, pick `columns`, page with `offset`/`limit` (≤200). Works while running |
-| `get_download_link` | `jobs:read` | 15-minute signed URL for one file: `output` (CSV), `log`, `input`, or `categories` |
+| `get_download_link` | `jobs:read` | 15-minute signed URL for one file: `output` (CSV, without `Cost_USD`), `log`, `input`, or `categories` |
 | `cancel_job` | `jobs:run` | Cancel a queued or running job |
 | `list_input_files` | `jobs:read` | The input library, with per-file website/app/CTV counts |
 | `get_options` | `jobs:read` | Default and selectable models, limits, the custom-categories format, and the output columns |
@@ -112,7 +112,7 @@ shape. A `401` carries `WWW-Authenticate: Bearer`.
 | `GET /api/v1/jobs/{id}` | read | Same body as `get_job` |
 | `POST /api/v1/jobs/{id}/cancel` | run | `409 not_cancellable` once the job has finished |
 | `GET /api/v1/jobs/{id}/results?offset=&limit=&quality=&columns=a,b` | read | Same body as `get_job_results` |
-| `GET /api/v1/jobs/{id}/files/{output\|log\|input\|categories}` | read | Streams the file |
+| `GET /api/v1/jobs/{id}/files/{output\|log\|input\|categories}` | read | Streams the file (the `output` CSV without its internal `Cost_USD` column) |
 | `POST /api/v1/jobs/{id}/files/{kind}/link` | read | Signed link, as in `get_download_link` |
 | `GET /api/v1/downloads/{ticket}` | none | Serves a signed link; `403 invalid_link` when expired, forged or revoked |
 | `GET /api/v1/inputs` | read | |

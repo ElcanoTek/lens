@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -748,5 +749,45 @@ printf '{"summary": {"processed": 3, "total_domains": 10}, "cost": {"usd": 1.234
 	progress := jobs.ReadProgress(filepath.Join(h.srv.dirs.Outputs, current.ProgressFile))
 	if progress["cost_text"] != "$1.23" {
 		t.Fatalf("stored progress lost the cost: %v", progress)
+	}
+}
+
+// Results CSVs download without Cost_USD, singly and in a zip; the file on
+// disk keeps it, and other files are served untouched.
+func TestResultDownloadsDropCostColumn(t *testing.T) {
+	h := newHarness(t, false)
+	onDisk := "Domain,Cost_USD,Quality\r\nexample.com,0.0012,High\r\n"
+	want := "Domain,Quality\r\nexample.com,High\r\n"
+	h.writeOutput("run_output.csv", onDisk)
+	h.writeOutput("run.log", "spend: $0.0012\n")
+	h.writeInput("list.csv", "Domain,Cost_USD\na.com,1\n")
+	if _, body := h.get("/files/download/outputs/run_output.csv"); body != want {
+		t.Fatalf("single download: %q", body)
+	}
+	if _, body := h.get("/files/download/inputs/list.csv"); body != "Domain,Cost_USD\na.com,1\n" {
+		t.Fatalf("an input file is the customer's own and is served as is: %q", body)
+	}
+	_, data := h.send(http.MethodPost, "/files/batch-download", strings.NewReader(url.Values{"destination": {"outputs"}, "filenames": {"run_output.csv", "run.log"}}.Encode()), "application/x-www-form-urlencoded")
+	zr, err := zip.NewReader(strings.NewReader(data), int64(len(data)))
+	if err != nil || len(zr.File) != 2 {
+		t.Fatalf("zip: %v", err)
+	}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("%s: %v", f.Name, err)
+		}
+		expected := map[string]string{"run_output.csv": want, "run.log": "spend: $0.0012\n"}[f.Name]
+		if string(got) != expected {
+			t.Errorf("zip %s: %q", f.Name, got)
+		}
+	}
+	if kept, _ := os.ReadFile(filepath.Join(h.srv.dirs.Outputs, "run_output.csv")); string(kept) != onDisk {
+		t.Fatalf("file on disk changed: %q", kept)
 	}
 }

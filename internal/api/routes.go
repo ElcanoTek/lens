@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/ElcanoTek/lens/internal/apitoken"
+	"github.com/ElcanoTek/lens/internal/resultcsv"
 )
 
 // Routes returns the REST handler. It serves full paths under /api/v1, so
@@ -348,6 +349,15 @@ func (a *API) serveFile(w http.ResponseWriter, r *http.Request, jobID, kind stri
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	}
 	w.Header().Set("Content-Type", media)
+	if kind == "output" {
+		// Results download without Cost_USD; the file on disk keeps it.
+		data, err := io.ReadAll(f)
+		if err != nil {
+			return missing
+		}
+		http.ServeContent(w, r, name, st.ModTime(), bytes.NewReader(resultcsv.WithoutCost(data)))
+		return nil
+	}
 	http.ServeContent(w, r, name, st.ModTime(), f)
 	return nil
 }

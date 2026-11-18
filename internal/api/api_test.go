@@ -715,3 +715,29 @@ func TestListInputs(t *testing.T) {
 		t.Fatalf("file = %v", f)
 	}
 }
+
+// The results file downloads without its Cost_USD column, by bearer token
+// and by signed link; the file on disk keeps it.
+func TestOutputDownloadDropsCostColumn(t *testing.T) {
+	h := newHarness(t)
+	raw := h.token()
+	job := h.queued()
+	h.finish(job.ID, rows)
+	onDisk := "Domain,Quality,Cost_USD\r\nexample.com,Premium,0.0012\r\n"
+	path := filepath.Join(h.manager.Dirs.Outputs, job.ID+"_output.csv")
+	if err := os.WriteFile(path, []byte(onDisk), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	want := "Domain,Quality\r\nexample.com,Premium\r\n"
+	if got := h.do(http.MethodGet, "/api/v1/jobs/"+job.ID+"/files/output", raw, nil); got.Code != 200 || got.Body.String() != want {
+		t.Fatalf("bearer download: %d %q", got.Code, got.Body)
+	}
+	link := h.do(http.MethodPost, "/api/v1/jobs/"+job.ID+"/files/output/link", raw, nil).json(t)
+	signed := strings.SplitN(link["url"].(string), lensHost, 2)[1]
+	if got := h.do(http.MethodGet, signed, "", nil); got.Code != 200 || got.Body.String() != want {
+		t.Fatalf("signed download: %d %q", got.Code, got.Body)
+	}
+	if kept, _ := os.ReadFile(path); string(kept) != onDisk {
+		t.Fatalf("file on disk changed: %q", kept)
+	}
+}

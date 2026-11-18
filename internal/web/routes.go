@@ -21,6 +21,7 @@ import (
 	"github.com/ElcanoTek/lens/internal/categories"
 	"github.com/ElcanoTek/lens/internal/i18n"
 	"github.com/ElcanoTek/lens/internal/jobs"
+	"github.com/ElcanoTek/lens/internal/resultcsv"
 )
 
 // methods dispatches one path by HTTP method. GET routes answer HEAD too,
@@ -570,7 +571,22 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", contentDisposition(safeName))
+	if isResultCSV(destination, safeName) {
+		data, err := io.ReadAll(file)
+		if err != nil {
+			writeDetail(w, http.StatusNotFound, "")
+			return
+		}
+		http.ServeContent(w, r, safeName, st.ModTime(), bytes.NewReader(resultcsv.WithoutCost(data)))
+		return
+	}
 	http.ServeContent(w, r, safeName, st.ModTime(), file)
+}
+
+// isResultCSV reports whether a managed file is a results CSV, which is
+// downloaded without its Cost_USD column (the file on disk keeps it).
+func isResultCSV(destination, filename string) bool {
+	return destination == "outputs" && strings.EqualFold(pySuffix(filename), ".csv")
 }
 
 func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
@@ -709,7 +725,7 @@ func (s *Server) handleBatchDownload(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	bundle := zip.NewWriter(w)
 	for _, path := range selected {
-		if err := addToZip(bundle, path); err != nil {
+		if err := addToZip(bundle, path, isResultCSV(destination, filepath.Base(path))); err != nil {
 			logger.Warn("batch download: " + err.Error())
 		}
 	}
@@ -718,7 +734,7 @@ func (s *Server) handleBatchDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func addToZip(bundle *zip.Writer, path string) error {
+func addToZip(bundle *zip.Writer, path string, stripCost bool) error {
 	file, err := os.Open(path) //nolint:gosec // path from selectedFiles
 	if err != nil {
 		// Deleted between selection and archiving; skip it.
@@ -735,11 +751,20 @@ func addToZip(bundle *zip.Writer, path string) error {
 	}
 	header.Name = filepath.Base(path)
 	header.Method = zip.Deflate
+	var src io.Reader = file
+	if stripCost {
+		data, err := io.ReadAll(file)
+		if err != nil {
+			return err
+		}
+		data = resultcsv.WithoutCost(data)
+		src = bytes.NewReader(data)
+	}
 	dst, err := bundle.CreateHeader(header)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(dst, file)
+	_, err = io.Copy(dst, src)
 	return err
 }
 
