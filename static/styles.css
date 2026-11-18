@@ -182,7 +182,6 @@ table {
 
 .caption,
 .queue-progress-eta,
-.queue-progress-cost,
 .completion-label {
   font-size: var(--font-size-caption);
   line-height: var(--line-height-caption);
