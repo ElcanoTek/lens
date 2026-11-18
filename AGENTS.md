@@ -285,8 +285,11 @@ Spend is tracked, not shown to customers. The dashboard never displays it:
 `dashboardProgress` (`internal/web`) drops the `cost_*` fields from every page
 and dashboard JSON response. Every results-CSV download (the dashboard's single
 and zip downloads, the API's `files/output` and its signed links) drops the
-`Cost_USD` column on the way out (`internal/resultcsv`, a byte-level cut that
-keeps the rest of the file exactly as written). The CSV on disk, the progress
+`Cost_USD` column on the way out (`internal/resultcsv`: a byte-level cut,
+streamed one record at a time, that keeps the rest of the file exactly as
+written). Those responses carry no `Last-Modified` and are `no-store`, so a
+client's pre-change copy can't revalidate to a 304, and a signed link's
+`size_bytes` is the downloaded size. The CSV on disk, the progress
 file, the run log and the API's job view keep the cost.
 
 ### Web service spawns subprocesses

@@ -761,8 +761,15 @@ func TestResultDownloadsDropCostColumn(t *testing.T) {
 	h.writeOutput("run_output.csv", onDisk)
 	h.writeOutput("run.log", "spend: $0.0012\n")
 	h.writeInput("list.csv", "Domain,Cost_USD\na.com,1\n")
-	if _, body := h.get("/files/download/outputs/run_output.csv"); body != want {
-		t.Fatalf("single download: %q", body)
+	resp, body := h.get("/files/download/outputs/run_output.csv")
+	if body != want || resp.Header.Get("Last-Modified") != "" || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("single download: %q %v", body, resp.Header)
+	}
+	// A client holding a pre-change copy can't revalidate it to a 304.
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, h.ts.URL+"/files/download/outputs/run_output.csv", nil)
+	req.Header.Set("If-Modified-Since", "Mon, 01 Jan 2035 00:00:00 GMT")
+	if resp, body := roundTrip(t, h.client, req); resp.StatusCode != 200 || body != want {
+		t.Fatalf("conditional download: %d %q", resp.StatusCode, body)
 	}
 	if _, body := h.get("/files/download/inputs/list.csv"); body != "Domain,Cost_USD\na.com,1\n" {
 		t.Fatalf("an input file is the customer's own and is served as is: %q", body)

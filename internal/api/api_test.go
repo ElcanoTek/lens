@@ -733,6 +733,9 @@ func TestOutputDownloadDropsCostColumn(t *testing.T) {
 		t.Fatalf("bearer download: %d %q", got.Code, got.Body)
 	}
 	link := h.do(http.MethodPost, "/api/v1/jobs/"+job.ID+"/files/output/link", raw, nil).json(t)
+	if link["size_bytes"] != float64(len(want)) {
+		t.Fatalf("size_bytes %v, want the downloaded size %d", link["size_bytes"], len(want))
+	}
 	signed := strings.SplitN(link["url"].(string), lensHost, 2)[1]
 	if got := h.do(http.MethodGet, signed, "", nil); got.Code != 200 || got.Body.String() != want {
 		t.Fatalf("signed download: %d %q", got.Code, got.Body)

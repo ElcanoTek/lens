@@ -572,15 +572,25 @@ func (s *Server) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ctype)
 	w.Header().Set("Content-Disposition", contentDisposition(safeName))
 	if isResultCSV(destination, safeName) {
-		data, err := io.ReadAll(file)
-		if err != nil {
-			writeDetail(w, http.StatusNotFound, "")
-			return
-		}
-		http.ServeContent(w, r, safeName, st.ModTime(), bytes.NewReader(resultcsv.WithoutCost(data)))
+		serveWithoutCost(w, r, file)
 		return
 	}
 	http.ServeContent(w, r, safeName, st.ModTime(), file)
+}
+
+// serveWithoutCost streams a results CSV without its Cost_USD column. The
+// response is a new representation of the file, so it carries no
+// Last-Modified (a client holding a pre-change copy must not get a 304 that
+// keeps the cost) and is not cached; Range requests get the whole file.
+func serveWithoutCost(w http.ResponseWriter, r *http.Request, file io.Reader) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
+	if _, err := resultcsv.Copy(w, file); err != nil {
+		logger.Warn("download: " + err.Error())
+	}
 }
 
 // isResultCSV reports whether a managed file is a results CSV, which is
@@ -751,20 +761,15 @@ func addToZip(bundle *zip.Writer, path string, stripCost bool) error {
 	}
 	header.Name = filepath.Base(path)
 	header.Method = zip.Deflate
-	var src io.Reader = file
-	if stripCost {
-		data, err := io.ReadAll(file)
-		if err != nil {
-			return err
-		}
-		data = resultcsv.WithoutCost(data)
-		src = bytes.NewReader(data)
-	}
 	dst, err := bundle.CreateHeader(header)
 	if err != nil {
 		return err
 	}
-	_, err = io.Copy(dst, src)
+	if stripCost {
+		_, err = resultcsv.Copy(dst, file)
+		return err
+	}
+	_, err = io.Copy(dst, file)
 	return err
 }
 

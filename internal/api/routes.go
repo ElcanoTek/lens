@@ -350,12 +350,15 @@ func (a *API) serveFile(w http.ResponseWriter, r *http.Request, jobID, kind stri
 	}
 	w.Header().Set("Content-Type", media)
 	if kind == "output" {
-		// Results download without Cost_USD; the file on disk keeps it.
-		data, err := io.ReadAll(f)
-		if err != nil {
-			return missing
+		// Results download without Cost_USD; the file on disk keeps it. It
+		// is a new representation of the file: no Last-Modified (a client's
+		// pre-change copy must not revalidate to a 304), no caching, and a
+		// Range request gets the whole file.
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			_, _ = resultcsv.Copy(w, f)
 		}
-		http.ServeContent(w, r, name, st.ModTime(), bytes.NewReader(resultcsv.WithoutCost(data)))
 		return nil
 	}
 	http.ServeContent(w, r, name, st.ModTime(), f)

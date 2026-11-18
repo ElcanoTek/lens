@@ -3,7 +3,12 @@
 
 package resultcsv
 
-import "testing"
+import (
+	"bytes"
+	"strings"
+	"testing"
+	"testing/iotest"
+)
 
 func TestWithoutCost(t *testing.T) {
 	cases := []struct{ name, in, want string }{
@@ -38,6 +43,16 @@ func TestWithoutCost(t *testing.T) {
 	for _, c := range cases {
 		if got := string(WithoutCost([]byte(c.in))); got != c.want {
 			t.Errorf("%s:\n got %q\nwant %q", c.name, got, c.want)
+		}
+		// Streaming from a reader that returns one byte per call gives the
+		// same bytes, and Size agrees with them.
+		var out bytes.Buffer
+		n, err := Copy(&out, iotest.OneByteReader(strings.NewReader(c.in)))
+		if err != nil || out.String() != c.want || n != int64(len(c.want)) {
+			t.Errorf("%s: streamed %q (%d, %v)", c.name, out.String(), n, err)
+		}
+		if size, err := Size(strings.NewReader(c.in)); err != nil || size != int64(len(c.want)) {
+			t.Errorf("%s: Size = %d, %v", c.name, size, err)
 		}
 	}
 }
