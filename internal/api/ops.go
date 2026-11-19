@@ -26,6 +26,7 @@ import (
 	"github.com/ElcanoTek/lens/internal/categories"
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/jobs"
+	"github.com/ElcanoTek/lens/internal/resultcsv"
 )
 
 // Operations shared by REST and MCP. Each returns a Body or an error; an
@@ -502,6 +503,10 @@ func (a *API) DownloadLink(r *http.Request, token *apitoken.Token, jobID, kind a
 		return nil, apiErr(http.StatusNotFound, "file_missing", "Job %s (%s) has no %s file%s. Available: %s.",
 			job.ID, job.Status, k, yet, available)
 	}
+	size := st.Size()
+	if k == "output" {
+		size = downloadSize(path, size)
+	}
 	ticket, expires, err := a.tokens.SignDownload(ctxOf(r), token, job.ID, k, 0)
 	if err != nil {
 		return nil, err
@@ -510,7 +515,7 @@ func (a *API) DownloadLink(r *http.Request, token *apitoken.Token, jobID, kind a
 		"job_id":     job.ID,
 		"file":       k,
 		"filename":   filepath.Base(path),
-		"size_bytes": st.Size(),
+		"size_bytes": size,
 		"url":        PublicBaseURL(r) + "/api/v1/downloads/" + ticket,
 		"expires_at": time.Unix(expires, 0).UTC().Format("2006-01-02T15:04:05+00:00"),
 		"next_step": "Fetch this URL into the workspace (in Fleet: download_url). It needs no " +
@@ -577,4 +582,19 @@ func (a *API) GetOptions(ctx context.Context) (Body, error) {
 		},
 		"output_columns": Body{"standard": config.CSVFieldnames, "ctv": config.CTVCSVFieldnames},
 	}, nil
+}
+
+// downloadSize is the size of a results CSV as downloaded, without its
+// Cost_USD column; onDisk when the file can't be read.
+func downloadSize(path string, onDisk int64) int64 {
+	f, err := os.Open(path) //nolint:gosec // path built from a validated job filename
+	if err != nil {
+		return onDisk
+	}
+	defer func() { _ = f.Close() }()
+	n, err := resultcsv.Size(f)
+	if err != nil {
+		return onDisk
+	}
+	return n
 }

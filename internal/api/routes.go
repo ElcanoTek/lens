@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/ElcanoTek/lens/internal/apitoken"
+	"github.com/ElcanoTek/lens/internal/resultcsv"
 )
 
 // Routes returns the REST handler. It serves full paths under /api/v1, so
@@ -348,6 +349,18 @@ func (a *API) serveFile(w http.ResponseWriter, r *http.Request, jobID, kind stri
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
 	}
 	w.Header().Set("Content-Type", media)
+	if kind == "output" {
+		// Results download without Cost_USD; the file on disk keeps it. It
+		// is a new representation of the file: no Last-Modified (a client's
+		// pre-change copy must not revalidate to a 304), no caching, and a
+		// Range request gets the whole file.
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		if r.Method != http.MethodHead {
+			_, _ = resultcsv.Copy(w, f)
+		}
+		return nil
+	}
 	http.ServeContent(w, r, name, st.ModTime(), f)
 	return nil
 }
