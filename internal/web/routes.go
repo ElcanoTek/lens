@@ -641,6 +641,9 @@ func (s *Server) handleDeleteFile(w http.ResponseWriter, r *http.Request) {
 		redirectWithParams(w, param{"files_error", err.Error()}, scope)
 		return
 	}
+	if destination == "outputs" && strings.HasSuffix(safeName, "_progress.json") {
+		jobs.RemoveProgressCache(path)
+	}
 	redirectWithParams(w, param{"files_message", i18n.T(i18n.Language(w), "Deleted {0}", safeName)}, scope)
 }
 
@@ -688,6 +691,9 @@ func (s *Server) handleBatchDelete(w http.ResponseWriter, r *http.Request) {
 	deleted := 0
 	for _, path := range selectedFiles(dir, destination, names) {
 		if os.Remove(path) == nil {
+			if destination == "outputs" && strings.HasSuffix(path, "_progress.json") {
+				jobs.RemoveProgressCache(path)
+			}
 			deleted++
 		}
 	}

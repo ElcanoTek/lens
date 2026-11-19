@@ -550,6 +550,9 @@ func (m *Manager) Delete(id string) error {
 		path := filepath.Join(m.Dirs.Outputs, name)
 		if st, err := os.Stat(path); err == nil && st.Mode().IsRegular() {
 			_ = os.Remove(path)
+			if name == job.ProgressFile {
+				RemoveProgressCache(path)
+			}
 		}
 	}
 	if job.HasCategories() {
