@@ -4,12 +4,16 @@
 package jobs
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/ElcanoTek/lens/internal/cost"
 )
@@ -19,20 +23,269 @@ import (
 // container startup amortized.
 const DeepRetrySecondsPerItem = 15.0
 
+const (
+	progressCacheVersion    = 1
+	maxProgressCacheEntries = 512
+	progressStreamBufBytes  = 256 * 1024
+)
+
+type memProgressEntry struct {
+	mtimeNano int64
+	size      int64
+	summary   map[string]any
+}
+
+var (
+	progressMemMu sync.RWMutex
+	progressMem   = map[string]memProgressEntry{}
+)
+
+// diskProgressCache is the tiny sidecar persisted under
+// <outputs>/.progress-cache/<filename>.json so cold starts and restarts
+// never re-scan multi-hundred-MB *_progress.json files.
+type diskProgressCache struct {
+	Version int            `json:"v"`
+	MtimeNs int64          `json:"mtime_ns"`
+	Size    int64          `json:"size"`
+	Summary map[string]any `json:"summary"`
+	// IntKeys names keys in Summary whose Go type must be restored to int
+	// after JSON unmarshaling (which decodes all numbers as float64).
+	IntKeys []string `json:"int_keys,omitempty"`
+}
+
+func progressSidecarPath(path string) string {
+	clean := filepath.Clean(path)
+	return filepath.Join(filepath.Dir(clean), ProgressCacheDirname, filepath.Base(clean)+".json")
+}
+
+// RemoveProgressCache evicts path from the in-memory progress summary cache
+// and best-effort removes its on-disk sidecar.
+func RemoveProgressCache(path string) {
+	if path == "" {
+		return
+	}
+	clean := filepath.Clean(path)
+	progressMemMu.Lock()
+	delete(progressMem, clean)
+	progressMemMu.Unlock()
+	_ = os.Remove(progressSidecarPath(clean))
+}
+
+func getMemProgress(clean string, mtimeNano, size int64) (map[string]any, bool) {
+	progressMemMu.RLock()
+	e, ok := progressMem[clean]
+	progressMemMu.RUnlock()
+	if !ok || e.mtimeNano != mtimeNano || e.size != size {
+		return nil, false
+	}
+	return cloneProgressMap(e.summary), true
+}
+
+func putMemProgress(clean string, mtimeNano, size int64, summary map[string]any) {
+	cloned := cloneProgressMap(summary)
+	progressMemMu.Lock()
+	if len(progressMem) >= maxProgressCacheEntries {
+		if _, exists := progressMem[clean]; !exists {
+			progressMem = make(map[string]memProgressEntry, maxProgressCacheEntries/2)
+		}
+	}
+	progressMem[clean] = memProgressEntry{mtimeNano: mtimeNano, size: size, summary: cloned}
+	progressMemMu.Unlock()
+}
+
+func cloneProgressMap(src map[string]any) map[string]any {
+	out := make(map[string]any, len(src))
+	for k, v := range src {
+		out[k] = cloneProgressValue(v)
+	}
+	return out
+}
+
+func cloneProgressValue(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		return cloneProgressMap(x)
+	case []any:
+		cp := make([]any, len(x))
+		for i, elem := range x {
+			cp[i] = cloneProgressValue(elem)
+		}
+		return cp
+	default:
+		return v
+	}
+}
+
+func loadDiskProgressCache(clean string, mtimeNano, size int64) (map[string]any, bool) {
+	raw, err := os.ReadFile(progressSidecarPath(clean))
+	if err != nil {
+		return nil, false
+	}
+	var entry diskProgressCache
+	if json.Unmarshal(raw, &entry) != nil || entry.Version != progressCacheVersion ||
+		entry.MtimeNs != mtimeNano || entry.Size != size || entry.Summary == nil {
+		return nil, false
+	}
+	for _, k := range entry.IntKeys {
+		if f, ok := entry.Summary[k].(float64); ok && f == math.Trunc(f) {
+			entry.Summary[k] = int(f)
+		}
+	}
+	return entry.Summary, true
+}
+
+func saveDiskProgressCache(clean string, mtimeNano, size int64, summary map[string]any) {
+	sidecar := progressSidecarPath(clean)
+	cacheDir := filepath.Dir(sidecar)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil { //nolint:gosec // cache dir beside outputs, matching .breakdowns
+		return
+	}
+	intKeys := make([]string, 0, 6)
+	for k, v := range summary {
+		if _, ok := v.(int); ok {
+			intKeys = append(intKeys, k)
+		}
+	}
+	raw, err := json.Marshal(diskProgressCache{
+		Version: progressCacheVersion,
+		MtimeNs: mtimeNano,
+		Size:    size,
+		Summary: summary,
+		IntKeys: intKeys,
+	})
+	if err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(cacheDir, ".tmp-*")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.Write(raw); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Chmod(0o644); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpName)
+		return
+	}
+	if err := os.Rename(tmpName, sidecar); err != nil {
+		_ = os.Remove(tmpName)
+	}
+}
+
 // ReadProgress returns a job progress file normalised to the summary keys
 // the dashboard JS and API expect (total_domains, processed, successful,
 // errors, retrying, remaining, completion_percentage, start_time,
 // last_update, cost_* and retry_seconds_per_item). Missing or corrupt files
 // give an empty map.
+//
+// Results are cached in memory and in a tiny sidecar under .progress-cache/
+// keyed by (mtime_ns, size), and cache misses stream-parse the file so a
+// 100+ MB progress file with tens of thousands of processed_domains entries
+// never allocates a giant map in memory.
 func ReadProgress(path string) map[string]any {
-	raw, err := os.ReadFile(path) //nolint:gosec // path built from a validated job filename
+	clean := filepath.Clean(path)
+	st, err := os.Stat(clean)
+	if err != nil || !st.Mode().IsRegular() {
+		progressMemMu.Lock()
+		delete(progressMem, clean)
+		progressMemMu.Unlock()
+		return map[string]any{}
+	}
+	mtimeNano, size := st.ModTime().UnixNano(), st.Size()
+	if cached, ok := getMemProgress(clean, mtimeNano, size); ok {
+		return cached
+	}
+	if cached, ok := loadDiskProgressCache(clean, mtimeNano, size); ok {
+		putMemProgress(clean, mtimeNano, size, cached)
+		return cloneProgressMap(cached)
+	}
+
+	// Open and stat the exact fd we parse so an atomic rename between os.Stat
+	// and os.Open can never pair old metadata with new bytes.
+	f, err := os.Open(clean)
 	if err != nil {
 		return map[string]any{}
 	}
-	var payload map[string]any
-	if json.Unmarshal(raw, &payload) != nil || payload == nil {
+	defer f.Close()
+	fst, err := f.Stat()
+	if err != nil || !fst.Mode().IsRegular() {
 		return map[string]any{}
 	}
+	summary, ok := parseProgressStream(bufio.NewReaderSize(f, progressStreamBufBytes))
+	if !ok {
+		return map[string]any{}
+	}
+	fdMtime, fdSize := fst.ModTime().UnixNano(), fst.Size()
+	putMemProgress(clean, fdMtime, fdSize, summary)
+	saveDiskProgressCache(clean, fdMtime, fdSize, summary)
+	return cloneProgressMap(summary)
+}
+
+func parseProgressStream(r io.Reader) (map[string]any, bool) {
+	dec := json.NewDecoder(r)
+	tok, err := dec.Token()
+	if err != nil {
+		return nil, false
+	}
+	if delim, ok := tok.(json.Delim); !ok || delim != '{' {
+		return nil, false
+	}
+
+	payload := map[string]any{}
+	hasEntries := false
+	entryCount := 0
+	retrying := 0
+
+	for dec.More() {
+		keyTok, err := dec.Token()
+		if err != nil {
+			return nil, false
+		}
+		key, ok := keyTok.(string)
+		if !ok {
+			return nil, false
+		}
+		switch key {
+		case "processed_domains":
+			cnt, ret, isObj, err := scanProcessedDomains(dec)
+			if err != nil {
+				return nil, false
+			}
+			hasEntries = isObj
+			entryCount = cnt
+			retrying = ret
+		case "summary", "total_domains", "processed", "successful_count", "successful",
+			"error_count", "errors", "start_time", "last_update", "cost":
+			var val any
+			if err := dec.Decode(&val); err != nil {
+				return nil, false
+			}
+			payload[key] = val
+		default:
+			if err := skipJSONValue(dec); err != nil {
+				return nil, false
+			}
+		}
+	}
+	endTok, err := dec.Token()
+	if err != nil {
+		return nil, false
+	}
+	if delim, ok := endTok.(json.Delim); !ok || delim != '}' {
+		return nil, false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, false
+	}
+
 	if summary, ok := payload["summary"].(map[string]any); ok {
 		out := map[string]any{}
 		for k, v := range summary {
@@ -42,7 +295,7 @@ func ReadProgress(path string) map[string]any {
 			out[k] = v
 		}
 		out["retry_seconds_per_item"] = DeepRetrySecondsPerItem
-		return out
+		return out, true
 	}
 
 	out := map[string]any{}
@@ -54,16 +307,11 @@ func ReadProgress(path string) map[string]any {
 
 	// processed counts terminal entries only; retry_pending items are still
 	// in flight (a later pass redoes them), so the bar must not count them.
-	retrying := 0
 	var processed any
-	if entries, ok := payload["processed_domains"].(map[string]any); ok {
-		for _, e := range entries {
-			if m, ok := e.(map[string]any); ok && m["status"] == "retry_pending" {
-				retrying++
-			}
-		}
-		processed = len(entries) - retrying
+	if hasEntries {
+		processed = entryCount - retrying
 	} else {
+		retrying = 0
 		processed = payload["processed"]
 		if processed == nil {
 			processed = 0
@@ -95,7 +343,107 @@ func ReadProgress(path string) map[string]any {
 		out[k] = v
 	}
 	out["retry_seconds_per_item"] = DeepRetrySecondsPerItem
-	return out
+	return out, true
+}
+
+func scanProcessedDomains(dec *json.Decoder) (count, retrying int, isObj bool, err error) {
+	tok, err := dec.Token()
+	if err != nil {
+		return 0, 0, false, err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return 0, 0, false, nil
+	}
+	if delim == '[' {
+		return 0, 0, false, skipJSONContainer(dec)
+	}
+	if delim != '{' {
+		return 0, 0, false, fmt.Errorf("unexpected delimiter %q", delim)
+	}
+	for dec.More() {
+		if _, err := dec.Token(); err != nil {
+			return 0, 0, false, err
+		}
+		valTok, err := dec.Token()
+		if err != nil {
+			return 0, 0, false, err
+		}
+		count++
+		if d, ok := valTok.(json.Delim); ok {
+			switch d {
+			case '{':
+				isRetry := false
+				for dec.More() {
+					fkTok, err := dec.Token()
+					if err != nil {
+						return 0, 0, false, err
+					}
+					fk, _ := fkTok.(string)
+					if fk == "status" {
+						var status any
+						if err := dec.Decode(&status); err != nil {
+							return 0, 0, false, err
+						}
+						s, ok := status.(string)
+						isRetry = ok && s == "retry_pending"
+					} else if err := skipJSONValue(dec); err != nil {
+						return 0, 0, false, err
+					}
+				}
+				if _, err := dec.Token(); err != nil {
+					return 0, 0, false, err
+				}
+				if isRetry {
+					retrying++
+				}
+			case '[':
+				if err := skipJSONContainer(dec); err != nil {
+					return 0, 0, false, err
+				}
+			default:
+				return 0, 0, false, fmt.Errorf("unexpected delimiter %q", d)
+			}
+		}
+	}
+	if _, err := dec.Token(); err != nil {
+		return 0, 0, false, err
+	}
+	return count, retrying, true, nil
+}
+
+func skipJSONValue(dec *json.Decoder) error {
+	tok, err := dec.Token()
+	if err != nil {
+		return err
+	}
+	delim, ok := tok.(json.Delim)
+	if !ok {
+		return nil
+	}
+	if delim != '{' && delim != '[' {
+		return fmt.Errorf("unexpected delimiter %q", delim)
+	}
+	return skipJSONContainer(dec)
+}
+
+func skipJSONContainer(dec *json.Decoder) error {
+	depth := 1
+	for depth > 0 {
+		tok, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		if d, ok := tok.(json.Delim); ok {
+			switch d {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				depth--
+			}
+		}
+	}
+	return nil
 }
 
 func firstPresent(m map[string]any, keys ...string) any {

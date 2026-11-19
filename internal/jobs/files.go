@@ -23,6 +23,10 @@ const (
 	// BreakdownCacheDirname holds per-file content breakdowns. A directory,
 	// not a file, so input listings skip it.
 	BreakdownCacheDirname = ".breakdowns"
+	// ProgressCacheDirname holds per-run progress summary sidecars inside the
+	// outputs directory. A directory, not a regular file, so ListOutputFiles
+	// skips it.
+	ProgressCacheDirname = ".progress-cache"
 )
 
 var xlsxMagic = []byte("PK\x03\x04")
