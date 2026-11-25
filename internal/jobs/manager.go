@@ -611,6 +611,10 @@ func (m *Manager) Resume(id string, front bool) error {
 		m.mu.Unlock()
 		return &NotAllowedError{fmt.Sprintf("Job %s is not paused", id)}
 	}
+	if _, busy := m.running[id]; busy {
+		m.mu.Unlock()
+		return &NotAllowedError{fmt.Sprintf("Job %s is still winding down; try again in a moment", id)}
+	}
 	queue := append([]string(nil), m.queue...)
 	job.Status = StatusQueued
 	job.ReturnCode = nil
@@ -987,6 +991,7 @@ func (m *Manager) runJob(id string) {
 		job.ReturnCode = nil
 		job.Error = ""
 		job.FinishedAt = ""
+		delete(m.running, id)
 	case m.stopping || isTermExit(code):
 		job.Status = StatusQueued
 		job.PausedAt = m.now()

@@ -623,7 +623,9 @@ func (o *Orchestrator) processItemsConcurrently(ctx context.Context, items []ite
 			Writer:     o.writer,
 			Categories: o.categories,
 			Cache:      o.cache,
-			LLMModel:   o.cfg.LLMModel,
+			LLMModel:   llmCacheKey(o.cfg.LLMModel, o.cfg.LLMTemperature, o.cfg.LLMMaxTokens),
+			LLMTemp:    o.cfg.LLMTemperature,
+			LLMMaxTok:  o.cfg.LLMMaxTokens,
 		}
 		// Register upcoming iOS IDs so the iTunes client can batch up to 50
 		// IDs per HTTP lookup request (50x fewer requests to Apple). Skip IDs

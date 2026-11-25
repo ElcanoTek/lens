@@ -879,7 +879,7 @@ applySegmentWidths(document);
 
   async function pollQueueJobs() {
     const hasActiveRows = document.querySelector(
-      '.panel-runs tbody tr[data-status="queued"], .panel-runs tbody tr[data-status="running"], .panel-runs tbody tr[data-status="pausing"], .panel-runs tbody tr[data-status="cancelling"]',
+      '.panel-runs tbody tr[data-status="queued"], .panel-runs tbody tr[data-status="running"], .panel-runs tbody tr[data-status="pausing"], .panel-runs tbody tr[data-status="paused"], .panel-runs tbody tr[data-status="cancelling"]',
     );
     if (!hasActiveRows || queuePollInFlight) {
       return;

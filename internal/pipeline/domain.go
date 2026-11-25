@@ -270,6 +270,10 @@ func websiteRecord(domain string) *Record {
 	return rec
 }
 
+func llmCacheKey(model string, temp float64, maxTokens int) string {
+	return fmt.Sprintf("%s|t=%.4g|m=%d", model, temp, maxTokens)
+}
+
 func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls Classification, scrape ScrapeResult, mode, classifierMode string, elapsed time.Duration) error {
 	// An earlier pass's block (e.g. direct got a 403 before the deep crawler
 	// got through) is the evidence for the bot-protection level; read it
@@ -320,7 +324,7 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 		_ = p.Cache.Put(ctx, cache.Entry{
 			ContentType:       cache.TypeWebsite,
 			Identifier:        domain,
-			LLMModel:          orDefault(cls.Model, p.Config.LLMModel),
+			LLMModel:          llmCacheKey(orDefault(cls.Model, p.Config.LLMModel), p.Config.LLMTemperature, p.Config.LLMMaxTokens),
 			ScrapeMode:        mode,
 			RejectRedirects:   p.RejectRedirects,
 			BotProtection:     rec.String("Bot_Protection"),
@@ -397,7 +401,8 @@ func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, e
 		CachedAt:        entry.UpdatedAt,
 	}
 	var cls Classification
-	if entry.LLMModel == p.Config.LLMModel && entry.Classification.Quality != "" {
+	wantKey := llmCacheKey(p.Config.LLMModel, p.Config.LLMTemperature, p.Config.LLMMaxTokens)
+	if entry.LLMModel == wantKey && entry.Classification.Quality != "" {
 		cls = Classification{
 			Success:          true,
 			Quality:          entry.Classification.Quality,

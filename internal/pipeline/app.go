@@ -33,6 +33,8 @@ type AppProcessor struct {
 	Categories CategoryClassifier
 	Cache      *cache.Store
 	LLMModel   string
+	LLMTemp    float64
+	LLMMaxTok  int
 }
 
 // ProcessApp routes an app item to its platform. Non-app items are a
@@ -210,10 +212,14 @@ func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMet
 		if platform == "android" {
 			cacheType = cache.TypeAndroid
 		}
+		modelKey := p.LLMModel
+		if cls.Model != "" {
+			modelKey = llmCacheKey(cls.Model, p.LLMTemp, p.LLMMaxTok)
+		}
 		_ = p.Cache.Put(ctx, cache.Entry{
 			ContentType:   cacheType,
 			Identifier:    id,
-			LLMModel:      orDefault(cls.Model, p.LLMModel),
+			LLMModel:      modelKey,
 			ScrapeMode:    appScrapeMode(platform),
 			ContentLength: utf8.RuneCountInString(meta.ContentForLLM),
 			AppMeta: cache.AppMeta{
