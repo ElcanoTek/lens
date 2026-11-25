@@ -183,6 +183,8 @@ func (c *AndroidClient) fetchWithRetry(ctx context.Context, packageName string) 
 		lastError = result.Error
 		if status == http.StatusTooManyRequests || status == http.StatusForbidden || lastError == "Blocked by Google Play Store" {
 			c.limiter.penalize()
+		} else if status != http.StatusNotFound {
+			c.limiter.resetStreak()
 		}
 		// 404 is terminal and hammering a block page escalates into an IP ban.
 		if status == http.StatusNotFound || lastError == "Blocked by Google Play Store" {

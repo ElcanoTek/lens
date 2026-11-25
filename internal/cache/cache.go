@@ -66,6 +66,7 @@ type Entry struct {
 	Identifier        string
 	LLMModel          string
 	ScrapeMode        string
+	RejectRedirects   bool
 	BotProtection     string
 	Title             string
 	MetaDescription   string
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS result_cache (
 	identifier              TEXT NOT NULL,
 	llm_model               TEXT NOT NULL,
 	scrape_mode             TEXT NOT NULL,
+	reject_redirects        INTEGER NOT NULL DEFAULT 1,
 	bot_protection          TEXT NOT NULL,
 	title                   TEXT NOT NULL,
 	meta_description        TEXT NOT NULL DEFAULT '',
@@ -179,7 +181,7 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 		return nil, false
 	}
 	row := s.db.QueryRowContext(ctx, `
-		SELECT llm_model, scrape_mode, bot_protection, title, meta_description, content, content_length,
+		SELECT llm_model, scrape_mode, reject_redirects, bot_protection, title, meta_description, content, content_length,
 		       app_meta_json, classification_json, research_model, research_questions_json, scraped_at, updated_at
 		FROM result_cache
 		WHERE content_type = ? AND identifier = ?`,
@@ -187,6 +189,7 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 	)
 	var (
 		e         Entry
+		rejectInt int
 		appJSON   string
 		clsJSON   string
 		rqJSON    string
@@ -195,11 +198,12 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 	e.ContentType = contentType
 	e.Identifier = norm
 	if err := row.Scan(
-		&e.LLMModel, &e.ScrapeMode, &e.BotProtection, &e.Title, &e.MetaDescription, &e.Content, &e.ContentLength,
+		&e.LLMModel, &e.ScrapeMode, &rejectInt, &e.BotProtection, &e.Title, &e.MetaDescription, &e.Content, &e.ContentLength,
 		&appJSON, &clsJSON, &e.ResearchModel, &rqJSON, &e.ScrapedAt, &updatedAt,
 	); err != nil {
 		return nil, false
 	}
+	e.RejectRedirects = rejectInt != 0
 	e.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	if s.ttl > 0 && s.now().Sub(e.UpdatedAt) > s.ttl {
 		_, _ = s.db.ExecContext(ctx, `DELETE FROM result_cache WHERE content_type = ? AND identifier = ?`, contentType, norm)
@@ -275,15 +279,20 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 	if updatedAt.IsZero() {
 		updatedAt = s.now().UTC()
 	}
+	rejectInt := 0
+	if e.RejectRedirects {
+		rejectInt = 1
+	}
 	_, err = s.db.ExecContext(ctx, `
 		INSERT INTO result_cache (
-			content_type, identifier, llm_model, scrape_mode, bot_protection,
+			content_type, identifier, llm_model, scrape_mode, reject_redirects, bot_protection,
 			title, meta_description, content, content_length, app_meta_json, classification_json,
 			research_model, research_questions_json, scraped_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(content_type, identifier) DO UPDATE SET
 			llm_model = excluded.llm_model,
 			scrape_mode = excluded.scrape_mode,
+			reject_redirects = excluded.reject_redirects,
 			bot_protection = excluded.bot_protection,
 			title = excluded.title,
 			meta_description = excluded.meta_description,
@@ -295,7 +304,7 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 			research_questions_json = excluded.research_questions_json,
 			scraped_at = excluded.scraped_at,
 			updated_at = excluded.updated_at`,
-		e.ContentType, norm, e.LLMModel, e.ScrapeMode, e.BotProtection,
+		e.ContentType, norm, e.LLMModel, e.ScrapeMode, rejectInt, e.BotProtection,
 		e.Title, e.MetaDescription, content, e.ContentLength, string(appJSON), string(clsJSON),
 		e.ResearchModel, string(rqJSON), e.ScrapedAt, updatedAt.Unix(),
 	)

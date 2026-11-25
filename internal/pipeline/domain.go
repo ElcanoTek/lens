@@ -50,6 +50,8 @@ type DomainProcessor struct {
 	Cache *cache.Store
 	// AutoMode is true when running the auto ladder (direct -> deep -> research).
 	AutoMode bool
+	// RejectRedirects is true when cross-host redirects are rejected on this pass.
+	RejectRedirects bool
 	// DeferFailures is set on auto mode's earlier passes: failures will be
 	// retried by a later pass, so they are tracked as retry_pending (not yet
 	// processed) rather than terminal errors.
@@ -320,6 +322,7 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 			Identifier:        domain,
 			LLMModel:          orDefault(cls.Model, p.Config.LLMModel),
 			ScrapeMode:        mode,
+			RejectRedirects:   p.RejectRedirects,
 			BotProtection:     rec.String("Bot_Protection"),
 			Title:             scrape.Title,
 			MetaDescription:   scrape.MetaDescription,
@@ -356,9 +359,19 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 //     match.
 func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
 	if !p.AutoMode {
-		return p.Scraper != nil && entry.ScrapeMode == p.Scraper.Mode()
+		if p.Scraper == nil || entry.ScrapeMode != p.Scraper.Mode() {
+			return false
+		}
+		// Never serve a redirect-following entry to a run that rejects redirects.
+		if p.RejectRedirects && !entry.RejectRedirects {
+			return false
+		}
+		return true
 	}
 	if entry.ScrapeMode != "research" {
+		if entry.ScrapeMode == "direct" && p.RejectRedirects && !entry.RejectRedirects {
+			return false
+		}
 		return true
 	}
 	if !p.Config.ResearchFallbackEnabled || entry.ResearchModel != p.Config.ResearchModel {

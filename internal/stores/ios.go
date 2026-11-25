@@ -285,6 +285,8 @@ func (c *IOSClient) fetchBatchChunk(ctx context.Context, chunk []string) map[str
 		lastError = errMsg
 		if status == http.StatusTooManyRequests || status == http.StatusForbidden {
 			c.limiter.penalize()
+		} else {
+			c.limiter.resetStreak()
 		}
 		iosLog.Warn(fmt.Sprintf("Batch attempt %d/%d (%d apps) failed: %s", attempt+1, c.opts.MaxRetries, len(chunk), lastError))
 		if ctx.Err() != nil {
@@ -393,6 +395,8 @@ func (c *IOSClient) fetchWithRetry(ctx context.Context, appID string) *IOSApp {
 		lastError = result.Error
 		if status == http.StatusTooManyRequests || status == http.StatusForbidden {
 			c.limiter.penalize()
+		} else if lastError != "App not found in App Store" {
+			c.limiter.resetStreak()
 		}
 		// "App not found" is terminal; retrying wastes API quota and time.
 		if lastError == "App not found in App Store" {

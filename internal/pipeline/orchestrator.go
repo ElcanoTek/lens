@@ -549,16 +549,17 @@ func (o *Orchestrator) initializeClients(ctx context.Context, stack *closers) er
 
 func (o *Orchestrator) domainProcessor(deferFailures bool) *DomainProcessor {
 	return &DomainProcessor{
-		Config:        o.cfg,
-		Progress:      o.progress,
-		Scraper:       o.scraper,
-		Classifier:    o.llm,
-		Reporter:      o.reporter,
-		Writer:        o.writer,
-		Categories:    o.categories,
-		Cache:         o.cache,
-		AutoMode:      o.autoMode,
-		DeferFailures: deferFailures,
+		Config:          o.cfg,
+		Progress:        o.progress,
+		Scraper:         o.scraper,
+		Classifier:      o.llm,
+		Reporter:        o.reporter,
+		Writer:          o.writer,
+		Categories:      o.categories,
+		Cache:           o.cache,
+		AutoMode:        o.autoMode,
+		RejectRedirects: o.rejectRedirects,
+		DeferFailures:   deferFailures,
 	}
 }
 

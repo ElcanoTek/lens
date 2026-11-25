@@ -125,6 +125,14 @@ func (l *limiter) penalize() {
 	}
 }
 
+// resetStreak clears the consecutive-success counter after any non-success
+// so adaptive backoff only relaxes after sustained clean responses.
+func (l *limiter) resetStreak() {
+	l.mu.Lock()
+	l.cleanStreak = 0
+	l.mu.Unlock()
+}
+
 // recordSuccess gradually restores the effective delay toward baseDelay after
 // sustained clean responses.
 func (l *limiter) recordSuccess() {

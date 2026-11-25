@@ -349,6 +349,9 @@ func (m *Manager) Load() {
 			job.FinishedAt = ""
 			job.ReturnCode = nil
 			job.Error = ""
+			if job.StartedAt != "" && job.PausedAt == "" {
+				job.PausedAt = m.now()
+			}
 			resumedRunning = append(resumedRunning, job)
 			interrupted = true
 		case StatusPausing:
@@ -986,6 +989,7 @@ func (m *Manager) runJob(id string) {
 		job.FinishedAt = ""
 	case m.stopping || isTermExit(code):
 		job.Status = StatusQueued
+		job.PausedAt = m.now()
 		job.ReturnCode = nil
 		job.Error = ""
 		job.FinishedAt = ""
