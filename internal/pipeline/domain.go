@@ -48,6 +48,8 @@ type DomainProcessor struct {
 	Categories CategoryClassifier
 	// Cache is the optional cross-job SQLite cache.
 	Cache *cache.Store
+	// AutoMode is true when running the auto ladder (direct -> deep -> research).
+	AutoMode bool
 	// DeferFailures is set on auto mode's earlier passes: failures will be
 	// retried by a later pass, so they are tracked as retry_pending (not yet
 	// processed) rather than terminal errors.
@@ -312,7 +314,7 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 		_ = p.Cache.Put(ctx, cache.Entry{
 			ContentType:       cache.TypeWebsite,
 			Identifier:        domain,
-			LLMModel:          p.Config.LLMModel,
+			LLMModel:          orDefault(cls.Model, p.Config.LLMModel),
 			ScrapeMode:        mode,
 			BotProtection:     rec.String("Bot_Protection"),
 			Title:             scrape.Title,
@@ -332,6 +334,7 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 				Source:           classifierMode,
 			},
 			ScrapedAt: orDefault(scrape.ScrapedAt, isoNow()),
+			UpdatedAt: scrape.CachedAt,
 		})
 	}
 	domainLog.Debug(fmt.Sprintf("✅ %s → %s", domain, cls.Quality))
@@ -339,11 +342,17 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 }
 
 // cacheEntryUsable checks whether a cached website entry can satisfy the
-// current run. Research-mode entries are tailored to the custom-category
-// questions passed as evidence needs, so a research entry is bypassed when
-// the current run asks different custom questions.
+// current run. Research-mode entries are rejected when research fallback is
+// disabled or the caller selected a direct/deep-only scrape mode, and when
+// the current run's custom-category questions differ from those researched.
 func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
-	if entry.ScrapeMode != "research" || p.Categories == nil {
+	if entry.ScrapeMode != "research" {
+		return true
+	}
+	if !p.AutoMode || !p.Config.ResearchFallbackEnabled {
+		return false
+	}
+	if p.Categories == nil {
 		return true
 	}
 	return slices.Equal(entry.ResearchQuestions, p.Categories.ResearchQuestions())
@@ -359,6 +368,7 @@ func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, e
 		ScrapedAt:     orDefault(entry.ScrapedAt, isoNow()),
 		BotProtection: entry.BotProtection,
 		CacheStatus:   "hit",
+		CachedAt:      entry.UpdatedAt,
 	}
 	var cls Classification
 	if entry.LLMModel == p.Config.LLMModel && entry.Classification.Quality != "" {

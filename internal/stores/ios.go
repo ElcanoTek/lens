@@ -309,6 +309,15 @@ func (c *IOSClient) fetchBatchChunk(ctx context.Context, chunk []string) map[str
 	return out
 }
 
+func canonicalIOSID(id string) string {
+	s := strings.TrimSpace(id)
+	trimmed := strings.TrimLeft(s, "0")
+	if trimmed == "" && s != "" {
+		return "0"
+	}
+	return trimmed
+}
+
 func (c *IOSClient) doFetchBatch(ctx context.Context, chunk []string) (map[string]*IOSApp, int, string) {
 	fetchedAt := scrape.ISOTime(time.Now())
 	joined := strings.Join(chunk, ",")
@@ -326,23 +335,23 @@ func (c *IOSClient) doFetchBatch(ctx context.Context, chunk []string) (map[strin
 	if err := json.Unmarshal([]byte(body), &data); err != nil {
 		return nil, status, "Unexpected error: " + err.Error()
 	}
-	byID := make(map[string]*IOSApp, len(chunk))
+	byCanonical := make(map[string]map[string]any, len(chunk))
 	results, _ := data["results"].([]any)
 	for _, raw := range results {
 		app, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
-		tid := str(app, "trackId")
+		tid := canonicalIOSID(str(app, "trackId"))
 		if tid == "" {
 			continue
 		}
-		byID[tid] = parseIOSApp(tid, app, fetchedAt)
+		byCanonical[tid] = app
 	}
 	out := make(map[string]*IOSApp, len(chunk))
 	for _, id := range chunk {
-		if app, ok := byID[id]; ok {
-			out[id] = app
+		if app, ok := byCanonical[canonicalIOSID(id)]; ok {
+			out[id] = parseIOSApp(id, app, fetchedAt)
 		} else {
 			out[id] = &IOSApp{AppID: id, Error: "App not found in App Store", FetchedAt: fetchedAt}
 		}

@@ -909,6 +909,7 @@ type queueItem struct {
 	StartedAt     any            `json:"started_at"`
 	FinishedAt    any            `json:"finished_at"`
 	PausedSeconds float64        `json:"paused_seconds"`
+	QueuePosition int            `json:"queue_position"`
 	Progress      map[string]any `json:"progress"`
 }
 
@@ -923,10 +924,14 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		if job.ProgressFile != "" {
 			progress = dashboardProgress(filepath.Join(s.dirs.Outputs, job.ProgressFile))
 		}
+		pos := 0
+		if job.Status == jobs.StatusQueued {
+			pos = s.manager.QueuePosition(job.ID)
+		}
 		items = append(items, queueItem{
 			ID: job.ID, Name: nullable(job.Name), Status: job.Status,
 			StartedAt: nullable(job.StartedAt), FinishedAt: nullable(job.FinishedAt),
-			PausedSeconds: job.PausedSeconds, Progress: progress,
+			PausedSeconds: job.PausedSeconds, QueuePosition: pos, Progress: progress,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": items, "message": "ok"})

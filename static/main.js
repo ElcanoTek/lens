@@ -557,6 +557,81 @@ applySegmentWidths(document);
     }
   }
 
+  function renderRowActions(jobRow, job) {
+    const actions = jobRow.querySelector('td:last-child .input-file-actions');
+    if (!actions) return;
+    const status = String(job.status || "").toLowerCase();
+    const id = String(job.id || "");
+    const encId = encodeURIComponent(id);
+    const title = String(job.name || "").trim() || id;
+    const hasName = String(job.name || "").trim() !== "";
+    const isActive = ["queued", "running", "pausing", "paused", "cancelling"].includes(status);
+    const canPause = status === "running" || status === "queued";
+    const canResume = status === "paused";
+    const canPrioritize = status === "queued" && Number(job.queue_position || 0) > 1;
+
+    const parts = [];
+    parts.push(
+      `<button type="button" class="icon-action js-view-job" data-job-id="${escapeHtml(id)}" data-job-name="${hasName ? escapeHtml(title) : ""}" aria-label="${H("Watch {0} live", title)}" title="${H("Watch live")}">` +
+      `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6z"></path><circle cx="12" cy="12" r="3"></circle></svg></button>`,
+    );
+    if (canPrioritize) {
+      const upIcon = spriteHref ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#arrow-up"></use></svg>` : "↑";
+      parts.push(
+        `<form method="post" action="/jobs/${encId}/prioritize">` +
+        `<button class="icon-action" type="submit" aria-label="${H("Move {0} to front of queue", title)}" title="${H("Run next (move to front of queue)")}">${upIcon}</button></form>`,
+      );
+    }
+    if (canPause) {
+      parts.push(
+        `<form method="post" action="/jobs/${encId}/pause">` +
+        `<button class="icon-action" type="submit" aria-label="${H("Pause {0}", title)}" title="${H("Pause (keeps progress)")}">` +
+        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="4" width="4" height="16" rx="1"></rect><rect x="14" y="4" width="4" height="16" rx="1"></rect></svg></button></form>`,
+      );
+    }
+    if (canResume) {
+      parts.push(
+        `<form method="post" action="/jobs/${encId}/resume">` +
+        `<button class="icon-action" type="submit" aria-label="${H("Resume {0}", title)}" title="${H("Resume")}">` +
+        `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg></button></form>`,
+      );
+    }
+    if (isActive) {
+      const stopIcon = spriteHref ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#stop"></use></svg>` : "■";
+      parts.push(
+        `<form method="post" action="/jobs/${encId}/cancel" class="js-confirm-cancel" data-job-id="${escapeHtml(title)}">` +
+        `<button class="icon-action danger" type="submit" aria-label="${H("Cancel {0}", title)}" title="${H("Cancel")}">${stopIcon}</button></form>`,
+      );
+    } else {
+      const trashIcon = spriteHref ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#trash"></use></svg>` : "×";
+      parts.push(
+        `<form method="post" action="/jobs/${encId}/delete" class="js-confirm-job-delete" data-job-id="${escapeHtml(title)}">` +
+        `<button class="icon-action danger" type="submit" aria-label="${H("Delete {0}", title)}" title="${H("Delete run and results")}">${trashIcon}</button></form>`,
+      );
+    }
+    actions.innerHTML = parts.join("");
+    const viewBtn = actions.querySelector(".js-view-job");
+    if (viewBtn) {
+      viewBtn.addEventListener("click", () => openMonitorModal(viewBtn.dataset.jobId, viewBtn.dataset.jobName));
+    }
+    const cancelForm = actions.querySelector(".js-confirm-cancel");
+    if (cancelForm) {
+      confirmFormSubmit(cancelForm, {
+        title: T("Cancel run?"),
+        message: T("Stop {0}? Progress so far is kept.", cancelForm.dataset.jobId || T("this run")),
+        confirmLabel: T("Cancel run"),
+      });
+    }
+    const deleteForm = actions.querySelector(".js-confirm-job-delete");
+    if (deleteForm) {
+      confirmFormSubmit(deleteForm, {
+        title: T("Delete run?"),
+        message: T("Delete {0} and its results? This cannot be undone.", deleteForm.dataset.jobId || T("this run")),
+        confirmLabel: T("Delete"),
+      });
+    }
+  }
+
   function updateQueueRowProgress(job, progress) {
     if (!job || !job.id) {
       return;
@@ -595,12 +670,18 @@ applySegmentWidths(document);
 
     const prevStatus = String(jobRow.dataset.status || "").toLowerCase();
     const nextStatus = String(job.status || "").toLowerCase();
+    const prevPos = jobRow.dataset.queuePosition || "";
+    const nextPos = job.queue_position ? String(job.queue_position) : "";
     setBadge(jobRow.querySelector("[data-status-badge], .badge"), job.status);
     jobRow.dataset.status = nextStatus;
-    // Reload to refresh server-rendered action controls (Resume / Pause / Move to front / Delete)
-    // once a transitional state settles or a job changes phase, unless the live modal is open.
-    if (prevStatus && prevStatus !== nextStatus && (!monitorModal || !monitorModal.open)) {
-      window.location.reload();
+    jobRow.dataset.queuePosition = nextPos;
+    if (eta && nextStatus === "queued" && Number(job.queue_position || 0) > 0) {
+      eta.textContent = T("Queued #{0}", Number(job.queue_position));
+    }
+    // Update the row's action controls in place without reloading the page
+    // so an in-progress Analyze form or file selection is never lost.
+    if ((prevStatus && prevStatus !== nextStatus) || (nextStatus === "queued" && prevPos !== nextPos)) {
+      renderRowActions(jobRow, job);
     }
   }
 
@@ -711,11 +792,12 @@ applySegmentWidths(document);
       const isTerminal = ["completed", "failed", "cancelled"].includes(normalizedStatus);
       const started = payload.job.started_at ? new Date(payload.job.started_at) : null;
       const finished = payload.job.finished_at ? new Date(payload.job.finished_at) : null;
+      const pausedSecs = Number(payload.job.paused_seconds || 0);
       let elapsed = "—";
       if (isTerminal && started && finished && !Number.isNaN(started.getTime()) && !Number.isNaN(finished.getTime())) {
-        elapsed = formatElapsed((finished.getTime() - started.getTime()) / 1000);
+        elapsed = formatElapsed((finished.getTime() - started.getTime()) / 1000 - pausedSecs);
       } else if (started && !Number.isNaN(started.getTime())) {
-        elapsed = formatElapsed((Date.now() - started.getTime()) / 1000);
+        elapsed = formatElapsed((Date.now() - started.getTime()) / 1000 - pausedSecs);
       }
       const eta = estimateEta(payload.progress || {}, payload.job.started_at, payload.job.status, payload.job.paused_seconds);
       monitorJobTiming.textContent = T("Elapsed {0} · ETA {1}",elapsed,eta);
@@ -742,9 +824,10 @@ applySegmentWidths(document);
         const t = Number(prog.total_domains || 0);
         const started = payload.job.started_at ? new Date(payload.job.started_at) : null;
         const finished = payload.job.finished_at ? new Date(payload.job.finished_at) : null;
+        const pausedSecs = Number(payload.job.paused_seconds || 0);
         let durationText = "—";
         if (started && finished && !Number.isNaN(started.getTime()) && !Number.isNaN(finished.getTime())) {
-          durationText = formatElapsed((finished.getTime() - started.getTime()) / 1000);
+          durationText = formatElapsed((finished.getTime() - started.getTime()) / 1000 - pausedSecs);
         }
 
         completionBanner.className =

@@ -124,7 +124,7 @@ func (p *AppProcessor) process(ctx context.Context, id, platform string) {
 			return errors.New("Classification failed: " + orDefault(cls.Error, "Unknown error"))
 		}
 		elapsed := time.Since(start)
-		if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, true); err != nil {
+		if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, true, time.Time{}); err != nil {
 			return err
 		}
 		p.Reporter.Log(report.Attempt{
@@ -162,7 +162,7 @@ func appScrapeMode(platform string) string {
 	return platform + "_scrape"
 }
 
-func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMetadata, cls Classification, elapsed time.Duration, platform string, writeCache bool) error {
+func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMetadata, cls Classification, elapsed time.Duration, platform string, writeCache bool, cachedAt time.Time) error {
 	appName := orDefault(meta.AppName, id)
 	downloads := ""
 	if platform == "android" {
@@ -213,7 +213,7 @@ func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMet
 		_ = p.Cache.Put(ctx, cache.Entry{
 			ContentType:   cacheType,
 			Identifier:    id,
-			LLMModel:      p.LLMModel,
+			LLMModel:      orDefault(cls.Model, p.LLMModel),
 			ScrapeMode:    appScrapeMode(platform),
 			ContentLength: utf8.RuneCountInString(meta.ContentForLLM),
 			AppMeta: cache.AppMeta{
@@ -240,6 +240,7 @@ func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMet
 				Source:           orDefault(cls.Source, "openrouter"),
 			},
 			ScrapedAt: orDefault(meta.FetchedAt, isoNow()),
+			UpdatedAt: cachedAt,
 		})
 	}
 	appLog.Debug(fmt.Sprintf("Processed %s app: %s → %s", strings.ToUpper(platform), appName, cls.Quality))
@@ -306,7 +307,7 @@ func (p *AppProcessor) processFromCache(ctx context.Context, id, platform, label
 	}
 	elapsed := time.Since(start)
 	writeCache := entry.LLMModel != p.LLMModel || entry.Classification.Quality == ""
-	if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, writeCache); err != nil {
+	if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, writeCache, entry.UpdatedAt); err != nil {
 		return err
 	}
 	p.Reporter.Log(report.Attempt{

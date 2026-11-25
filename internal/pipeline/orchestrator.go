@@ -557,6 +557,7 @@ func (o *Orchestrator) domainProcessor(deferFailures bool) *DomainProcessor {
 		Writer:        o.writer,
 		Categories:    o.categories,
 		Cache:         o.cache,
+		AutoMode:      o.autoMode,
 		DeferFailures: deferFailures,
 	}
 }
