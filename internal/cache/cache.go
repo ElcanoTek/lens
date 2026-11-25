@@ -28,10 +28,10 @@ const (
 	TypeAndroid = "android"
 )
 
-// maxCachedContentBytes bounds stored source text so cache.db stays compact
-// across tens of thousands of sites while keeping enough text for custom
-// category decision calls.
-const maxCachedContentBytes = 64 * 1024
+// maxCachedContentRunes bounds stored source text so cache.db stays compact
+// while retaining at least categories.MaxContentChars (24,000 runes) even for
+// multi-byte UTF-8 pages.
+const maxCachedContentRunes = 32_000
 
 // AppMeta holds cached mobile-app store metadata.
 type AppMeta struct {
@@ -258,7 +258,7 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 	if norm == "" {
 		return nil
 	}
-	content := truncateBytes(e.Content, maxCachedContentBytes)
+	content := truncateRunes(e.Content, maxCachedContentRunes)
 	appJSON, err := json.Marshal(e.AppMeta)
 	if err != nil {
 		return err
@@ -311,14 +311,13 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 	return err
 }
 
-func truncateBytes(s string, maxBytes int) string {
-	if len(s) <= maxBytes {
-		return s
+func truncateRunes(s string, maxRunes int) string {
+	n := 0
+	for i := range s {
+		if n == maxRunes {
+			return s[:i]
+		}
+		n++
 	}
-	// Back off to a valid UTF-8 boundary.
-	n := maxBytes
-	for n > 0 && (s[n]&0xc0) == 0x80 {
-		n--
-	}
-	return s[:n]
+	return s
 }

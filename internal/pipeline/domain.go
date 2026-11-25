@@ -316,7 +316,7 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 		var researchQuestions []string
 		researchModel := ""
 		if mode == "research" {
-			researchModel = p.Config.ResearchModel
+			researchModel = llmCacheKey(p.Config.ResearchModel, p.Config.ResearchTemperature, p.Config.ResearchMaxTokens)
 			if p.Categories != nil {
 				researchQuestions = p.Categories.ResearchQuestions()
 			}
@@ -378,7 +378,8 @@ func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
 		}
 		return true
 	}
-	if !p.Config.ResearchFallbackEnabled || entry.ResearchModel != p.Config.ResearchModel {
+	wantResearch := llmCacheKey(p.Config.ResearchModel, p.Config.ResearchTemperature, p.Config.ResearchMaxTokens)
+	if !p.Config.ResearchFallbackEnabled || entry.ResearchModel != wantResearch {
 		return false
 	}
 	if p.Categories == nil {
