@@ -335,8 +335,11 @@ func (c *IOSClient) doFetchBatch(ctx context.Context, chunk []string) (map[strin
 	if err := json.Unmarshal([]byte(body), &data); err != nil {
 		return nil, status, "Unexpected error: " + err.Error()
 	}
+	results, ok := data["results"].([]any)
+	if !ok {
+		return nil, status, "Unexpected error: missing results array"
+	}
 	byCanonical := make(map[string]map[string]any, len(chunk))
-	results, _ := data["results"].([]any)
 	for _, raw := range results {
 		app, ok := raw.(map[string]any)
 		if !ok {

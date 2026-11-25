@@ -910,6 +910,9 @@ type queueItem struct {
 	FinishedAt    any            `json:"finished_at"`
 	PausedSeconds float64        `json:"paused_seconds"`
 	QueuePosition int            `json:"queue_position"`
+	OutputFile    any            `json:"output_file"`
+	LogFile       any            `json:"log_file"`
+	CategoryFile  any            `json:"category_file"`
 	Progress      map[string]any `json:"progress"`
 }
 
@@ -928,10 +931,19 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		if job.Status == jobs.StatusQueued {
 			pos = s.manager.QueuePosition(job.ID)
 		}
+		catFile := ""
+		if job.HasCategories() {
+			candidate := job.ID + "_output.csv.categories.json"
+			if isRegular(filepath.Join(s.dirs.Outputs, candidate)) {
+				catFile = candidate
+			}
+		}
 		items = append(items, queueItem{
 			ID: job.ID, Name: nullable(job.Name), Status: job.Status,
 			StartedAt: nullable(job.StartedAt), FinishedAt: nullable(job.FinishedAt),
-			PausedSeconds: job.PausedSeconds, QueuePosition: pos, Progress: progress,
+			PausedSeconds: job.PausedSeconds, QueuePosition: pos,
+			OutputFile: nullable(job.OutputFile), LogFile: nullable(job.LogFile), CategoryFile: nullable(catFile),
+			Progress: progress,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": items, "message": "ok"})

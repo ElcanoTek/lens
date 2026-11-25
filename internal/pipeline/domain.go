@@ -365,7 +365,7 @@ func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
 		return false
 	}
 	if p.Categories == nil {
-		return true
+		return len(entry.ResearchQuestions) == 0
 	}
 	return slices.Equal(entry.ResearchQuestions, p.Categories.ResearchQuestions())
 }

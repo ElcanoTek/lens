@@ -96,8 +96,9 @@ func (l *limiter) currentDelay() time.Duration {
 	jitter := l.jitter
 	l.mu.Unlock()
 	if jitter && d > 0 {
-		// +/- 15% jitter so requests are not a robotic metronome.
-		factor := 0.85 + rand.Float64()*0.30 //nolint:gosec // non-cryptographic request pacing jitter
+		// Upward-only 0..+25% jitter so requests are not metronomic while
+		// never dipping below the configured minimum delay floor.
+		factor := 1.0 + rand.Float64()*0.25 //nolint:gosec // non-cryptographic request pacing jitter
 		d = time.Duration(float64(d) * factor)
 	}
 	return d

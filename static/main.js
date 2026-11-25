@@ -557,6 +557,31 @@ applySegmentWidths(document);
     }
   }
 
+  function renderRowResults(jobRow, job) {
+    const resultsCell = jobRow.querySelector('td:nth-last-child(2) .input-file-actions');
+    if (!resultsCell) return;
+    const title = String(job.name || "").trim() || String(job.id || "");
+    const parts = [];
+    if (job.output_file) {
+      const dlIcon = spriteHref ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#download"></use></svg>` : "↓";
+      parts.push(
+        `<a class="icon-action" href="/files/download/outputs/${encodeURIComponent(job.output_file)}" aria-label="${H("Download results for {0}", title)}" title="${H("Download results (CSV)")}">${dlIcon}</a>`,
+      );
+    }
+    if (job.category_file) {
+      parts.push(
+        `<a class="btn btn-ghost btn-sm" href="/files/download/outputs/${encodeURIComponent(job.category_file)}" title="${H("Download custom category definitions (JSON)")}">${H("Categories")}</a>`,
+      );
+    }
+    if (job.log_file) {
+      const logIcon = spriteHref ? `<svg aria-hidden="true"><use href="${escapeHtml(spriteHref)}#file-text"></use></svg>` : "log";
+      parts.push(
+        `<a class="icon-action subtle" href="/files/download/outputs/${encodeURIComponent(job.log_file)}" aria-label="${H("Download log for {0}", title)}" title="${H("Download log")}">${logIcon}</a>`,
+      );
+    }
+    resultsCell.innerHTML = parts.join("");
+  }
+
   function renderRowActions(jobRow, job) {
     const actions = jobRow.querySelector('td:last-child .input-file-actions');
     if (!actions) return;
@@ -678,9 +703,10 @@ applySegmentWidths(document);
     if (eta && nextStatus === "queued" && Number(job.queue_position || 0) > 0) {
       eta.textContent = T("Queued #{0}", Number(job.queue_position));
     }
-    // Update the row's action controls in place without reloading the page
-    // so an in-progress Analyze form or file selection is never lost.
+    // Update the row's action controls and result links in place without reloading
+    // the page so an in-progress Analyze form or file selection is never lost.
     if ((prevStatus && prevStatus !== nextStatus) || (nextStatus === "queued" && prevPos !== nextPos)) {
+      renderRowResults(jobRow, job);
       renderRowActions(jobRow, job);
     }
   }
