@@ -62,7 +62,7 @@ func (a *API) etaSeconds(job *jobs.Job, progress map[string]any) any {
 	if total <= 0 || attempts <= 0 || !ok {
 		return nil
 	}
-	elapsed := a.now().Sub(started).Seconds()
+	elapsed := a.now().Sub(started).Seconds() - job.PausedSeconds
 	if elapsed <= 5 {
 		return nil
 	}

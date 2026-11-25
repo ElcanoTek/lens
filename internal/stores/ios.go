@@ -275,14 +275,10 @@ func (c *IOSClient) fetchBatchChunk(ctx context.Context, chunk []string) map[str
 		res, status, errMsg := c.doFetchBatch(ctx, chunk)
 		if errMsg == "" {
 			c.limiter.recordSuccess()
+			c.success()
 			elapsed := time.Since(start)
 			for _, app := range res {
 				app.ProcessingTime = elapsed
-				if app.Success {
-					c.success()
-				} else {
-					c.failure()
-				}
 			}
 			return res
 		}
@@ -303,11 +299,11 @@ func (c *IOSClient) fetchBatchChunk(ctx context.Context, chunk []string) map[str
 	if lastError == "" {
 		lastError = "Max retries exceeded"
 	}
+	c.failure()
 	now := scrape.ISOTime(time.Now())
 	elapsed := time.Since(start)
 	out := make(map[string]*IOSApp, len(chunk))
 	for _, id := range chunk {
-		c.failure()
 		out[id] = &IOSApp{AppID: id, Error: lastError, ProcessingTime: elapsed, FetchedAt: now}
 	}
 	return out

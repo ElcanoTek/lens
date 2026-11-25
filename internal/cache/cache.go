@@ -62,18 +62,19 @@ type Classification struct {
 
 // Entry is one cached website or mobile app result.
 type Entry struct {
-	ContentType    string
-	Identifier     string
-	LLMModel       string
-	ScrapeMode     string
-	BotProtection  string
-	Title          string
-	Content        string
-	ContentLength  int
-	AppMeta        AppMeta
-	Classification Classification
-	ScrapedAt      string
-	UpdatedAt      time.Time
+	ContentType       string
+	Identifier        string
+	LLMModel          string
+	ScrapeMode        string
+	BotProtection     string
+	Title             string
+	Content           string
+	ContentLength     int
+	AppMeta           AppMeta
+	Classification    Classification
+	ResearchQuestions []string
+	ScrapedAt         string
+	UpdatedAt         time.Time
 }
 
 // Store is a concurrent-safe SQLite result cache shared across jobs.
@@ -85,18 +86,19 @@ type Store struct {
 
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS result_cache (
-	content_type        TEXT NOT NULL,
-	identifier          TEXT NOT NULL,
-	llm_model           TEXT NOT NULL,
-	scrape_mode         TEXT NOT NULL,
-	bot_protection      TEXT NOT NULL,
-	title               TEXT NOT NULL,
-	content             TEXT NOT NULL,
-	content_length      INTEGER NOT NULL,
-	app_meta_json       TEXT NOT NULL,
-	classification_json TEXT NOT NULL,
-	scraped_at          TEXT NOT NULL,
-	updated_at          INTEGER NOT NULL,
+	content_type            TEXT NOT NULL,
+	identifier              TEXT NOT NULL,
+	llm_model               TEXT NOT NULL,
+	scrape_mode             TEXT NOT NULL,
+	bot_protection          TEXT NOT NULL,
+	title                   TEXT NOT NULL,
+	content                 TEXT NOT NULL,
+	content_length          INTEGER NOT NULL,
+	app_meta_json           TEXT NOT NULL,
+	classification_json     TEXT NOT NULL,
+	research_questions_json TEXT NOT NULL DEFAULT '[]',
+	scraped_at              TEXT NOT NULL,
+	updated_at              INTEGER NOT NULL,
 	PRIMARY KEY (content_type, identifier)
 );
 `
@@ -121,7 +123,18 @@ func Open(path string, ttl time.Duration) (*Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("init cache schema: %w", err)
 	}
-	return &Store{db: db, ttl: ttl, now: time.Now}, nil
+	st := &Store{db: db, ttl: ttl, now: time.Now}
+	st.purgeExpired(context.Background())
+	return st, nil
+}
+
+// purgeExpired removes rows older than ttl so cache.db stays bounded on disk.
+func (s *Store) purgeExpired(ctx context.Context) {
+	if s == nil || s.db == nil || s.ttl <= 0 {
+		return
+	}
+	cutoff := s.now().UTC().Add(-s.ttl).Unix()
+	_, _ = s.db.ExecContext(ctx, `DELETE FROM result_cache WHERE updated_at < ?`, cutoff)
 }
 
 // Close closes the underlying SQLite database.
@@ -132,8 +145,24 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-func normalizeID(id string) string {
-	return strings.ToLower(strings.TrimSpace(id))
+// normalizeID trims whitespace and, for website URLs/domains, lowercases only
+// the scheme and hostname while preserving case in the path, query and fragment.
+func normalizeID(contentType, id string) string {
+	s := strings.TrimSpace(id)
+	if s == "" || contentType != TypeWebsite {
+		return s
+	}
+	scheme := ""
+	rest := s
+	if idx := strings.Index(rest, "://"); idx >= 0 {
+		scheme = strings.ToLower(rest[:idx+3])
+		rest = rest[idx+3:]
+	}
+	split := strings.IndexAny(rest, "/?#")
+	if split < 0 {
+		return scheme + strings.ToLower(rest)
+	}
+	return scheme + strings.ToLower(rest[:split]) + rest[split:]
 }
 
 // Get looks up a fresh cached entry for (contentType, identifier).
@@ -141,13 +170,13 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 	if s == nil || s.db == nil {
 		return nil, false
 	}
-	norm := normalizeID(identifier)
+	norm := normalizeID(contentType, identifier)
 	if norm == "" {
 		return nil, false
 	}
 	row := s.db.QueryRowContext(ctx, `
 		SELECT llm_model, scrape_mode, bot_protection, title, content, content_length,
-		       app_meta_json, classification_json, scraped_at, updated_at
+		       app_meta_json, classification_json, research_questions_json, scraped_at, updated_at
 		FROM result_cache
 		WHERE content_type = ? AND identifier = ?`,
 		contentType, norm,
@@ -156,18 +185,20 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 		e         Entry
 		appJSON   string
 		clsJSON   string
+		rqJSON    string
 		updatedAt int64
 	)
 	e.ContentType = contentType
 	e.Identifier = norm
 	if err := row.Scan(
 		&e.LLMModel, &e.ScrapeMode, &e.BotProtection, &e.Title, &e.Content, &e.ContentLength,
-		&appJSON, &clsJSON, &e.ScrapedAt, &updatedAt,
+		&appJSON, &clsJSON, &rqJSON, &e.ScrapedAt, &updatedAt,
 	); err != nil {
 		return nil, false
 	}
 	e.UpdatedAt = time.Unix(updatedAt, 0).UTC()
 	if s.ttl > 0 && s.now().Sub(e.UpdatedAt) > s.ttl {
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM result_cache WHERE content_type = ? AND identifier = ?`, contentType, norm)
 		return nil, false
 	}
 	if appJSON != "" {
@@ -180,6 +211,9 @@ func (s *Store) Get(ctx context.Context, contentType, identifier string) (*Entry
 			return nil, false
 		}
 	}
+	if rqJSON != "" {
+		_ = json.Unmarshal([]byte(rqJSON), &e.ResearchQuestions)
+	}
 	return &e, true
 }
 
@@ -188,7 +222,7 @@ func (s *Store) HasFresh(ctx context.Context, contentType, identifier string) bo
 	if s == nil || s.db == nil {
 		return false
 	}
-	norm := normalizeID(identifier)
+	norm := normalizeID(contentType, identifier)
 	if norm == "" {
 		return false
 	}
@@ -201,6 +235,7 @@ func (s *Store) HasFresh(ctx context.Context, contentType, identifier string) bo
 		return false
 	}
 	if s.ttl > 0 && s.now().Sub(time.Unix(updatedAt, 0).UTC()) > s.ttl {
+		_, _ = s.db.ExecContext(ctx, `DELETE FROM result_cache WHERE content_type = ? AND identifier = ?`, contentType, norm)
 		return false
 	}
 	return true
@@ -211,7 +246,7 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 	if s == nil || s.db == nil {
 		return nil
 	}
-	norm := normalizeID(e.Identifier)
+	norm := normalizeID(e.ContentType, e.Identifier)
 	if norm == "" {
 		return nil
 	}
@@ -224,6 +259,14 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 	if err != nil {
 		return err
 	}
+	rq := e.ResearchQuestions
+	if rq == nil {
+		rq = []string{}
+	}
+	rqJSON, err := json.Marshal(rq)
+	if err != nil {
+		return err
+	}
 	updatedAt := e.UpdatedAt
 	if updatedAt.IsZero() {
 		updatedAt = s.now().UTC()
@@ -232,8 +275,8 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 		INSERT INTO result_cache (
 			content_type, identifier, llm_model, scrape_mode, bot_protection,
 			title, content, content_length, app_meta_json, classification_json,
-			scraped_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			research_questions_json, scraped_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(content_type, identifier) DO UPDATE SET
 			llm_model = excluded.llm_model,
 			scrape_mode = excluded.scrape_mode,
@@ -243,11 +286,12 @@ func (s *Store) Put(ctx context.Context, e Entry) error {
 			content_length = excluded.content_length,
 			app_meta_json = excluded.app_meta_json,
 			classification_json = excluded.classification_json,
+			research_questions_json = excluded.research_questions_json,
 			scraped_at = excluded.scraped_at,
 			updated_at = excluded.updated_at`,
 		e.ContentType, norm, e.LLMModel, e.ScrapeMode, e.BotProtection,
 		e.Title, content, e.ContentLength, string(appJSON), string(clsJSON),
-		e.ScrapedAt, updatedAt.Unix(),
+		string(rqJSON), e.ScrapedAt, updatedAt.Unix(),
 	)
 	return err
 }

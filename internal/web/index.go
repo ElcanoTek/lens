@@ -221,7 +221,7 @@ func etaText(job *jobs.Job, progress map[string]any, now time.Time, languages ..
 	if !ok {
 		return i18n.T(language, "Estimating...")
 	}
-	elapsed := now.Sub(started).Seconds()
+	elapsed := now.Sub(started).Seconds() - job.PausedSeconds
 	if elapsed <= 5 {
 		return i18n.T(language, "Estimating...")
 	}

@@ -73,16 +73,18 @@ type Job struct {
 	DecisionModel    string          `json:"decision_model"`
 	// SubmittedBy is the label of the API token that queued the job; empty
 	// for the dashboard and `lens submit`.
-	SubmittedBy  string `json:"submitted_by"`
-	Status       string `json:"status"`
-	CreatedAt    string `json:"created_at"`
-	StartedAt    string `json:"started_at"`
-	FinishedAt   string `json:"finished_at"`
-	OutputFile   string `json:"output_file"`
-	ProgressFile string `json:"progress_file"`
-	LogFile      string `json:"log_file"`
-	ReturnCode   *int   `json:"return_code"`
-	Error        string `json:"error"`
+	SubmittedBy   string  `json:"submitted_by"`
+	Status        string  `json:"status"`
+	CreatedAt     string  `json:"created_at"`
+	StartedAt     string  `json:"started_at"`
+	FinishedAt    string  `json:"finished_at"`
+	PausedAt      string  `json:"paused_at,omitempty"`
+	PausedSeconds float64 `json:"paused_seconds,omitempty"`
+	OutputFile    string  `json:"output_file"`
+	ProgressFile  string  `json:"progress_file"`
+	LogFile       string  `json:"log_file"`
+	ReturnCode    *int    `json:"return_code"`
+	Error         string  `json:"error"`
 }
 
 // HasCategories reports whether the job carries custom categories.
@@ -108,6 +110,8 @@ type persisted struct {
 	CreatedAt        string          `json:"created_at"`
 	StartedAt        *string         `json:"started_at"`
 	FinishedAt       *string         `json:"finished_at"`
+	PausedAt         *string         `json:"paused_at,omitempty"`
+	PausedSeconds    float64         `json:"paused_seconds,omitempty"`
 	OutputFile       *string         `json:"output_file"`
 	ProgressFile     *string         `json:"progress_file"`
 	LogFile          *string         `json:"log_file"`
@@ -139,6 +143,7 @@ func (j *Job) persisted() persisted {
 		ResearchFallback: j.ResearchFallback, DeepRetry: j.DeepRetry, ResearchModel: ptr(j.ResearchModel),
 		CustomCategories: cats, DecisionModel: ptr(j.DecisionModel), SubmittedBy: ptr(j.SubmittedBy),
 		Status: j.Status, CreatedAt: j.CreatedAt, StartedAt: ptr(j.StartedAt), FinishedAt: ptr(j.FinishedAt),
+		PausedAt: ptr(j.PausedAt), PausedSeconds: j.PausedSeconds,
 		OutputFile: ptr(j.OutputFile), ProgressFile: ptr(j.ProgressFile), LogFile: ptr(j.LogFile),
 		ReturnCode: j.ReturnCode, Error: ptr(j.Error),
 	}
@@ -318,6 +323,7 @@ func (m *Manager) Load() {
 			DeepRetry: p.DeepRetry, ResearchModel: cleanPersistedModel(val(p.ResearchModel)),
 			DecisionModel: cleanPersistedModel(val(p.DecisionModel)), Status: status, CreatedAt: created,
 			StartedAt: val(p.StartedAt), FinishedAt: val(p.FinishedAt),
+			PausedAt: val(p.PausedAt), PausedSeconds: p.PausedSeconds,
 			OutputFile: SafeFilenameOrEmpty(val(p.OutputFile)), ProgressFile: SafeFilenameOrEmpty(val(p.ProgressFile)),
 			LogFile: SafeFilenameOrEmpty(val(p.LogFile)), ReturnCode: p.ReturnCode, Error: val(p.Error),
 		}
@@ -350,6 +356,9 @@ func (m *Manager) Load() {
 			job.FinishedAt = ""
 			job.ReturnCode = nil
 			job.Error = ""
+			if job.PausedAt == "" {
+				job.PausedAt = m.now()
+			}
 			interrupted = true
 		case StatusCancelling:
 			job.Status = StatusCancelled
@@ -559,10 +568,14 @@ func (m *Manager) Pause(id string) error {
 	}
 	if job.Status == StatusQueued {
 		queue := append([]string(nil), m.queue...)
+		prevPausedAt := job.PausedAt
 		m.removeQueued(id)
 		job.Status = StatusPaused
+		if job.StartedAt != "" {
+			job.PausedAt = m.now()
+		}
 		if err := m.save(); err != nil {
-			m.queue, job.Status = queue, StatusQueued
+			m.queue, job.Status, job.PausedAt = queue, StatusQueued, prevPausedAt
 			return notSaved(err)
 		}
 		return nil
@@ -837,14 +850,23 @@ func (m *Manager) runJob(id string) {
 		return
 	}
 	startedBefore := job.StartedAt
+	pausedAtBefore := job.PausedAt
+	pausedSecsBefore := job.PausedSeconds
 	job.Status = StatusRunning
 	if job.StartedAt == "" {
 		job.StartedAt = m.now()
+	} else if job.PausedAt != "" {
+		if pt, err := time.Parse("2006-01-02T15:04:05.999999999-07:00", job.PausedAt); err == nil {
+			if delta := m.Now().UTC().Sub(pt).Seconds(); delta > 0 {
+				job.PausedSeconds += delta
+			}
+		}
+		job.PausedAt = ""
 	}
 	if err := m.save(); err != nil {
 		// Don't start a run the next restart would see as still queued and
 		// start again; fail it in memory so the dashboard says why.
-		job.Status, job.StartedAt = StatusFailed, startedBefore
+		job.Status, job.StartedAt, job.PausedAt, job.PausedSeconds = StatusFailed, startedBefore, pausedAtBefore, pausedSecsBefore
 		job.FinishedAt = m.now()
 		job.Error = notSaved(err).Error()
 		m.mu.Unlock()
@@ -891,6 +913,7 @@ func (m *Manager) runJob(id string) {
 	if job.Status == StatusPausing {
 		// Paused while the categories file was being written.
 		job.Status = StatusPaused
+		job.PausedAt = m.now()
 		_ = m.save() // best effort; logged
 		m.mu.Unlock()
 		return
@@ -957,6 +980,7 @@ func (m *Manager) runJob(id string) {
 		job.FinishedAt = m.now()
 	case job.Status == StatusPausing:
 		job.Status = StatusPaused
+		job.PausedAt = m.now()
 		job.ReturnCode = nil
 		job.Error = ""
 		job.FinishedAt = ""

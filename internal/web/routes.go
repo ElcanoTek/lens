@@ -847,16 +847,17 @@ func nullable(s string) any {
 }
 
 type liveJob struct {
-	ID         string `json:"id"`
-	Name       any    `json:"name"`
-	Status     string `json:"status"`
-	Mode       string `json:"mode"`
-	InputFile  string `json:"input_file"`
-	CreatedAt  string `json:"created_at"`
-	StartedAt  any    `json:"started_at"`
-	FinishedAt any    `json:"finished_at"`
-	Error      any    `json:"error"`
-	ReturnCode *int   `json:"return_code"`
+	ID            string  `json:"id"`
+	Name          any     `json:"name"`
+	Status        string  `json:"status"`
+	Mode          string  `json:"mode"`
+	InputFile     string  `json:"input_file"`
+	CreatedAt     string  `json:"created_at"`
+	StartedAt     any     `json:"started_at"`
+	FinishedAt    any     `json:"finished_at"`
+	PausedSeconds float64 `json:"paused_seconds"`
+	Error         any     `json:"error"`
+	ReturnCode    *int    `json:"return_code"`
 }
 
 type liveResponse struct {
@@ -895,19 +896,20 @@ func (s *Server) handleLive(w http.ResponseWriter, r *http.Request) {
 		Job: &liveJob{
 			ID: job.ID, Name: nullable(job.Name), Status: job.Status, Mode: job.Mode, InputFile: job.InputFile,
 			CreatedAt: job.CreatedAt, StartedAt: nullable(job.StartedAt), FinishedAt: nullable(job.FinishedAt),
-			Error: nullable(job.Error), ReturnCode: job.ReturnCode,
+			PausedSeconds: job.PausedSeconds, Error: nullable(job.Error), ReturnCode: job.ReturnCode,
 		},
 		Progress: progress, LogLines: logLines, Message: "ok",
 	})
 }
 
 type queueItem struct {
-	ID         string         `json:"id"`
-	Name       any            `json:"name"`
-	Status     string         `json:"status"`
-	StartedAt  any            `json:"started_at"`
-	FinishedAt any            `json:"finished_at"`
-	Progress   map[string]any `json:"progress"`
+	ID            string         `json:"id"`
+	Name          any            `json:"name"`
+	Status        string         `json:"status"`
+	StartedAt     any            `json:"started_at"`
+	FinishedAt    any            `json:"finished_at"`
+	PausedSeconds float64        `json:"paused_seconds"`
+	Progress      map[string]any `json:"progress"`
 }
 
 func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
@@ -923,7 +925,8 @@ func (s *Server) handleQueue(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, queueItem{
 			ID: job.ID, Name: nullable(job.Name), Status: job.Status,
-			StartedAt: nullable(job.StartedAt), FinishedAt: nullable(job.FinishedAt), Progress: progress,
+			StartedAt: nullable(job.StartedAt), FinishedAt: nullable(job.FinishedAt),
+			PausedSeconds: job.PausedSeconds, Progress: progress,
 		})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"jobs": items, "message": "ok"})

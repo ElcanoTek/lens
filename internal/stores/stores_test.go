@@ -142,6 +142,9 @@ func TestIOSBatchPrefetchUsesOneRequest(t *testing.T) {
 	if a3.Success || a3.Error != "App not found in App Store" {
 		t.Fatalf("missing app result: %+v", a3)
 	}
+	if st := c.Stats(); st.RequestCount != 1 || st.SuccessCount != 1 || st.ErrorCount != 0 || st.SuccessRate != 100 {
+		t.Fatalf("batch stats = %+v, want 1 request / 1 success / 100%%", st)
+	}
 }
 
 func TestIOSHTTPErrorAndBadJSON(t *testing.T) {

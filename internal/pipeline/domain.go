@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"unicode/utf8"
 
@@ -79,7 +80,7 @@ func (p *DomainProcessor) ProcessDomain(ctx context.Context, domain string) {
 	err := func() error {
 		domainLog.Debug("Processing " + domain)
 		if p.Cache != nil {
-			if entry, ok := p.Cache.Get(ctx, cache.TypeWebsite, domain); ok {
+			if entry, ok := p.Cache.Get(ctx, cache.TypeWebsite, domain); ok && p.cacheEntryUsable(entry) {
 				return p.processFromCache(ctx, domain, entry, start)
 			}
 		}
@@ -304,15 +305,20 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	pt := seconds(elapsed)
 	_ = p.Progress.Mark(domain, progress.StatusSuccess, rec, "", &pt, "")
 	if p.Cache != nil && scrape.CacheStatus != "hit" {
+		var researchQuestions []string
+		if mode == "research" && p.Categories != nil {
+			researchQuestions = p.Categories.ResearchQuestions()
+		}
 		_ = p.Cache.Put(ctx, cache.Entry{
-			ContentType:   cache.TypeWebsite,
-			Identifier:    domain,
-			LLMModel:      p.Config.LLMModel,
-			ScrapeMode:    mode,
-			BotProtection: rec.String("Bot_Protection"),
-			Title:         scrape.Title,
-			Content:       scrape.Content,
-			ContentLength: scrape.ContentLength,
+			ContentType:       cache.TypeWebsite,
+			Identifier:        domain,
+			LLMModel:          p.Config.LLMModel,
+			ScrapeMode:        mode,
+			BotProtection:     rec.String("Bot_Protection"),
+			Title:             scrape.Title,
+			Content:           scrape.Content,
+			ContentLength:     scrape.ContentLength,
+			ResearchQuestions: researchQuestions,
 			Classification: cache.Classification{
 				Quality:          cls.Quality,
 				Justification:    cls.Justification,
@@ -330,6 +336,17 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	}
 	domainLog.Debug(fmt.Sprintf("✅ %s → %s", domain, cls.Quality))
 	return nil
+}
+
+// cacheEntryUsable checks whether a cached website entry can satisfy the
+// current run. Research-mode entries are tailored to the custom-category
+// questions passed as evidence needs, so a research entry is bypassed when
+// the current run asks different custom questions.
+func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
+	if entry.ScrapeMode != "research" || p.Categories == nil {
+		return true
+	}
+	return slices.Equal(entry.ResearchQuestions, p.Categories.ResearchQuestions())
 }
 
 func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, entry *cache.Entry, start time.Time) error {

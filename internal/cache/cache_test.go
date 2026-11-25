@@ -66,12 +66,35 @@ func TestStorePutGetAndExpiry(t *testing.T) {
 		t.Fatal("expected HasFresh=true")
 	}
 
-	// Advance clock past TTL: entry expires.
+	// Advance clock past TTL: entry expires and is evicted from SQLite.
 	st.now = func() time.Time { return now.Add(25 * time.Hour) }
 	if _, ok := st.Get(ctx, TypeIOS, "389801252"); ok {
 		t.Fatal("expected cache miss after TTL expiry")
 	}
 	if st.HasFresh(ctx, TypeIOS, "389801252") {
 		t.Fatal("expected HasFresh=false after TTL expiry")
+	}
+	var remaining int
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM result_cache`).Scan(&remaining); err != nil {
+		t.Fatal(err)
+	}
+	if remaining != 0 {
+		t.Fatalf("expired row was not evicted: count=%d", remaining)
+	}
+
+	// Website normalization lowercases scheme/host but preserves path/query case.
+	st.now = func() time.Time { return now }
+	if err := st.Put(ctx, Entry{
+		ContentType: TypeWebsite,
+		Identifier:  "HTTPS://Example.COM/News?Sort=Top",
+		Title:       "Upper",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := st.Get(ctx, TypeWebsite, "https://example.com/News?Sort=Top"); !ok || got.Title != "Upper" {
+		t.Fatalf("case-insensitive host lookup failed: ok=%v got=%+v", ok, got)
+	}
+	if _, ok := st.Get(ctx, TypeWebsite, "https://example.com/news?Sort=Top"); ok {
+		t.Fatal("distinct case-sensitive path collided in cache")
 	}
 }

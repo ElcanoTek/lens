@@ -486,7 +486,7 @@ applySegmentWidths(document);
   // sync with web_service.py.
   const DEEP_RETRY_SECONDS_PER_ITEM = 15;
 
-  function estimateEta(progress, startedAt, status) {
+  function estimateEta(progress, startedAt, status, pausedSeconds = 0) {
     const normalizedStatus = String(status || "").toLowerCase();
     if (["completed", "failed", "cancelled", "archived"].includes(normalizedStatus)) {
       return T("Done");
@@ -515,7 +515,7 @@ applySegmentWidths(document);
       return T("Estimating…");
     }
 
-    const elapsed = (Date.now() - started.getTime()) / 1000;
+    const elapsed = (Date.now() - started.getTime()) / 1000 - Number(pausedSeconds || 0);
     if (elapsed <= 5) {
       return T("Estimating…");
     }
@@ -590,11 +590,18 @@ applySegmentWidths(document);
 
     const eta = jobRow.querySelector(".queue-progress-eta");
     if (eta) {
-      eta.textContent = estimateEta(progress, job.started_at, job.status);
+      eta.textContent = estimateEta(progress, job.started_at, job.status, job.paused_seconds);
     }
 
+    const prevStatus = String(jobRow.dataset.status || "").toLowerCase();
+    const nextStatus = String(job.status || "").toLowerCase();
     setBadge(jobRow.querySelector("[data-status-badge], .badge"), job.status);
-    jobRow.dataset.status = String(job.status || "").toLowerCase();
+    jobRow.dataset.status = nextStatus;
+    // Reload to refresh server-rendered action controls (Resume / Pause / Move to front / Delete)
+    // once a transitional state settles or a job changes phase, unless the live modal is open.
+    if (prevStatus && prevStatus !== nextStatus && (!monitorModal || !monitorModal.open)) {
+      window.location.reload();
+    }
   }
 
   function updateLiveProgress(progress, hasJob) {
@@ -710,7 +717,7 @@ applySegmentWidths(document);
       } else if (started && !Number.isNaN(started.getTime())) {
         elapsed = formatElapsed((Date.now() - started.getTime()) / 1000);
       }
-      const eta = estimateEta(payload.progress || {}, payload.job.started_at, payload.job.status);
+      const eta = estimateEta(payload.progress || {}, payload.job.started_at, payload.job.status, payload.job.paused_seconds);
       monitorJobTiming.textContent = T("Elapsed {0} · ETA {1}",elapsed,eta);
     }
 
