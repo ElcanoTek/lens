@@ -308,7 +308,7 @@
                   <time class="js-local-timestamp" {{ jattr "datetime" .CreatedAtISO }} {{ jattr "data-utc-timestamp" .CreatedAtISO }}>{{ .CreatedAtDisplay }}</time>
                   {{ else }}{{ .CreatedAtDisplay }}{{ end }}
                 </td>
-                <td data-label="{{tr "Status"}}"><span class="badge {{if eq .Status "running"}}badge-running{{else if eq .Status "cancelling"}}badge-warning{{else if eq .Status "completed"}}badge-success{{else if eq .Status "failed"}}badge-danger{{else if or (eq .Status "cancelled") (eq .Status "archived")}}badge-cancelled{{else}}badge-pending{{end}}" data-status-badge>{{tr .Status}}</span></td>
+                <td data-label="{{tr "Status"}}"><span class="badge {{if eq .Status "running"}}badge-running{{else if or (eq .Status "cancelling") (eq .Status "pausing") (eq .Status "paused")}}badge-warning{{else if eq .Status "completed"}}badge-success{{else if eq .Status "failed"}}badge-danger{{else if or (eq .Status "cancelled") (eq .Status "archived")}}badge-cancelled{{else}}badge-pending{{end}}" data-status-badge>{{tr .Status}}</span></td>
                 <td class="run-progress-cell" data-label="{{tr "Progress"}}">
                   <div class="queue-progress">
                     <div class="queue-progress-bar" title="{{tr "green: classified · amber: queued for retry · red: failed"}}">
@@ -348,6 +348,32 @@
                         <circle cx="12" cy="12" r="3"></circle>
                       </svg>
                     </button>
+                    {{ end }}
+                    {{ if .CanPrioritize }}
+                    <form method="post" action="/jobs/{{ .ID }}/prioritize">
+                      <button class="icon-action" type="submit" aria-label="{{tr "Move {0} to front of queue" .Title}}" title="{{tr "Run next (move to front of queue)"}}">
+                        <svg aria-hidden="true"><use href="{{ static_url "design-system/icons/core-icons.svg" }}#arrow-up"></use></svg>
+                      </button>
+                    </form>
+                    {{ end }}
+                    {{ if .CanPause }}
+                    <form method="post" action="/jobs/{{ .ID }}/pause">
+                      <button class="icon-action" type="submit" aria-label="{{tr "Pause {0}" .Title}}" title="{{tr "Pause (keeps progress)"}}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="6" y="4" width="4" height="16" rx="1"></rect>
+                          <rect x="14" y="4" width="4" height="16" rx="1"></rect>
+                        </svg>
+                      </button>
+                    </form>
+                    {{ end }}
+                    {{ if .CanResume }}
+                    <form method="post" action="/jobs/{{ .ID }}/resume">
+                      <button class="icon-action" type="submit" aria-label="{{tr "Resume {0}" .Title}}" title="{{tr "Resume"}}">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <polygon points="6 4 20 12 6 20 6 4"></polygon>
+                        </svg>
+                      </button>
+                    </form>
                     {{ end }}
                     {{ if .IsActive }}
                     <form method="post" action="/jobs/{{ .ID }}/cancel" class="js-confirm-cancel" data-job-id="{{ .Title }}">

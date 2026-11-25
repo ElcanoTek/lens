@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"time"
 
 	"github.com/ElcanoTek/lens/internal/categories"
 )
@@ -38,11 +39,13 @@ type ScrapeResult struct {
 	// measures Content itself.
 	ContentLength int
 	// StatusCode is the HTTP status; 0 when not reported.
-	StatusCode  int
-	Mode        string // "direct" or "deep"; "" means the scraper's Mode()
-	ScrapedAt   string // Python isoformat; "" means now
-	RetriesUsed int
-	CacheStatus string
+	StatusCode    int
+	Mode          string // "direct" or "deep"; "" means the scraper's Mode()
+	ScrapedAt     string // Python isoformat; "" means now
+	RetriesUsed   int
+	CacheStatus   string
+	BotProtection string    // preserved on cache hits
+	CachedAt      time.Time // original fetch time preserved on model-change rewrites
 }
 
 // Scraper fetches websites through a bounded session pool.
@@ -86,6 +89,8 @@ type Classification struct {
 	AudienceSize     string
 	// Source is the classifier backend ("openrouter").
 	Source string
+	// Model is the actual model ID that produced the classification (may be the fallback model).
+	Model string
 	// CTV-only fields.
 	TargetAudience     string
 	ContentType        string

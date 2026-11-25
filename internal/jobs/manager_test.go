@@ -358,3 +358,99 @@ func TestSafeFilenameKeepsDotRuns(t *testing.T) {
 		}
 	}
 }
+
+func TestPauseResumeAndPrioritize(t *testing.T) {
+	// First job traps TERM and exits 143 so pausing frees the worker slot;
+	// on its second run (after resume) it sees the marker and completes.
+	home, exe := fakeRunner(t, `
+job_out=""
+prev=""
+for arg in "$@"; do
+	if [ "$prev" = "--output-csv" ]; then job_out="$arg"; break; fi
+	prev="$arg"
+done
+marker="${job_out}.paused"
+if [ ! -f "$marker" ] && [ -f "$(dirname "$0")/hold_first" ]; then
+	trap 'touch "$marker"; exit 143' TERM
+	touch "$(dirname "$0")/first_started"
+	sleep 30 &
+	wait
+fi
+exit 0
+`)
+	if err := os.WriteFile(filepath.Join(home, "hold_first"), []byte("1"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m := NewManager(home)
+	m.Executable = exe
+	if err := m.Dirs.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go m.Run(ctx)
+
+	first, err := m.Create(NewJob{InputFile: "a.csv", Mode: "auto", Name: "big"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, m, first.ID, StatusRunning)
+	deadline := time.Now().Add(5 * time.Second)
+	for !exists(filepath.Join(home, "first_started")) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	second, err := m.Create(NewJob{InputFile: "b.csv", Mode: "auto", Name: "medium"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	third, err := m.Create(NewJob{InputFile: "c.csv", Mode: "auto", Name: "urgent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.QueuePosition(second.ID) != 1 || m.QueuePosition(third.ID) != 2 {
+		t.Fatalf("initial queue positions: second=%d third=%d", m.QueuePosition(second.ID), m.QueuePosition(third.ID))
+	}
+	// Move third ahead of second.
+	if err := m.Prioritize(third.ID, 1); err != nil {
+		t.Fatalf("Prioritize: %v", err)
+	}
+	if m.QueuePosition(third.ID) != 1 || m.QueuePosition(second.ID) != 2 {
+		t.Fatalf("after prioritize: third=%d second=%d", m.QueuePosition(third.ID), m.QueuePosition(second.ID))
+	}
+	// Pause queued second job so only third runs when first pauses.
+	if err := m.Pause(second.ID); err != nil {
+		t.Fatalf("Pause queued: %v", err)
+	}
+	if j, _ := m.Get(second.ID); j.Status != StatusPaused || m.QueuePosition(second.ID) != 0 {
+		t.Fatalf("paused queued = %+v, pos=%d", j, m.QueuePosition(second.ID))
+	}
+	// Remove hold_first so subsequent jobs complete immediately.
+	_ = os.Remove(filepath.Join(home, "hold_first"))
+	// Pause running first job; third should immediately take the slot and complete.
+	if err := m.Pause(first.ID); err != nil {
+		t.Fatalf("Pause running: %v", err)
+	}
+	waitFor(t, m, first.ID, StatusPaused)
+	waitFor(t, m, third.ID, StatusCompleted)
+	if j, _ := m.Get(second.ID); j.Status != StatusPaused {
+		t.Fatalf("second should still be paused, got %q", j.Status)
+	}
+
+	// Verify paused state and queue order survive Load().
+	m2 := NewManager(home)
+	m2.Load()
+	if j, ok := m2.Get(first.ID); !ok || j.Status != StatusPaused {
+		t.Fatalf("reloaded first = %+v", j)
+	}
+
+	// Resume both paused jobs; both complete.
+	if err := m.Resume(first.ID, true); err != nil {
+		t.Fatalf("Resume first: %v", err)
+	}
+	if err := m.Resume(second.ID, false); err != nil {
+		t.Fatalf("Resume second: %v", err)
+	}
+	waitFor(t, m, first.ID, StatusCompleted)
+	waitFor(t, m, second.ID, StatusCompleted)
+}

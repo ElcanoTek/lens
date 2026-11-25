@@ -63,6 +63,10 @@ type runView struct {
 	InputFile        string
 	Status           string
 	IsActive         bool
+	CanPause         bool
+	CanResume        bool
+	CanPrioritize    bool
+	QueuePosition    int
 	IsArchived       bool
 	Progress         progressView
 	OutputFile       string
@@ -200,6 +204,10 @@ func etaText(job *jobs.Job, progress map[string]any, now time.Time, languages ..
 		return i18n.T(language, "Done")
 	case job.Status == jobs.StatusQueued:
 		return i18n.T(language, "Queued")
+	case job.Status == jobs.StatusPaused:
+		return i18n.T(language, "Paused")
+	case job.Status == jobs.StatusPausing:
+		return i18n.T(language, "Pausing...")
 	}
 	total := countOf(progress, "total_domains")
 	processed := countOf(progress, "processed")
@@ -213,7 +221,7 @@ func etaText(job *jobs.Job, progress map[string]any, now time.Time, languages ..
 	if !ok {
 		return i18n.T(language, "Estimating...")
 	}
-	elapsed := now.Sub(started).Seconds()
+	elapsed := now.Sub(started).Seconds() - job.PausedSeconds
 	if elapsed <= 5 {
 		return i18n.T(language, "Estimating...")
 	}
@@ -300,7 +308,9 @@ func progressViewFor(dirs jobs.Dirs, job *jobs.Job, now time.Time, languages ...
 		text = i18n.T(language, "{0} processed", processed)
 	case job.Status == jobs.StatusQueued:
 		text = i18n.T(language, "Waiting")
-	case job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling:
+	case job.Status == jobs.StatusPaused:
+		text = i18n.T(language, "Paused")
+	case job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling || job.Status == jobs.StatusPausing:
 		text = i18n.T(language, "Starting")
 	default:
 		text = "—"
@@ -462,7 +472,9 @@ func buildRuns(dirs jobs.Dirs, list []jobs.Job, now time.Time, languages ...stri
 		runs = append(runs, runView{
 			ID: job.ID, Title: firstNonEmpty(job.Name, job.ID), HasName: job.Name != "",
 			InputFile: job.InputFile, Status: job.Status,
-			IsActive:   job.Status == jobs.StatusQueued || job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling,
+			IsActive:   job.Status == jobs.StatusQueued || job.Status == jobs.StatusRunning || job.Status == jobs.StatusCancelling || job.Status == jobs.StatusPausing || job.Status == jobs.StatusPaused,
+			CanPause:   job.Status == jobs.StatusRunning || job.Status == jobs.StatusQueued,
+			CanResume:  job.Status == jobs.StatusPaused,
 			Progress:   progressViewFor(dirs, job, now, language),
 			OutputFile: firstNonEmpty(job.OutputFile, g.output), ProgressFile: firstNonEmpty(job.ProgressFile, g.progress),
 			LogFile: firstNonEmpty(job.LogFile, g.log), CategoryFile: g.category,
@@ -525,9 +537,20 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		}
 		return i18n.Message(language, queryLast(r, key))
 	}
+	runs := buildRuns(s.dirs, s.manager.List(), now, language)
+	for i := range runs {
+		if runs[i].Status == jobs.StatusQueued {
+			pos := s.manager.QueuePosition(runs[i].ID)
+			runs[i].QueuePosition = pos
+			runs[i].CanPrioritize = pos > 1
+			if pos > 0 {
+				runs[i].Progress.ETA = i18n.T(language, "Queued #{0}", pos)
+			}
+		}
+	}
 	page := indexPage{
 		Nonce:                             Nonce(r),
-		Runs:                              buildRuns(s.dirs, s.manager.List(), now, language),
+		Runs:                              runs,
 		InputFiles:                        fileViews(s.dirs.ListInputFiles(now), language),
 		Catalog:                           cat,
 		RecommendedModel:                  catalog.RecommendedModel,

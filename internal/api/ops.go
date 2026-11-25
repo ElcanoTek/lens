@@ -460,9 +460,95 @@ func (a *API) CancelJob(r *http.Request, token *apitoken.Token, jobID any) (Body
 		var notAllowed *jobs.NotAllowedError
 		if errors.As(err, &notAllowed) {
 			return nil, apiErr(http.StatusConflict, "not_cancellable",
-				"Job %s is %s; only queued or running jobs can be cancelled.", job.ID, job.Status)
+				"Job %s is %s; only queued, running, or paused jobs can be cancelled.", job.ID, job.Status)
 		}
 		if errors.Is(err, jobs.ErrUnknownJob) { // deleted in the meantime
+			return nil, apiErr(http.StatusNotFound, "job_not_found", "No job %s on this Lens. Use list_jobs to find it.", job.ID)
+		}
+		return nil, err
+	}
+	if current, ok := a.manager.Get(job.ID); ok {
+		job = &current
+	}
+	return a.jobView(job, r, true), nil
+}
+
+// PauseJob is pause_job: pause a queued or running job while keeping its progress.
+func (a *API) PauseJob(r *http.Request, token *apitoken.Token, jobID any) (Body, error) {
+	if err := RequireScope(token, apitoken.ScopeRun); err != nil {
+		return nil, err
+	}
+	job, err := a.getJobOr404(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.manager.Pause(job.ID); err != nil {
+		var notAllowed *jobs.NotAllowedError
+		if errors.As(err, &notAllowed) {
+			return nil, apiErr(http.StatusConflict, "not_pausable",
+				"Job %s is %s; only queued or running jobs can be paused.", job.ID, job.Status)
+		}
+		if errors.Is(err, jobs.ErrUnknownJob) {
+			return nil, apiErr(http.StatusNotFound, "job_not_found", "No job %s on this Lens. Use list_jobs to find it.", job.ID)
+		}
+		return nil, err
+	}
+	if current, ok := a.manager.Get(job.ID); ok {
+		job = &current
+	}
+	return a.jobView(job, r, true), nil
+}
+
+// ResumeJob is resume_job: re-queue a paused job from its saved progress.
+func (a *API) ResumeJob(r *http.Request, token *apitoken.Token, jobID, front any) (Body, error) {
+	if err := RequireScope(token, apitoken.ScopeRun); err != nil {
+		return nil, err
+	}
+	toFront, err := optionalBool(front, "front", false)
+	if err != nil {
+		return nil, err
+	}
+	job, err := a.getJobOr404(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.manager.Resume(job.ID, toFront); err != nil {
+		var notAllowed *jobs.NotAllowedError
+		if errors.As(err, &notAllowed) {
+			return nil, apiErr(http.StatusConflict, "not_resumable",
+				"Job %s is %s; only paused jobs can be resumed.", job.ID, job.Status)
+		}
+		if errors.Is(err, jobs.ErrUnknownJob) {
+			return nil, apiErr(http.StatusNotFound, "job_not_found", "No job %s on this Lens. Use list_jobs to find it.", job.ID)
+		}
+		return nil, err
+	}
+	if current, ok := a.manager.Get(job.ID); ok {
+		job = &current
+	}
+	return a.jobView(job, r, true), nil
+}
+
+// PrioritizeJob is prioritize_job: move a queued job to a 1-based queue position (default 1 = front).
+func (a *API) PrioritizeJob(r *http.Request, token *apitoken.Token, jobID, position any) (Body, error) {
+	if err := RequireScope(token, apitoken.ScopeRun); err != nil {
+		return nil, err
+	}
+	pos, err := boundedInt(position, "position", 1, 1, 10_000)
+	if err != nil {
+		return nil, err
+	}
+	job, err := a.getJobOr404(jobID)
+	if err != nil {
+		return nil, err
+	}
+	if err := a.manager.Prioritize(job.ID, pos); err != nil {
+		var notAllowed *jobs.NotAllowedError
+		if errors.As(err, &notAllowed) {
+			return nil, apiErr(http.StatusConflict, "not_queued",
+				"Job %s is %s; only queued jobs can be reprioritized.", job.ID, job.Status)
+		}
+		if errors.Is(err, jobs.ErrUnknownJob) {
 			return nil, apiErr(http.StatusNotFound, "job_not_found", "No job %s on this Lens. Use list_jobs to find it.", job.ID)
 		}
 		return nil, err

@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ElcanoTek/lens/internal/cache"
 	"github.com/ElcanoTek/lens/internal/cost"
 	"github.com/ElcanoTek/lens/internal/item"
 	"github.com/ElcanoTek/lens/internal/logx"
@@ -30,6 +31,10 @@ type AppProcessor struct {
 	Reporter   *report.Reporter
 	Writer     *ResultsWriter
 	Categories CategoryClassifier
+	Cache      *cache.Store
+	LLMModel   string
+	LLMTemp    float64
+	LLMMaxTok  int
 }
 
 // ProcessApp routes an app item to its platform. Non-app items are a
@@ -74,6 +79,15 @@ func (p *AppProcessor) process(ctx context.Context, id, platform string) {
 
 	err := func() error {
 		appLog.Debug(fmt.Sprintf("Processing %s app: %s", labels[0], id))
+		if p.Cache != nil {
+			cacheType := cache.TypeIOS
+			if platform == "android" {
+				cacheType = cache.TypeAndroid
+			}
+			if entry, ok := p.Cache.Get(ctx, cacheType, id); ok {
+				return p.processFromCache(ctx, id, platform, labels[0], entry, start)
+			}
+		}
 		if client == nil {
 			return errors.New(labels[1])
 		}
@@ -112,7 +126,7 @@ func (p *AppProcessor) process(ctx context.Context, id, platform string) {
 			return errors.New("Classification failed: " + orDefault(cls.Error, "Unknown error"))
 		}
 		elapsed := time.Since(start)
-		if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform); err != nil {
+		if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, true, time.Time{}); err != nil {
 			return err
 		}
 		p.Reporter.Log(report.Attempt{
@@ -150,7 +164,7 @@ func appScrapeMode(platform string) string {
 	return platform + "_scrape"
 }
 
-func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMetadata, cls Classification, elapsed time.Duration, platform string) error {
+func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMetadata, cls Classification, elapsed time.Duration, platform string, writeCache bool, cachedAt time.Time) error {
 	appName := orDefault(meta.AppName, id)
 	downloads := ""
 	if platform == "android" {
@@ -193,7 +207,123 @@ func (p *AppProcessor) recordSuccess(ctx context.Context, id string, meta AppMet
 	}
 	pt := seconds(elapsed)
 	_ = p.Progress.Mark(id, progress.StatusSuccess, rec, "", &pt, "")
+	if p.Cache != nil && writeCache {
+		cacheType := cache.TypeIOS
+		if platform == "android" {
+			cacheType = cache.TypeAndroid
+		}
+		modelKey := p.LLMModel
+		if cls.Model != "" {
+			modelKey = llmCacheKey(cls.Model, p.LLMTemp, p.LLMMaxTok)
+		}
+		_ = p.Cache.Put(ctx, cache.Entry{
+			ContentType:   cacheType,
+			Identifier:    id,
+			LLMModel:      modelKey,
+			ScrapeMode:    appScrapeMode(platform),
+			ContentLength: utf8.RuneCountInString(meta.ContentForLLM),
+			AppMeta: cache.AppMeta{
+				AppName:       meta.AppName,
+				Developer:     meta.Developer,
+				PrimaryGenre:  meta.PrimaryGenre,
+				Category:      meta.Category,
+				Description:   meta.Description,
+				Rating:        meta.Rating,
+				RatingCount:   meta.RatingCount,
+				Downloads:     meta.Downloads,
+				ContentForLLM: meta.ContentForLLM,
+			},
+			Classification: cache.Classification{
+				Quality:          cls.Quality,
+				Justification:    cls.Justification,
+				Tier1:            cls.Tier1,
+				Tier2:            cls.Tier2,
+				Tier3:            cls.Tier3,
+				Description:      cls.Description,
+				Language:         orDefault(cls.Language, "Unknown"),
+				PoliticalLeaning: orDefault(cls.PoliticalLeaning, "Non-Political"),
+				AudienceSize:     orDefault(cls.AudienceSize, "Unknown"),
+				Source:           orDefault(cls.Source, "openrouter"),
+			},
+			ScrapedAt: orDefault(meta.FetchedAt, isoNow()),
+			UpdatedAt: cachedAt,
+		})
+	}
 	appLog.Debug(fmt.Sprintf("Processed %s app: %s → %s", strings.ToUpper(platform), appName, cls.Quality))
+	return nil
+}
+
+func (p *AppProcessor) processFromCache(ctx context.Context, id, platform, label string, entry *cache.Entry, start time.Time) error {
+	meta := AppMetadata{
+		Success:       true,
+		AppName:       entry.AppMeta.AppName,
+		Developer:     entry.AppMeta.Developer,
+		PrimaryGenre:  entry.AppMeta.PrimaryGenre,
+		Category:      entry.AppMeta.Category,
+		Description:   entry.AppMeta.Description,
+		Rating:        entry.AppMeta.Rating,
+		RatingCount:   entry.AppMeta.RatingCount,
+		Downloads:     entry.AppMeta.Downloads,
+		ContentForLLM: entry.AppMeta.ContentForLLM,
+		FetchedAt:     orDefault(entry.ScrapedAt, isoNow()),
+	}
+	var cls Classification
+	if entry.LLMModel == p.LLMModel && entry.Classification.Quality != "" {
+		cls = Classification{
+			Success:          true,
+			Quality:          entry.Classification.Quality,
+			Justification:    entry.Classification.Justification,
+			Tier1:            entry.Classification.Tier1,
+			Tier2:            entry.Classification.Tier2,
+			Tier3:            entry.Classification.Tier3,
+			Description:      entry.Classification.Description,
+			Language:         entry.Classification.Language,
+			PoliticalLeaning: entry.Classification.PoliticalLeaning,
+			AudienceSize:     entry.Classification.AudienceSize,
+			Source:           orDefault(entry.Classification.Source, "openrouter"),
+		}
+	} else {
+		in := AppInput{
+			AppID:         id,
+			AppName:       meta.AppName,
+			Developer:     meta.Developer,
+			StoreCategory: meta.PrimaryGenre,
+			Description:   meta.Description,
+			ContentForLLM: meta.ContentForLLM,
+			Platform:      platform,
+		}
+		if platform == "android" {
+			in.StoreCategory = meta.Category
+			in.Downloads = meta.Downloads
+		}
+		if meta.Rating != nil {
+			in.Rating = *meta.Rating
+		}
+		if meta.RatingCount != nil {
+			in.RatingCount = *meta.RatingCount
+		}
+		var err error
+		cls, err = p.Classifier.ClassifyApp(ctx, in)
+		if err != nil {
+			return err
+		}
+		if !cls.Success {
+			return errors.New("Classification failed: " + orDefault(cls.Error, "Unknown error"))
+		}
+	}
+	elapsed := time.Since(start)
+	writeCache := entry.LLMModel != p.LLMModel || entry.Classification.Quality == ""
+	if err := p.recordSuccess(ctx, id, meta, cls, elapsed, platform, writeCache, entry.UpdatedAt); err != nil {
+		return err
+	}
+	p.Reporter.Log(report.Attempt{
+		Domain:     label + ":" + id,
+		OK:         true,
+		StatusCode: 200,
+		Elapsed:    elapsed,
+		SizeKB:     sizeKB(utf8.RuneCountInString(meta.ContentForLLM)),
+		Cache:      "hit",
+	})
 	return nil
 }
 

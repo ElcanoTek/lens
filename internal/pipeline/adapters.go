@@ -76,13 +76,15 @@ func (a llmAdapter) ClassifySite(ctx context.Context, in SiteInput) (Classificat
 	if in.ContentSource == "research" {
 		source = openrouter.SourceResearch
 	}
-	return fromClassification(a.c.ClassifySite(ctx, openrouter.SiteInput{
+	res := fromClassification(a.c.ClassifySite(ctx, openrouter.SiteInput{
 		Domain:          in.Domain,
 		Content:         in.Content,
 		Title:           in.Title,
 		MetaDescription: in.MetaDescription,
 		Source:          source,
-	})), nil
+	}))
+	res.Model = a.c.Model()
+	return res, nil
 }
 
 func (a llmAdapter) ResearchWebsite(ctx context.Context, domain string, opts ResearchOptions) (Research, error) {
@@ -95,7 +97,7 @@ func (a llmAdapter) ResearchWebsite(ctx context.Context, domain string, opts Res
 }
 
 func (a llmAdapter) ClassifyApp(ctx context.Context, in AppInput) (Classification, error) {
-	return fromClassification(a.c.ClassifyApp(ctx, openrouter.AppInput{
+	res := fromClassification(a.c.ClassifyApp(ctx, openrouter.AppInput{
 		AppID:         in.AppID,
 		AppName:       in.AppName,
 		Developer:     in.Developer,
@@ -106,7 +108,9 @@ func (a llmAdapter) ClassifyApp(ctx context.Context, in AppInput) (Classificatio
 		Downloads:     in.Downloads,
 		ContentForLLM: in.ContentForLLM,
 		Platform:      in.Platform,
-	})), nil
+	}))
+	res.Model = a.c.Model()
+	return res, nil
 }
 
 func (a llmAdapter) ResearchCTVApp(ctx context.Context, in CTVResearchInput) (Research, error) {

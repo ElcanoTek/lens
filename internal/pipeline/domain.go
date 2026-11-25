@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 	"unicode/utf8"
 
+	"github.com/ElcanoTek/lens/internal/cache"
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/cost"
 	"github.com/ElcanoTek/lens/internal/logx"
@@ -44,6 +46,12 @@ type DomainProcessor struct {
 	Writer     *ResultsWriter
 	// Categories is the optional custom-category client.
 	Categories CategoryClassifier
+	// Cache is the optional cross-job SQLite cache.
+	Cache *cache.Store
+	// AutoMode is true when running the auto ladder (direct -> deep -> research).
+	AutoMode bool
+	// RejectRedirects is true when cross-host redirects are rejected on this pass.
+	RejectRedirects bool
 	// DeferFailures is set on auto mode's earlier passes: failures will be
 	// retried by a later pass, so they are tracked as retry_pending (not yet
 	// processed) rather than terminal errors.
@@ -75,6 +83,11 @@ func (p *DomainProcessor) ProcessDomain(ctx context.Context, domain string) {
 
 	err := func() error {
 		domainLog.Debug("Processing " + domain)
+		if p.Cache != nil {
+			if entry, ok := p.Cache.Get(ctx, cache.TypeWebsite, domain); ok && p.cacheEntryUsable(entry) {
+				return p.processFromCache(ctx, domain, entry, start)
+			}
+		}
 		session, err := p.Scraper.AcquireSession(ctx)
 		if err != nil {
 			return err
@@ -257,6 +270,10 @@ func websiteRecord(domain string) *Record {
 	return rec
 }
 
+func llmCacheKey(model string, temp float64, maxTokens int) string {
+	return fmt.Sprintf("%s|t=%.4g|m=%d", model, temp, maxTokens)
+}
+
 func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls Classification, scrape ScrapeResult, mode, classifierMode string, elapsed time.Duration) error {
 	// An earlier pass's block (e.g. direct got a 403 before the deep crawler
 	// got through) is the evidence for the bot-protection level; read it
@@ -272,7 +289,11 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	rec.Set("Language", orDefault(cls.Language, "Unknown"))
 	rec.Set("Political_Leaning", orDefault(cls.PoliticalLeaning, "Non-Political"))
 	rec.Set("Audience_Size", orDefault(cls.AudienceSize, "Unknown"))
-	rec.Set("Bot_Protection", DeriveBotProtection(mode, false, "", priorError, priorMode))
+	botProtection := DeriveBotProtection(mode, false, "", priorError, priorMode)
+	if scrape.BotProtection != "" {
+		botProtection = scrape.BotProtection
+	}
+	rec.Set("Bot_Protection", botProtection)
 	rec.Set("Content_Length", scrape.ContentLength)
 	rec.Set("Processing_Time", pyRound2(seconds(elapsed)))
 	rec.Set("Scrape_Mode", mode)
@@ -291,7 +312,144 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	}
 	pt := seconds(elapsed)
 	_ = p.Progress.Mark(domain, progress.StatusSuccess, rec, "", &pt, "")
+	if p.Cache != nil && scrape.CacheStatus != "hit" {
+		var researchQuestions []string
+		researchModel := ""
+		if mode == "research" {
+			researchModel = llmCacheKey(p.Config.ResearchModel, p.Config.ResearchTemperature, p.Config.ResearchMaxTokens)
+			if p.Categories != nil {
+				researchQuestions = p.Categories.ResearchQuestions()
+			}
+		}
+		_ = p.Cache.Put(ctx, cache.Entry{
+			ContentType:       cache.TypeWebsite,
+			Identifier:        domain,
+			LLMModel:          llmCacheKey(orDefault(cls.Model, p.Config.LLMModel), p.Config.LLMTemperature, p.Config.LLMMaxTokens),
+			ScrapeMode:        mode,
+			RejectRedirects:   p.RejectRedirects,
+			BotProtection:     rec.String("Bot_Protection"),
+			Title:             scrape.Title,
+			MetaDescription:   scrape.MetaDescription,
+			Content:           scrape.Content,
+			ContentLength:     scrape.ContentLength,
+			ResearchModel:     researchModel,
+			ResearchQuestions: researchQuestions,
+			Classification: cache.Classification{
+				Quality:          cls.Quality,
+				Justification:    cls.Justification,
+				Tier1:            cls.Tier1,
+				Tier2:            cls.Tier2,
+				Tier3:            cls.Tier3,
+				Description:      cls.Description,
+				Language:         orDefault(cls.Language, "Unknown"),
+				PoliticalLeaning: orDefault(cls.PoliticalLeaning, "Non-Political"),
+				AudienceSize:     orDefault(cls.AudienceSize, "Unknown"),
+				Source:           classifierMode,
+			},
+			ScrapedAt: orDefault(scrape.ScrapedAt, isoNow()),
+			UpdatedAt: scrape.CachedAt,
+		})
+	}
 	domainLog.Debug(fmt.Sprintf("✅ %s → %s", domain, cls.Quality))
+	return nil
+}
+
+// cacheEntryUsable checks whether a cached website entry can satisfy the
+// current run:
+//   - Non-auto runs (--scrape-mode direct or deep) only reuse entries produced
+//     by that exact backend.
+//   - Research-mode entries are only reused in auto mode when research fallback
+//     is enabled, the research model matches, and any custom-category questions
+//     match.
+func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
+	if !p.AutoMode {
+		if p.Scraper == nil || entry.ScrapeMode != p.Scraper.Mode() {
+			return false
+		}
+		// Never serve a redirect-following entry to a run that rejects redirects.
+		if p.RejectRedirects && !entry.RejectRedirects {
+			return false
+		}
+		return true
+	}
+	if entry.ScrapeMode != "research" {
+		if entry.ScrapeMode == "direct" && p.RejectRedirects && !entry.RejectRedirects {
+			return false
+		}
+		return true
+	}
+	wantResearch := llmCacheKey(p.Config.ResearchModel, p.Config.ResearchTemperature, p.Config.ResearchMaxTokens)
+	if !p.Config.ResearchFallbackEnabled || entry.ResearchModel != wantResearch {
+		return false
+	}
+	if p.Categories == nil {
+		return len(entry.ResearchQuestions) == 0
+	}
+	return slices.Equal(entry.ResearchQuestions, p.Categories.ResearchQuestions())
+}
+
+func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, entry *cache.Entry, start time.Time) error {
+	sr := ScrapeResult{
+		Success:         true,
+		Title:           entry.Title,
+		MetaDescription: entry.MetaDescription,
+		Content:         entry.Content,
+		ContentLength:   entry.ContentLength,
+		Mode:            orDefault(entry.ScrapeMode, "direct"),
+		ScrapedAt:       orDefault(entry.ScrapedAt, isoNow()),
+		BotProtection:   entry.BotProtection,
+		CacheStatus:     "hit",
+		CachedAt:        entry.UpdatedAt,
+	}
+	var cls Classification
+	wantKey := llmCacheKey(p.Config.LLMModel, p.Config.LLMTemperature, p.Config.LLMMaxTokens)
+	if entry.LLMModel == wantKey && entry.Classification.Quality != "" {
+		cls = Classification{
+			Success:          true,
+			Quality:          entry.Classification.Quality,
+			Justification:    entry.Classification.Justification,
+			Tier1:            entry.Classification.Tier1,
+			Tier2:            entry.Classification.Tier2,
+			Tier3:            entry.Classification.Tier3,
+			Description:      entry.Classification.Description,
+			Language:         entry.Classification.Language,
+			PoliticalLeaning: entry.Classification.PoliticalLeaning,
+			AudienceSize:     entry.Classification.AudienceSize,
+			Source:           orDefault(entry.Classification.Source, "openrouter"),
+		}
+	} else {
+		source := "scrape"
+		if sr.Mode == "research" {
+			source = "research"
+		}
+		var err error
+		cls, err = p.Classifier.ClassifySite(ctx, SiteInput{
+			Domain:          domain,
+			Content:         sr.Content,
+			Title:           sr.Title,
+			MetaDescription: sr.MetaDescription,
+			ContentSource:   source,
+		})
+		if err != nil {
+			return err
+		}
+		if !cls.Success {
+			return errors.New("Classification failed: " + orDefault(cls.Error, "Unknown error"))
+		}
+		// Refresh cache entry with the new model's classification.
+		sr.CacheStatus = ""
+	}
+	elapsed := time.Since(start)
+	if err := p.recordSuccess(ctx, domain, cls, sr, sr.Mode, orDefault(cls.Source, "openrouter"), elapsed); err != nil {
+		return err
+	}
+	p.Reporter.Log(report.Attempt{
+		Domain:  domain,
+		OK:      true,
+		Elapsed: elapsed,
+		SizeKB:  sizeKB(sr.ContentLength),
+		Cache:   "hit",
+	})
 	return nil
 }
 

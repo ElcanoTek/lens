@@ -62,7 +62,7 @@ func (a *API) etaSeconds(job *jobs.Job, progress map[string]any) any {
 	if total <= 0 || attempts <= 0 || !ok {
 		return nil
 	}
-	elapsed := a.now().Sub(started).Seconds()
+	elapsed := a.now().Sub(started).Seconds() - job.PausedSeconds
 	if elapsed <= 5 {
 		return nil
 	}
@@ -170,9 +170,11 @@ func (a *API) settings(job *jobs.Job) Body {
 
 func nextStep(job *jobs.Job, files []string) string {
 	switch job.Status {
-	case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusCancelling:
+	case jobs.StatusQueued, jobs.StatusRunning, jobs.StatusCancelling, jobs.StatusPausing:
 		return "The job is still in progress. Check again with get_job in a minute or two " +
 			"(eta_seconds is an estimate); do not create a duplicate job."
+	case jobs.StatusPaused:
+		return "The job is paused with progress preserved. Call resume_job to continue where it left off, or cancel_job to stop it."
 	case jobs.StatusCompleted:
 		for _, f := range files {
 			if f == "output" {

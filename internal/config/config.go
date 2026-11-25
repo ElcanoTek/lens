@@ -127,6 +127,10 @@ type Config struct {
 	CTVMaxRetries              int     `json:"ctv_max_retries"`
 	CTVRetryDelay              float64 `json:"ctv_retry_delay"`
 
+	CacheEnabled bool   `json:"cache_enabled"`
+	CacheDBPath  string `json:"cache_db_path"`
+	CacheTTLDays int    `json:"cache_ttl_days"`
+
 	// OpenRouterAPIKey comes from the environment only, never config.json.
 	OpenRouterAPIKey string `json:"-"`
 	// Warnings collects what loading changed or ignored (printed by callers).
@@ -189,16 +193,16 @@ func Default() *Config {
 		RejectRedirects: true,
 
 		IOSRequestTimeout: 30,
-		IOSRequestDelay:   5.0,
+		IOSRequestDelay:   3.0,
 		IOSMaxConcurrent:  1,
 		IOSMaxRetries:     3,
 		IOSRetryDelay:     3.0,
 
 		AndroidRequestTimeout: 30,
-		AndroidRequestDelay:   10.0,
+		AndroidRequestDelay:   3.0,
 		AndroidMaxConcurrent:  1,
 		AndroidMaxRetries:     3,
-		AndroidRetryDelay:     5.0,
+		AndroidRetryDelay:     3.0,
 
 		CTVResearchModel:           DefaultResearchModel,
 		CTVResearchTemperature:     0.3,
@@ -211,6 +215,10 @@ func Default() *Config {
 		CTVRequestDelay:            1.0,
 		CTVMaxRetries:              3,
 		CTVRetryDelay:              2.0,
+
+		CacheEnabled: true,
+		CacheDBPath:  "",
+		CacheTTLDays: 30,
 	}
 }
 

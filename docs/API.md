@@ -63,7 +63,10 @@ re-checks the scope.
 | `list_jobs` | `jobs:read` | Recent jobs from every source, optionally filtered by `status` |
 | `get_job_results` | `jobs:read` | Whole-file summary (by quality tier, content type, and top IAB tier 1) plus a page of rows; filter by `quality`, pick `columns`, page with `offset`/`limit` (≤200). Works while running |
 | `get_download_link` | `jobs:read` | 15-minute signed URL for one file: `output` (CSV, without `Cost_USD`), `log`, `input`, or `categories` |
-| `cancel_job` | `jobs:run` | Cancel a queued or running job |
+| `cancel_job` | `jobs:run` | Cancel a queued, running, or paused job |
+| `pause_job` | `jobs:run` | Pause a queued or running job (keeps progress and frees the worker slot) |
+| `resume_job` | `jobs:run` | Re-queue a paused job from its saved progress (`front`: optional bool) |
+| `prioritize_job` | `jobs:run` | Move a queued job to a 1-based queue position (default `1`, front of queue) |
 | `list_input_files` | `jobs:read` | The input library, with per-file website/app/CTV counts |
 | `get_options` | `jobs:read` | Default and selectable models, limits, the custom-categories format, and the output columns |
 
@@ -111,6 +114,9 @@ shape. A `401` carries `WWW-Authenticate: Bearer`.
 | `POST /api/v1/jobs` | run | JSON body with the `create_job` arguments, or `multipart/form-data` with `file`, optional `name`, and `options` (a JSON string of the other arguments). Returns `201` |
 | `GET /api/v1/jobs/{id}` | read | Same body as `get_job` |
 | `POST /api/v1/jobs/{id}/cancel` | run | `409 not_cancellable` once the job has finished |
+| `POST /api/v1/jobs/{id}/pause` | run | Pause a queued or running job (`409 not_pausable` otherwise) |
+| `POST /api/v1/jobs/{id}/resume` | run | Optional JSON `{"front": true}`; `409 not_resumable` if not paused |
+| `POST /api/v1/jobs/{id}/prioritize` | run | Optional JSON `{"position": 1}`; `409 not_queued` if not queued |
 | `GET /api/v1/jobs/{id}/results?offset=&limit=&quality=&columns=a,b` | read | Same body as `get_job_results` |
 | `GET /api/v1/jobs/{id}/files/{output\|log\|input\|categories}` | read | Streams the file (the `output` CSV without its internal `Cost_USD` column) |
 | `POST /api/v1/jobs/{id}/files/{kind}/link` | read | Signed link, as in `get_download_link` |

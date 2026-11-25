@@ -24,6 +24,11 @@ import (
 // (https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/).
 const IOSBaseURL = "https://itunes.apple.com/lookup"
 
+// DefaultIOSBatchSize is the number of App Store IDs fetched per iTunes
+// /lookup?id=id1,id2,... request. Apple accepts up to 200; 50 keeps URLs
+// short and responses bounded while cutting HTTP volume 50x.
+const DefaultIOSBatchSize = 50
+
 var iosLog = logx.New("ios_api_client")
 
 // IOSOptions configures an IOSClient.
@@ -35,6 +40,8 @@ type IOSOptions struct {
 	MaxRetries    int
 	// RetryDelay is the base of the exponential backoff between attempts.
 	RetryDelay time.Duration
+	// BatchSize is the max IDs per iTunes multi-ID lookup request (default 50, max 100).
+	BatchSize int
 	// BaseURL replaces IOSBaseURL (tests).
 	BaseURL string
 	// HTTPClient replaces the default client (tests).
@@ -107,6 +114,11 @@ type IOSClient struct {
 	limiter *limiter
 	sleep   func(context.Context, time.Duration) error
 	counters
+
+	batchMu       sync.Mutex
+	prefetchQueue []string
+	prefetchSet   map[string]bool
+	prefetched    map[string]*IOSApp
 }
 
 // NewIOSClient returns a client for o.
@@ -120,10 +132,19 @@ func NewIOSClient(o IOSOptions) *IOSClient {
 	if o.MaxRetries < 1 {
 		o.MaxRetries = 1
 	}
+	if o.BatchSize <= 0 {
+		o.BatchSize = DefaultIOSBatchSize
+	}
+	if o.BatchSize > 100 {
+		o.BatchSize = 100
+	}
 	if o.BaseURL == "" {
 		o.BaseURL = IOSBaseURL
 	}
-	c := &IOSClient{opts: o, http: o.HTTPClient, sem: make(chan struct{}, o.MaxConcurrent), sleep: o.Sleep}
+	c := &IOSClient{
+		opts: o, http: o.HTTPClient, sem: make(chan struct{}, o.MaxConcurrent), sleep: o.Sleep,
+		prefetchSet: map[string]bool{}, prefetched: map[string]*IOSApp{},
+	}
 	if c.http == nil {
 		c.http = newHTTPClient(o.RequestTimeout)
 	}
@@ -140,9 +161,32 @@ func (c *IOSClient) Close() { c.http.CloseIdleConnections() }
 // Stats returns the request counters.
 func (c *IOSClient) Stats() Stats { return c.stats() }
 
+// SetPrefetchQueue registers upcoming App Store IDs so FetchAppMetadata can
+// fetch them in multi-ID iTunes /lookup batches (up to BatchSize per HTTP
+// request) on demand, keeping memory bounded to one batch at a time.
+func (c *IOSClient) SetPrefetchQueue(ids []string) {
+	c.batchMu.Lock()
+	defer c.batchMu.Unlock()
+	c.prefetchQueue = make([]string, 0, len(ids))
+	c.prefetchSet = make(map[string]bool, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" || c.prefetchSet[id] {
+			continue
+		}
+		c.prefetchSet[id] = true
+		c.prefetchQueue = append(c.prefetchQueue, id)
+	}
+}
+
 // FetchAppMetadata looks up one app by its numeric App Store ID. It never
-// returns nil.
+// returns nil. When a prefetch queue is registered, it fetches up to
+// BatchSize queued IDs in one iTunes lookup request and serves subsequent
+// calls from memory.
 func (c *IOSClient) FetchAppMetadata(ctx context.Context, appID string) *IOSApp {
+	if app, ok := c.takePrefetchedOrFetchBatch(ctx, appID); ok {
+		return app
+	}
 	select {
 	case c.sem <- struct{}{}:
 		defer func() { <-c.sem }()
@@ -150,6 +194,174 @@ func (c *IOSClient) FetchAppMetadata(ctx context.Context, appID string) *IOSApp 
 		return &IOSApp{AppID: appID, Error: ctx.Err().Error(), FetchedAt: scrape.ISOTime(time.Now())}
 	}
 	return c.fetchWithRetry(ctx, appID)
+}
+
+func (c *IOSClient) takePrefetchedOrFetchBatch(ctx context.Context, appID string) (*IOSApp, bool) {
+	c.batchMu.Lock()
+	defer c.batchMu.Unlock()
+	if app, ok := c.prefetched[appID]; ok {
+		delete(c.prefetched, appID)
+		return app, true
+	}
+	if !c.prefetchSet[appID] {
+		return nil, false
+	}
+	// Build a chunk starting with appID plus up to BatchSize-1 remaining queued IDs.
+	chunk := make([]string, 0, c.opts.BatchSize)
+	chunk = append(chunk, appID)
+	delete(c.prefetchSet, appID)
+	remaining := c.prefetchQueue[:0]
+	for _, id := range c.prefetchQueue {
+		if !c.prefetchSet[id] {
+			continue
+		}
+		if len(chunk) < c.opts.BatchSize {
+			chunk = append(chunk, id)
+			delete(c.prefetchSet, id)
+		} else {
+			remaining = append(remaining, id)
+		}
+	}
+	c.prefetchQueue = remaining
+	if len(chunk) == 1 {
+		// Only one ID left; fall back to single fetch outside batchMu.
+		return nil, false
+	}
+	batch := c.fetchBatchChunk(ctx, chunk)
+	for id, app := range batch {
+		if id != appID {
+			c.prefetched[id] = app
+		}
+	}
+	if app, ok := batch[appID]; ok {
+		return app, true
+	}
+	return &IOSApp{AppID: appID, Error: "App not found in App Store", FetchedAt: scrape.ISOTime(time.Now())}, true
+}
+
+// FetchLookupBatch looks up appIDs in multi-ID iTunes /lookup requests
+// (up to BatchSize IDs per HTTP request).
+func (c *IOSClient) FetchLookupBatch(ctx context.Context, appIDs []string) map[string]*IOSApp {
+	out := make(map[string]*IOSApp, len(appIDs))
+	for start := 0; start < len(appIDs); start += c.opts.BatchSize {
+		end := min(start+c.opts.BatchSize, len(appIDs))
+		for id, app := range c.fetchBatchChunk(ctx, appIDs[start:end]) {
+			out[id] = app
+		}
+	}
+	return out
+}
+
+func (c *IOSClient) fetchBatchChunk(ctx context.Context, chunk []string) map[string]*IOSApp {
+	select {
+	case c.sem <- struct{}{}:
+		defer func() { <-c.sem }()
+	case <-ctx.Done():
+		now := scrape.ISOTime(time.Now())
+		out := make(map[string]*IOSApp, len(chunk))
+		for _, id := range chunk {
+			out[id] = &IOSApp{AppID: id, Error: ctx.Err().Error(), FetchedAt: now}
+		}
+		return out
+	}
+	start := time.Now()
+	lastError := ""
+	for attempt := 0; attempt < c.opts.MaxRetries; attempt++ {
+		if err := c.limiter.wait(ctx); err != nil {
+			lastError = err.Error()
+			break
+		}
+		c.request()
+		res, status, errMsg := c.doFetchBatch(ctx, chunk)
+		if errMsg == "" {
+			c.limiter.recordSuccess()
+			c.success()
+			elapsed := time.Since(start)
+			for _, app := range res {
+				app.ProcessingTime = elapsed
+			}
+			return res
+		}
+		lastError = errMsg
+		if status == http.StatusTooManyRequests || status == http.StatusForbidden {
+			c.limiter.penalize()
+		} else {
+			c.limiter.resetStreak()
+		}
+		iosLog.Warn(fmt.Sprintf("Batch attempt %d/%d (%d apps) failed: %s", attempt+1, c.opts.MaxRetries, len(chunk), lastError))
+		if ctx.Err() != nil {
+			break
+		}
+		if attempt < c.opts.MaxRetries-1 {
+			if err := c.sleep(ctx, backoff(c.opts.RetryDelay, attempt)); err != nil {
+				break
+			}
+		}
+	}
+	if lastError == "" {
+		lastError = "Max retries exceeded"
+	}
+	c.failure()
+	now := scrape.ISOTime(time.Now())
+	elapsed := time.Since(start)
+	out := make(map[string]*IOSApp, len(chunk))
+	for _, id := range chunk {
+		out[id] = &IOSApp{AppID: id, Error: lastError, ProcessingTime: elapsed, FetchedAt: now}
+	}
+	return out
+}
+
+func canonicalIOSID(id string) string {
+	s := strings.TrimSpace(id)
+	trimmed := strings.TrimLeft(s, "0")
+	if trimmed == "" && s != "" {
+		return "0"
+	}
+	return trimmed
+}
+
+func (c *IOSClient) doFetchBatch(ctx context.Context, chunk []string) (map[string]*IOSApp, int, string) {
+	fetchedAt := scrape.ISOTime(time.Now())
+	joined := strings.Join(chunk, ",")
+	status, body, err := get(ctx, c.http, c.opts.BaseURL+"?id="+url.QueryEscape(joined), nil)
+	if err != nil && status == 0 {
+		return nil, 0, "Network error: " + err.Error()
+	}
+	if status != http.StatusOK {
+		return nil, status, fmt.Sprintf("HTTP %d", status)
+	}
+	if err != nil {
+		return nil, status, "Network error: " + err.Error()
+	}
+	var data map[string]any
+	if err := json.Unmarshal([]byte(body), &data); err != nil {
+		return nil, status, "Unexpected error: " + err.Error()
+	}
+	results, ok := data["results"].([]any)
+	if !ok {
+		return nil, status, "Unexpected error: missing results array"
+	}
+	byCanonical := make(map[string]map[string]any, len(chunk))
+	for _, raw := range results {
+		app, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		tid := canonicalIOSID(str(app, "trackId"))
+		if tid == "" {
+			continue
+		}
+		byCanonical[tid] = app
+	}
+	out := make(map[string]*IOSApp, len(chunk))
+	for _, id := range chunk {
+		if app, ok := byCanonical[canonicalIOSID(id)]; ok {
+			out[id] = parseIOSApp(id, app, fetchedAt)
+		} else {
+			out[id] = &IOSApp{AppID: id, Error: "App not found in App Store", FetchedAt: fetchedAt}
+		}
+	}
+	return out, status, ""
 }
 
 // FetchBatch looks up several apps concurrently (within MaxConcurrent);
@@ -173,13 +385,24 @@ func (c *IOSClient) fetchWithRetry(ctx context.Context, appID string) *IOSApp {
 			break
 		}
 		c.request()
-		result := c.doFetch(ctx, appID)
+		result, status := c.doFetch(ctx, appID)
 		if result.Success {
+			c.limiter.recordSuccess()
 			c.success()
 			result.ProcessingTime = time.Since(start)
 			return result
 		}
 		lastError = result.Error
+		if status == http.StatusTooManyRequests || status == http.StatusForbidden {
+			c.limiter.penalize()
+		} else if lastError != "App not found in App Store" {
+			c.limiter.resetStreak()
+		}
+		// "App not found" is terminal; retrying wastes API quota and time.
+		if lastError == "App not found in App Store" {
+			c.limiter.recordSuccess()
+			break
+		}
 		iosLog.Warn(fmt.Sprintf("Attempt %d/%d for app %s failed: %s", attempt+1, c.opts.MaxRetries, appID, lastError))
 		if ctx.Err() != nil {
 			break
@@ -202,34 +425,34 @@ func (c *IOSClient) fetchWithRetry(ctx context.Context, appID string) *IOSApp {
 	}
 }
 
-func (c *IOSClient) doFetch(ctx context.Context, appID string) *IOSApp {
+func (c *IOSClient) doFetch(ctx context.Context, appID string) (*IOSApp, int) {
 	fetchedAt := scrape.ISOTime(time.Now())
 	fail := func(msg string) *IOSApp { return &IOSApp{AppID: appID, Error: msg, FetchedAt: fetchedAt} }
 	status, body, err := get(ctx, c.http, c.opts.BaseURL+"?id="+url.QueryEscape(appID), nil)
 	if err != nil && status == 0 {
-		return fail("Network error: " + err.Error())
+		return fail("Network error: " + err.Error()), 0
 	}
 	if status != http.StatusOK {
-		return fail(fmt.Sprintf("HTTP %d", status))
+		return fail(fmt.Sprintf("HTTP %d", status)), status
 	}
 	if err != nil {
-		return fail("Network error: " + err.Error())
+		return fail("Network error: " + err.Error()), status
 	}
 	// The iTunes API answers text/javascript, not application/json: parse
 	// the body as JSON whatever the content type says.
 	var data map[string]any
 	if err := json.Unmarshal([]byte(body), &data); err != nil {
-		return fail("Unexpected error: " + err.Error())
+		return fail("Unexpected error: " + err.Error()), status
 	}
 	if n, _ := data["resultCount"].(float64); n == 0 {
-		return fail("App not found in App Store")
+		return fail("App not found in App Store"), status
 	}
 	results, _ := data["results"].([]any)
 	if len(results) == 0 {
-		return fail("Unexpected error: list index out of range")
+		return fail("Unexpected error: list index out of range"), status
 	}
 	app, _ := results[0].(map[string]any)
-	return parseIOSApp(appID, app, fetchedAt)
+	return parseIOSApp(appID, app, fetchedAt), status
 }
 
 func str(m map[string]any, key string) string {

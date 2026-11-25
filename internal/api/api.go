@@ -71,7 +71,8 @@ var FileKinds = []string{"output", "log", "input", "categories"}
 // JobStatuses lists every job status, sorted (the MCP list_jobs enum).
 var JobStatuses = []string{
 	jobs.StatusCancelled, jobs.StatusCancelling, jobs.StatusCompleted,
-	jobs.StatusFailed, jobs.StatusQueued, jobs.StatusRunning,
+	jobs.StatusFailed, jobs.StatusPaused, jobs.StatusPausing,
+	jobs.StatusQueued, jobs.StatusRunning,
 }
 
 // CreateJobArgs are the options create_job accepts, sorted.

@@ -132,6 +132,8 @@
               "cancelling",
               "completed",
               "failed",
+              "paused",
+              "pausing",
               "queued",
               "running"
             ],
@@ -262,6 +264,97 @@
         "title": "Cancel a Lens job",
         "readOnlyHint": false,
         "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "pause_job",
+      "scope": "jobs:run",
+      "title": "Pause a Lens job",
+      "description": "Pause a running or queued job without losing progress. A running job stops cleanly and frees the worker slot so smaller or higher-priority jobs can run; call resume_job later to pick up where it stopped.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Pause a Lens job",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "resume_job",
+      "scope": "jobs:run",
+      "title": "Resume a paused Lens job",
+      "description": "Re-queue a paused job so it continues from its saved progress without re-processing completed items.",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          },
+          "front": {
+            "type": "boolean",
+            "description": "Place the job at the front of the queue instead of the back (default false)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Resume a paused Lens job",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      }
+    },
+    {
+      "name": "prioritize_job",
+      "scope": "jobs:run",
+      "title": "Reprioritize a queued Lens job",
+      "description": "Move a queued job to a new 1-based queue position (default 1 = front of queue, runs next).",
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "job_id"
+        ],
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "pattern": "^[0-9]{14}-[0-9a-f]{6}$",
+            "description": "Lens job id, e.g. 20261015143000-a1b2c3 (from create_job or list_jobs)."
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "1-based position in the queue (default 1 = run next)."
+          }
+        }
+      },
+      "annotations": {
+        "title": "Reprioritize a queued Lens job",
+        "readOnlyHint": false,
+        "destructiveHint": false,
         "idempotentHint": true,
         "openWorldHint": false
       }
