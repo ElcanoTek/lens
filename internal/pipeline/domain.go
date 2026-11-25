@@ -308,8 +308,12 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	_ = p.Progress.Mark(domain, progress.StatusSuccess, rec, "", &pt, "")
 	if p.Cache != nil && scrape.CacheStatus != "hit" {
 		var researchQuestions []string
-		if mode == "research" && p.Categories != nil {
-			researchQuestions = p.Categories.ResearchQuestions()
+		researchModel := ""
+		if mode == "research" {
+			researchModel = p.Config.ResearchModel
+			if p.Categories != nil {
+				researchQuestions = p.Categories.ResearchQuestions()
+			}
 		}
 		_ = p.Cache.Put(ctx, cache.Entry{
 			ContentType:       cache.TypeWebsite,
@@ -318,8 +322,10 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 			ScrapeMode:        mode,
 			BotProtection:     rec.String("Bot_Protection"),
 			Title:             scrape.Title,
+			MetaDescription:   scrape.MetaDescription,
 			Content:           scrape.Content,
 			ContentLength:     scrape.ContentLength,
+			ResearchModel:     researchModel,
 			ResearchQuestions: researchQuestions,
 			Classification: cache.Classification{
 				Quality:          cls.Quality,
@@ -342,14 +348,20 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 }
 
 // cacheEntryUsable checks whether a cached website entry can satisfy the
-// current run. Research-mode entries are rejected when research fallback is
-// disabled or the caller selected a direct/deep-only scrape mode, and when
-// the current run's custom-category questions differ from those researched.
+// current run:
+//   - Non-auto runs (--scrape-mode direct or deep) only reuse entries produced
+//     by that exact backend.
+//   - Research-mode entries are only reused in auto mode when research fallback
+//     is enabled, the research model matches, and any custom-category questions
+//     match.
 func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
+	if !p.AutoMode {
+		return p.Scraper != nil && entry.ScrapeMode == p.Scraper.Mode()
+	}
 	if entry.ScrapeMode != "research" {
 		return true
 	}
-	if !p.AutoMode || !p.Config.ResearchFallbackEnabled {
+	if !p.Config.ResearchFallbackEnabled || entry.ResearchModel != p.Config.ResearchModel {
 		return false
 	}
 	if p.Categories == nil {
@@ -360,15 +372,16 @@ func (p *DomainProcessor) cacheEntryUsable(entry *cache.Entry) bool {
 
 func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, entry *cache.Entry, start time.Time) error {
 	sr := ScrapeResult{
-		Success:       true,
-		Title:         entry.Title,
-		Content:       entry.Content,
-		ContentLength: entry.ContentLength,
-		Mode:          orDefault(entry.ScrapeMode, "direct"),
-		ScrapedAt:     orDefault(entry.ScrapedAt, isoNow()),
-		BotProtection: entry.BotProtection,
-		CacheStatus:   "hit",
-		CachedAt:      entry.UpdatedAt,
+		Success:         true,
+		Title:           entry.Title,
+		MetaDescription: entry.MetaDescription,
+		Content:         entry.Content,
+		ContentLength:   entry.ContentLength,
+		Mode:            orDefault(entry.ScrapeMode, "direct"),
+		ScrapedAt:       orDefault(entry.ScrapedAt, isoNow()),
+		BotProtection:   entry.BotProtection,
+		CacheStatus:     "hit",
+		CachedAt:        entry.UpdatedAt,
 	}
 	var cls Classification
 	if entry.LLMModel == p.Config.LLMModel && entry.Classification.Quality != "" {
@@ -392,10 +405,11 @@ func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, e
 		}
 		var err error
 		cls, err = p.Classifier.ClassifySite(ctx, SiteInput{
-			Domain:        domain,
-			Content:       sr.Content,
-			Title:         sr.Title,
-			ContentSource: source,
+			Domain:          domain,
+			Content:         sr.Content,
+			Title:           sr.Title,
+			MetaDescription: sr.MetaDescription,
+			ContentSource:   source,
 		})
 		if err != nil {
 			return err
