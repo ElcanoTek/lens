@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/ElcanoTek/lens/internal/cache"
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/cost"
 	"github.com/ElcanoTek/lens/internal/logx"
@@ -44,6 +45,8 @@ type DomainProcessor struct {
 	Writer     *ResultsWriter
 	// Categories is the optional custom-category client.
 	Categories CategoryClassifier
+	// Cache is the optional cross-job SQLite cache.
+	Cache *cache.Store
 	// DeferFailures is set on auto mode's earlier passes: failures will be
 	// retried by a later pass, so they are tracked as retry_pending (not yet
 	// processed) rather than terminal errors.
@@ -75,6 +78,11 @@ func (p *DomainProcessor) ProcessDomain(ctx context.Context, domain string) {
 
 	err := func() error {
 		domainLog.Debug("Processing " + domain)
+		if p.Cache != nil {
+			if entry, ok := p.Cache.Get(ctx, cache.TypeWebsite, domain); ok {
+				return p.processFromCache(ctx, domain, entry, start)
+			}
+		}
 		session, err := p.Scraper.AcquireSession(ctx)
 		if err != nil {
 			return err
@@ -272,7 +280,11 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	rec.Set("Language", orDefault(cls.Language, "Unknown"))
 	rec.Set("Political_Leaning", orDefault(cls.PoliticalLeaning, "Non-Political"))
 	rec.Set("Audience_Size", orDefault(cls.AudienceSize, "Unknown"))
-	rec.Set("Bot_Protection", DeriveBotProtection(mode, false, "", priorError, priorMode))
+	botProtection := DeriveBotProtection(mode, false, "", priorError, priorMode)
+	if scrape.BotProtection != "" {
+		botProtection = scrape.BotProtection
+	}
+	rec.Set("Bot_Protection", botProtection)
 	rec.Set("Content_Length", scrape.ContentLength)
 	rec.Set("Processing_Time", pyRound2(seconds(elapsed)))
 	rec.Set("Scrape_Mode", mode)
@@ -291,7 +303,93 @@ func (p *DomainProcessor) recordSuccess(ctx context.Context, domain string, cls 
 	}
 	pt := seconds(elapsed)
 	_ = p.Progress.Mark(domain, progress.StatusSuccess, rec, "", &pt, "")
+	if p.Cache != nil && scrape.CacheStatus != "hit" {
+		_ = p.Cache.Put(ctx, cache.Entry{
+			ContentType:   cache.TypeWebsite,
+			Identifier:    domain,
+			LLMModel:      p.Config.LLMModel,
+			ScrapeMode:    mode,
+			BotProtection: rec.String("Bot_Protection"),
+			Title:         scrape.Title,
+			Content:       scrape.Content,
+			ContentLength: scrape.ContentLength,
+			Classification: cache.Classification{
+				Quality:          cls.Quality,
+				Justification:    cls.Justification,
+				Tier1:            cls.Tier1,
+				Tier2:            cls.Tier2,
+				Tier3:            cls.Tier3,
+				Description:      cls.Description,
+				Language:         orDefault(cls.Language, "Unknown"),
+				PoliticalLeaning: orDefault(cls.PoliticalLeaning, "Non-Political"),
+				AudienceSize:     orDefault(cls.AudienceSize, "Unknown"),
+				Source:           classifierMode,
+			},
+			ScrapedAt: orDefault(scrape.ScrapedAt, isoNow()),
+		})
+	}
 	domainLog.Debug(fmt.Sprintf("✅ %s → %s", domain, cls.Quality))
+	return nil
+}
+
+func (p *DomainProcessor) processFromCache(ctx context.Context, domain string, entry *cache.Entry, start time.Time) error {
+	sr := ScrapeResult{
+		Success:       true,
+		Title:         entry.Title,
+		Content:       entry.Content,
+		ContentLength: entry.ContentLength,
+		Mode:          orDefault(entry.ScrapeMode, "direct"),
+		ScrapedAt:     orDefault(entry.ScrapedAt, isoNow()),
+		BotProtection: entry.BotProtection,
+		CacheStatus:   "hit",
+	}
+	var cls Classification
+	if entry.LLMModel == p.Config.LLMModel && entry.Classification.Quality != "" {
+		cls = Classification{
+			Success:          true,
+			Quality:          entry.Classification.Quality,
+			Justification:    entry.Classification.Justification,
+			Tier1:            entry.Classification.Tier1,
+			Tier2:            entry.Classification.Tier2,
+			Tier3:            entry.Classification.Tier3,
+			Description:      entry.Classification.Description,
+			Language:         entry.Classification.Language,
+			PoliticalLeaning: entry.Classification.PoliticalLeaning,
+			AudienceSize:     entry.Classification.AudienceSize,
+			Source:           orDefault(entry.Classification.Source, "openrouter"),
+		}
+	} else {
+		source := "scrape"
+		if sr.Mode == "research" {
+			source = "research"
+		}
+		var err error
+		cls, err = p.Classifier.ClassifySite(ctx, SiteInput{
+			Domain:        domain,
+			Content:       sr.Content,
+			Title:         sr.Title,
+			ContentSource: source,
+		})
+		if err != nil {
+			return err
+		}
+		if !cls.Success {
+			return errors.New("Classification failed: " + orDefault(cls.Error, "Unknown error"))
+		}
+		// Refresh cache entry with the new model's classification.
+		sr.CacheStatus = ""
+	}
+	elapsed := time.Since(start)
+	if err := p.recordSuccess(ctx, domain, cls, sr, sr.Mode, orDefault(cls.Source, "openrouter"), elapsed); err != nil {
+		return err
+	}
+	p.Reporter.Log(report.Attempt{
+		Domain:  domain,
+		OK:      true,
+		Elapsed: elapsed,
+		SizeKB:  sizeKB(sr.ContentLength),
+		Cache:   "hit",
+	})
 	return nil
 }
 

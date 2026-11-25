@@ -128,6 +128,9 @@ func NewAndroidClient(o AndroidOptions) *AndroidClient {
 		c.sleep = scrape.Sleep
 	}
 	c.limiter = newLimiter(o.RequestDelay, c.sleep, androidLog)
+	if o.Sleep == nil && o.RequestDelay > 0 {
+		c.limiter.jitter = true
+	}
 	return c
 }
 
@@ -170,13 +173,25 @@ func (c *AndroidClient) fetchWithRetry(ctx context.Context, packageName string) 
 			break
 		}
 		c.request()
-		result := c.doFetch(ctx, packageName)
+		result, status := c.doFetch(ctx, packageName)
 		if result.Success {
+			c.limiter.recordSuccess()
 			c.success()
 			result.ProcessingTime = time.Since(start)
 			return result
 		}
 		lastError = result.Error
+		if status == http.StatusTooManyRequests || status == http.StatusForbidden || lastError == "Blocked by Google Play Store" {
+			c.limiter.penalize()
+		}
+		// 404 is terminal and hammering a block page escalates into an IP ban.
+		if status == http.StatusNotFound || lastError == "Blocked by Google Play Store" {
+			if status == http.StatusNotFound {
+				c.limiter.recordSuccess()
+			}
+			androidLog.Warn(fmt.Sprintf("Attempt %d/%d for package %s failed (not retrying): %s", attempt+1, c.opts.MaxRetries, packageName, lastError))
+			break
+		}
 		androidLog.Warn(fmt.Sprintf("Attempt %d/%d for package %s failed: %s", attempt+1, c.opts.MaxRetries, packageName, lastError))
 		if ctx.Err() != nil {
 			break
@@ -212,7 +227,7 @@ func (c *AndroidClient) headers() map[string]string {
 	}
 }
 
-func (c *AndroidClient) doFetch(ctx context.Context, packageName string) *AndroidApp {
+func (c *AndroidClient) doFetch(ctx context.Context, packageName string) (*AndroidApp, int) {
 	fetchedAt := scrape.ISOTime(time.Now())
 	fail := func(msg string) *AndroidApp {
 		return &AndroidApp{PackageName: packageName, Error: msg, FetchedAt: fetchedAt}
@@ -221,18 +236,18 @@ func (c *AndroidClient) doFetch(ctx context.Context, packageName string) *Androi
 	status, html, err := get(ctx, c.http, target, c.headers())
 	switch {
 	case err != nil && status == 0:
-		return fail("Network error: " + err.Error())
+		return fail("Network error: " + err.Error()), 0
 	case status == http.StatusNotFound:
-		return fail("App not found on Play Store")
+		return fail("App not found on Play Store"), status
 	case status != http.StatusOK:
-		return fail(fmt.Sprintf("HTTP %d", status))
+		return fail(fmt.Sprintf("HTTP %d", status)), status
 	case err != nil:
-		return fail("Network error: " + err.Error())
+		return fail("Network error: " + err.Error()), status
 	}
 	if IsBlockedPage(html) {
-		return fail("Blocked by Google Play Store")
+		return fail("Blocked by Google Play Store"), status
 	}
-	return ParsePlayStorePage(packageName, html, fetchedAt)
+	return ParsePlayStorePage(packageName, html, fetchedAt), status
 }
 
 var blockPhrases = []string{

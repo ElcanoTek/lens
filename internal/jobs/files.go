@@ -66,6 +66,9 @@ func (d Dirs) Ensure() error {
 // StatePath is the _jobs.json path.
 func (d Dirs) StatePath() string { return filepath.Join(d.Outputs, JobsStateFilename) }
 
+// CachePath is managed-files/cache.db, shared across all dashboard/API jobs.
+func (d Dirs) CachePath() string { return filepath.Join(filepath.Dir(d.Outputs), "cache.db") }
+
 var unsafeFilenameChars = regexp.MustCompile(`[^A-Za-z0-9._ ()-]`)
 
 // SafeFilename sanitizes a user-supplied filename. Path separators and empty

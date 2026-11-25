@@ -43,6 +43,10 @@ func (a iosAdapter) FetchAppMetadata(ctx context.Context, id string) (AppMetadat
 	}, nil
 }
 
+func (a iosAdapter) SetPrefetchQueue(ids []string) {
+	a.c.SetPrefetchQueue(ids)
+}
+
 func (a iosAdapter) Close() error {
 	a.c.Close()
 	return nil

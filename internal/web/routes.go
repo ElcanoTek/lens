@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/ElcanoTek/lens/internal/catalog"
@@ -263,6 +264,63 @@ func (s *Server) handleCancel(w http.ResponseWriter, r *http.Request) {
 		redirectWithParams(w, param{"error", err.Error()})
 	default:
 		seeOther(w, "/?message=Cancellation+requested")
+	}
+}
+
+func (s *Server) handlePause(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	err := s.manager.Pause(r.PathValue("id"))
+	switch {
+	case errors.Is(err, jobs.ErrUnknownJob):
+		seeOther(w, "/?error=Unknown+job")
+	case err != nil:
+		redirectWithParams(w, param{"error", err.Error()})
+	default:
+		seeOther(w, "/?message=Job+paused")
+	}
+}
+
+func (s *Server) handleResume(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	front := false
+	if f, err := parseForm(w, r); err == nil {
+		front = f.value("front") == "on" || f.value("front") == "1" || f.value("front") == "true"
+	}
+	err := s.manager.Resume(r.PathValue("id"), front)
+	switch {
+	case errors.Is(err, jobs.ErrUnknownJob):
+		seeOther(w, "/?error=Unknown+job")
+	case err != nil:
+		redirectWithParams(w, param{"error", err.Error()})
+	default:
+		seeOther(w, "/?message=Job+resumed")
+	}
+}
+
+func (s *Server) handlePrioritize(w http.ResponseWriter, r *http.Request) {
+	if !s.requireAuth(w, r) {
+		return
+	}
+	pos := 1
+	if f, err := parseForm(w, r); err == nil {
+		if raw, ok := f.get("position"); ok {
+			if n, err := strconv.Atoi(raw); err == nil && n >= 1 {
+				pos = n
+			}
+		}
+	}
+	err := s.manager.Prioritize(r.PathValue("id"), pos)
+	switch {
+	case errors.Is(err, jobs.ErrUnknownJob):
+		seeOther(w, "/?error=Unknown+job")
+	case err != nil:
+		redirectWithParams(w, param{"error", err.Error()})
+	default:
+		seeOther(w, "/?message=Job+moved+to+front+of+queue")
 	}
 }
 

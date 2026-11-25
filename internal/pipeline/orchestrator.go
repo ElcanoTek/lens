@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ElcanoTek/lens/internal/cache"
 	"github.com/ElcanoTek/lens/internal/categories"
 	"github.com/ElcanoTek/lens/internal/config"
 	"github.com/ElcanoTek/lens/internal/cost"
@@ -95,6 +96,7 @@ type Orchestrator struct {
 	ios     StoreClient
 	android StoreClient
 	writer  *ResultsWriter
+	cache   *cache.Store
 
 	hasWebsites, hasIOSApps, hasAndroidApps bool
 	isCTVInput, hasCTVApps                  bool
@@ -304,6 +306,16 @@ func (o *Orchestrator) processAll(ctx context.Context, toProcess []item.WorkItem
 	defer stack.closeAll()
 	if err := o.initializeClients(ctx, &stack); err != nil {
 		return err
+	}
+	if o.cfg.CacheEnabled && strings.TrimSpace(o.cfg.CacheDBPath) != "" {
+		ttl := time.Duration(o.cfg.CacheTTLDays) * 24 * time.Hour
+		st, err := cache.Open(o.cfg.CacheDBPath, ttl)
+		if err != nil {
+			logger.Warn(fmt.Sprintf("Could not open result cache %s (%v); continuing without cache", o.cfg.CacheDBPath, err))
+		} else {
+			stack.push(st)
+			o.cache = st
+		}
 	}
 	writer, err := openResultsFile(o.cfg.OutputCSVPath, o.outputColumns(false))
 	if err != nil {
@@ -544,6 +556,7 @@ func (o *Orchestrator) domainProcessor(deferFailures bool) *DomainProcessor {
 		Reporter:      o.reporter,
 		Writer:        o.writer,
 		Categories:    o.categories,
+		Cache:         o.cache,
 		DeferFailures: deferFailures,
 	}
 }
@@ -607,6 +620,25 @@ func (o *Orchestrator) processItemsConcurrently(ctx context.Context, items []ite
 			Reporter:   o.reporter,
 			Writer:     o.writer,
 			Categories: o.categories,
+			Cache:      o.cache,
+			LLMModel:   o.cfg.LLMModel,
+		}
+		// Register upcoming iOS IDs so the iTunes client can batch up to 50
+		// IDs per HTTP lookup request (50x fewer requests to Apple). Skip IDs
+		// already fresh in the cross-job cache so we don't fetch them at all.
+		if prefetcher, ok := o.ios.(interface{ SetPrefetchQueue([]string) }); ok {
+			var iosIDs []string
+			for _, it := range items {
+				if it.Type == item.IOSApp {
+					if o.cache != nil && o.cache.HasFresh(ctx, cache.TypeIOS, it.Identifier) {
+						continue
+					}
+					iosIDs = append(iosIDs, it.Identifier)
+				}
+			}
+			if len(iosIDs) > 0 {
+				prefetcher.SetPrefetchQueue(iosIDs)
+			}
 		}
 	}
 	cut := runBounded(ctx, o.cfg.ConcurrentSessions, items, func(it item.WorkItem) {

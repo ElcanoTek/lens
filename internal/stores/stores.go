@@ -17,6 +17,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"strings"
@@ -60,17 +61,86 @@ func (c *counters) stats() Stats {
 }
 
 // limiter spaces requests at least delay apart across all goroutines. The
-// lock is a channel so a waiter can give up when its context ends.
+// lock is a channel so a waiter can give up when its context ends. When
+// penalize is called (e.g. HTTP 429/403 or a block page), the effective delay
+// backs off adaptively up to maxDelay and recovers gradually after consecutive
+// successes.
 type limiter struct {
-	lock  chan struct{}
-	last  time.Time
-	delay time.Duration
-	sleep func(context.Context, time.Duration) error
-	log   *slog.Logger
+	lock           chan struct{}
+	last           time.Time
+	baseDelay      time.Duration
+	effectiveDelay time.Duration
+	maxDelay       time.Duration
+	jitter         bool
+	cleanStreak    int
+	mu             sync.Mutex
+	sleep          func(context.Context, time.Duration) error
+	log            *slog.Logger
 }
 
 func newLimiter(delay time.Duration, sleep func(context.Context, time.Duration) error, log *slog.Logger) *limiter {
-	return &limiter{lock: make(chan struct{}, 1), delay: delay, sleep: sleep, log: log}
+	maxD := max(delay*6, 30*time.Second)
+	return &limiter{
+		lock:           make(chan struct{}, 1),
+		baseDelay:      delay,
+		effectiveDelay: delay,
+		maxDelay:       maxD,
+		sleep:          sleep,
+		log:            log,
+	}
+}
+
+func (l *limiter) currentDelay() time.Duration {
+	l.mu.Lock()
+	d := l.effectiveDelay
+	jitter := l.jitter
+	l.mu.Unlock()
+	if jitter && d > 0 {
+		// +/- 15% jitter so requests are not a robotic metronome.
+		factor := 0.85 + rand.Float64()*0.30 //nolint:gosec // non-cryptographic request pacing jitter
+		d = time.Duration(float64(d) * factor)
+	}
+	return d
+}
+
+// penalize increases the effective delay after a rate-limit or block signal.
+func (l *limiter) penalize() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.cleanStreak = 0
+	if l.baseDelay <= 0 {
+		return
+	}
+	next := l.effectiveDelay * 2
+	if next < l.baseDelay*2 {
+		next = l.baseDelay * 2
+	}
+	if next > l.maxDelay {
+		next = l.maxDelay
+	}
+	if next != l.effectiveDelay {
+		l.effectiveDelay = next
+		l.log.Warn(fmt.Sprintf("Rate-limit/block signal received; backing off request delay to %.1fs", next.Seconds()))
+	}
+}
+
+// recordSuccess gradually restores the effective delay toward baseDelay after
+// sustained clean responses.
+func (l *limiter) recordSuccess() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.effectiveDelay <= l.baseDelay {
+		return
+	}
+	l.cleanStreak++
+	if l.cleanStreak >= 5 {
+		l.cleanStreak = 0
+		next := l.effectiveDelay / 2
+		if next < l.baseDelay {
+			next = l.baseDelay
+		}
+		l.effectiveDelay = next
+	}
 }
 
 func (l *limiter) wait(ctx context.Context) error {
@@ -80,8 +150,9 @@ func (l *limiter) wait(ctx context.Context) error {
 		return ctx.Err()
 	}
 	defer func() { <-l.lock }()
-	if elapsed := time.Since(l.last); elapsed < l.delay {
-		wait := l.delay - elapsed
+	delay := l.currentDelay()
+	if elapsed := time.Since(l.last); elapsed < delay {
+		wait := delay - elapsed
 		l.log.Debug(fmt.Sprintf("Rate limiting: waiting %.2f seconds", wait.Seconds()))
 		if err := l.sleep(ctx, wait); err != nil {
 			return err

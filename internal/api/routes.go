@@ -59,6 +59,29 @@ func (a *API) Routes() http.Handler {
 			return a.CancelJob(r, token, r.PathValue("id"))
 		})
 	})
+	mux.HandleFunc("POST /api/v1/jobs/{id}/pause", func(w http.ResponseWriter, r *http.Request) {
+		a.run(w, r, apitoken.ScopeRun, http.StatusOK, func(token *apitoken.Token) (Body, error) {
+			return a.PauseJob(r, token, r.PathValue("id"))
+		})
+	})
+	mux.HandleFunc("POST /api/v1/jobs/{id}/resume", func(w http.ResponseWriter, r *http.Request) {
+		a.run(w, r, apitoken.ScopeRun, http.StatusOK, func(token *apitoken.Token) (Body, error) {
+			args, err := optionalJSONBody(r)
+			if err != nil {
+				return nil, err
+			}
+			return a.ResumeJob(r, token, r.PathValue("id"), args["front"])
+		})
+	})
+	mux.HandleFunc("POST /api/v1/jobs/{id}/prioritize", func(w http.ResponseWriter, r *http.Request) {
+		a.run(w, r, apitoken.ScopeRun, http.StatusOK, func(token *apitoken.Token) (Body, error) {
+			args, err := optionalJSONBody(r)
+			if err != nil {
+				return nil, err
+			}
+			return a.PrioritizeJob(r, token, r.PathValue("id"), args["position"])
+		})
+	})
 	mux.HandleFunc("GET /api/v1/jobs/{id}/results", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		var columns any
@@ -102,6 +125,26 @@ func (a *API) Routes() http.Handler {
 		a.WriteError(w, r, apiErr(http.StatusNotFound, "not_found", "No such API route: %s %s", r.Method, r.URL.Path))
 	})
 	return mux
+}
+
+// optionalJSONBody parses an optional JSON object body (empty body -> empty map).
+func optionalJSONBody(r *http.Request) (map[string]any, error) {
+	raw, err := ReadBodyCapped(r, 64*1024)
+	if err != nil {
+		return nil, err
+	}
+	if len(bytes.TrimSpace(raw)) == 0 {
+		return map[string]any{}, nil
+	}
+	var body any
+	if err := json.Unmarshal(raw, &body); err != nil {
+		return nil, invalidArg("The request body must be a JSON object")
+	}
+	obj, ok := body.(map[string]any)
+	if !ok {
+		return nil, invalidArg("The request body must be a JSON object")
+	}
+	return obj, nil
 }
 
 // WriteJSON writes body as a JSON response (no HTML escaping, as Starlette's

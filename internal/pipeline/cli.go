@@ -42,6 +42,8 @@ type RunArgs struct {
 	OutputCSV        string
 	ProgressFile     string
 	LogFile          string
+	CacheDB          string
+	NoCache          bool
 }
 
 // choiceFlag is a string flag restricted to fixed choices (argparse
@@ -107,6 +109,8 @@ func ParseRunArgs(args []string, stderr io.Writer) (*RunArgs, error) {
 	fs.StringVar(&a.OutputCSV, "output-csv", "", "Override output CSV path for this run.")
 	fs.StringVar(&a.ProgressFile, "progress-file", "", "Override progress JSON path for this run.")
 	fs.StringVar(&a.LogFile, "log-file", "", "Override log file path for this run.")
+	fs.StringVar(&a.CacheDB, "cache-db", "", "Path to the persistent cross-job SQLite result cache.")
+	fs.BoolVar(&a.NoCache, "no-cache", false, "Disable the cross-job result cache for this run.")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -167,6 +171,12 @@ func (a *RunArgs) Apply(cfg *config.Config, scraperVerboseEnv string) (scrapeMod
 	}
 	if a.LogFile != "" {
 		cfg.LogFilePath = a.LogFile
+	}
+	if a.CacheDB != "" {
+		cfg.CacheDBPath = a.CacheDB
+	}
+	if a.NoCache {
+		cfg.CacheEnabled = false
 	}
 	return scrapeMode, rejectRedirects, verbose
 }

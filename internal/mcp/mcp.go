@@ -153,6 +153,15 @@ func New(a *api.API) *Server {
 		"cancel_job": func(r *http.Request, t *apitoken.Token, args map[string]any) (api.Body, error) {
 			return a.CancelJob(r, t, args["job_id"])
 		},
+		"pause_job": func(r *http.Request, t *apitoken.Token, args map[string]any) (api.Body, error) {
+			return a.PauseJob(r, t, args["job_id"])
+		},
+		"resume_job": func(r *http.Request, t *apitoken.Token, args map[string]any) (api.Body, error) {
+			return a.ResumeJob(r, t, args["job_id"], args["front"])
+		},
+		"prioritize_job": func(r *http.Request, t *apitoken.Token, args map[string]any) (api.Body, error) {
+			return a.PrioritizeJob(r, t, args["job_id"], args["position"])
+		},
 		"list_input_files": func(*http.Request, *apitoken.Token, map[string]any) (api.Body, error) {
 			return a.ListInputFiles()
 		},

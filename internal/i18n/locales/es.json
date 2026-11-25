@@ -255,5 +255,20 @@
   "~{0} min left": "Quedan ~{0} min",
   "~{0}h {1}m remaining": "Quedan ~{0} h {1} min",
   "~{0}m remaining": "Quedan ~{0} min",
-  "· optional · decision model": "· opcional · modelo de decisión"
+  "· optional · decision model": "· opcional · modelo de decisión",
+  "Job paused": "Trabajo pausado",
+  "Job resumed": "Trabajo reanudado",
+  "Job moved to front of queue": "Trabajo movido al frente de la cola",
+  "Move {0} to front of queue": "Mover {0} al frente de la cola",
+  "Run next (move to front of queue)": "Ejecutar siguiente (mover al frente de la cola)",
+  "Pause {0}": "Pausar {0}",
+  "Pause (keeps progress)": "Pausar (conserva el progreso)",
+  "Resume {0}": "Reanudar {0}",
+  "Resume": "Reanudar",
+  "Paused": "Pausado",
+  "Pausing...": "Pausando...",
+  "Pausing…": "Pausando…",
+  "Queued #{0}": "En cola n.º {0}",
+  "paused": "pausado",
+  "pausing": "pausando"
 }

@@ -94,7 +94,7 @@ func TestIOSLookupParsesTextJavascript(t *testing.T) {
 	}
 }
 
-func TestIOSNotFoundIsRetriedWithBackoff(t *testing.T) {
+func TestIOSNotFoundIsNotRetried(t *testing.T) {
 	var calls atomic.Int32
 	srv := iosServer(t, func(w http.ResponseWriter, _ *http.Request) {
 		calls.Add(1)
@@ -106,11 +106,41 @@ func TestIOSNotFoundIsRetriedWithBackoff(t *testing.T) {
 	if app.Success || app.Error != "App not found in App Store" || app.AppID != "1" || app.FetchedAt == "" {
 		t.Fatalf("app %+v", app)
 	}
-	if calls.Load() != 3 || fmt.Sprint(s.delays) != "[2s 4s]" {
-		t.Errorf("%d calls, delays %v", calls.Load(), s.delays)
+	if calls.Load() != 1 || len(s.delays) != 0 {
+		t.Errorf("%d calls, delays %v; want 1 call with no retries", calls.Load(), s.delays)
 	}
-	if st := c.Stats(); st.RequestCount != 3 || st.ErrorCount != 1 || st.SuccessCount != 0 {
+	if st := c.Stats(); st.RequestCount != 1 || st.ErrorCount != 1 || st.SuccessCount != 0 {
 		t.Errorf("stats %+v", st)
+	}
+}
+
+func TestIOSBatchPrefetchUsesOneRequest(t *testing.T) {
+	var calls atomic.Int32
+	srv := iosServer(t, func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		ids := strings.Split(r.URL.Query().Get("id"), ",")
+		var items []string
+		for _, id := range ids {
+			if id == "999" {
+				continue // simulate delisted app
+			}
+			items = append(items, fmt.Sprintf(`{"trackId": %s, "trackName": "App %s", "artistName": "Dev", "primaryGenreName": "Games"}`, id, id))
+		}
+		_, _ = fmt.Fprintf(w, `{"resultCount": %d, "results": [%s]}`, len(items), strings.Join(items, ","))
+	})
+	c := iosClient(srv, &sleeps{})
+	c.SetPrefetchQueue([]string{"101", "102", "999"})
+	a1 := c.FetchAppMetadata(context.Background(), "101")
+	a2 := c.FetchAppMetadata(context.Background(), "102")
+	a3 := c.FetchAppMetadata(context.Background(), "999")
+	if calls.Load() != 1 {
+		t.Fatalf("calls = %d, want 1 batched HTTP request", calls.Load())
+	}
+	if !a1.Success || a1.AppName != "App 101" || !a2.Success || a2.AppName != "App 102" {
+		t.Fatalf("batch results: a1=%+v a2=%+v", a1, a2)
+	}
+	if a3.Success || a3.Error != "App not found in App Store" {
+		t.Fatalf("missing app result: %+v", a3)
 	}
 }
 
@@ -222,11 +252,11 @@ func TestCancellationStopsRetries(t *testing.T) {
 func TestOptionsFromConfig(t *testing.T) {
 	cfg := config.Default()
 	ios := IOSOptionsFromConfig(cfg)
-	if ios.RequestDelay != 5*time.Second || ios.MaxConcurrent != 1 || ios.RetryDelay != 3*time.Second || ios.RequestTimeout != 30*time.Second {
+	if ios.RequestDelay != 3*time.Second || ios.MaxConcurrent != 1 || ios.RetryDelay != 3*time.Second || ios.RequestTimeout != 30*time.Second {
 		t.Errorf("ios %+v", ios)
 	}
 	android := AndroidOptionsFromConfig(cfg)
-	if android.RequestDelay != 10*time.Second || android.MaxConcurrent != 1 || android.RetryDelay != 5*time.Second || android.UserAgent != DefaultAndroidUserAgent {
+	if android.RequestDelay != 3*time.Second || android.MaxConcurrent != 1 || android.RetryDelay != 3*time.Second || android.UserAgent != DefaultAndroidUserAgent {
 		t.Errorf("android %+v", android)
 	}
 }
@@ -273,15 +303,17 @@ func TestAndroidScrapesThePlayStorePage(t *testing.T) {
 func TestAndroidFailures(t *testing.T) {
 	blocked := readFixture(t, "play_blocked.html")
 	cases := []struct {
-		status int
-		body   string
-		want   string
+		status    int
+		body      string
+		want      string
+		wantCalls int32
+		wantDelay string
 	}{
-		{http.StatusNotFound, "", "App not found on Play Store"},
-		{http.StatusTooManyRequests, "", "HTTP 429"},
-		{http.StatusOK, blocked, "Blocked by Google Play Store"},
+		{http.StatusNotFound, "", "App not found on Play Store", 1, "[]"},
+		{http.StatusTooManyRequests, "", "HTTP 429", 3, "[2s 4s]"},
+		{http.StatusOK, blocked, "Blocked by Google Play Store", 1, "[]"},
 		{http.StatusOK, "<html><body><p>nothing here</p></body></html>",
-			"Could not extract app name - page might be blocked or app not found"},
+			"Could not extract app name - page might be blocked or app not found", 3, "[2s 4s]"},
 	}
 	for _, c := range cases {
 		var calls atomic.Int32
@@ -295,8 +327,8 @@ func TestAndroidFailures(t *testing.T) {
 		if app.Success || app.Error != c.want || app.PackageName != "com.example" {
 			t.Errorf("%d: app %+v", c.status, app)
 		}
-		if calls.Load() != 3 || fmt.Sprint(s.delays) != "[2s 4s]" {
-			t.Errorf("%d: %d calls, delays %v", c.status, calls.Load(), s.delays)
+		if calls.Load() != c.wantCalls || fmt.Sprint(s.delays) != c.wantDelay {
+			t.Errorf("%d: %d calls (want %d), delays %v (want %s)", c.status, calls.Load(), c.wantCalls, s.delays, c.wantDelay)
 		}
 	}
 }

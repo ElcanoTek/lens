@@ -46,6 +46,8 @@ func ValidMode(mode string) bool { return allowedModes[mode] }
 const (
 	StatusQueued     = "queued"
 	StatusRunning    = "running"
+	StatusPausing    = "pausing"
+	StatusPaused     = "paused"
 	StatusCancelling = "cancelling"
 	StatusCompleted  = "completed"
 	StatusFailed     = "failed"
@@ -234,7 +236,8 @@ func (m *Manager) save() error {
 	for _, j := range list {
 		out = append(out, j.persisted())
 	}
-	raw, err := json.MarshalIndent(map[string]any{"saved_at": m.now(), "jobs": out}, "", "  ")
+	queue := append([]string{}, m.queue...)
+	raw, err := json.MarshalIndent(map[string]any{"saved_at": m.now(), "jobs": out, "queue": queue}, "", "  ")
 	if err != nil {
 		logger.Error("could not encode job state: " + err.Error())
 		return err
@@ -278,12 +281,14 @@ func (m *Manager) Load() {
 		return
 	}
 	var doc struct {
-		Jobs []json.RawMessage `json:"jobs"`
+		Jobs  []json.RawMessage `json:"jobs"`
+		Queue []string          `json:"queue"`
 	}
 	if json.Unmarshal(raw, &doc) != nil {
 		return
 	}
 	interrupted := false
+	var resumedRunning []*Job
 	for _, rawJob := range doc.Jobs {
 		var p persisted
 		// Defaults for keys absent from older files.
@@ -338,6 +343,13 @@ func (m *Manager) Load() {
 			job.FinishedAt = ""
 			job.ReturnCode = nil
 			job.Error = ""
+			resumedRunning = append(resumedRunning, job)
+			interrupted = true
+		case StatusPausing:
+			job.Status = StatusPaused
+			job.FinishedAt = ""
+			job.ReturnCode = nil
+			job.Error = ""
 			interrupted = true
 		case StatusCancelling:
 			job.Status = StatusCancelled
@@ -348,9 +360,21 @@ func (m *Manager) Load() {
 		}
 		m.jobs[id] = job
 	}
+	seenQueued := map[string]bool{}
+	sort.SliceStable(resumedRunning, func(a, b int) bool { return resumedRunning[a].CreatedAt < resumedRunning[b].CreatedAt })
+	for _, j := range resumedRunning {
+		m.queue = append(m.queue, j.ID)
+		seenQueued[j.ID] = true
+	}
+	for _, id := range doc.Queue {
+		if j, ok := m.jobs[id]; ok && j.Status == StatusQueued && !seenQueued[id] {
+			m.queue = append(m.queue, id)
+			seenQueued[id] = true
+		}
+	}
 	var queued []*Job
 	for _, j := range m.jobs {
-		if j.Status == StatusQueued {
+		if j.Status == StatusQueued && !seenQueued[j.ID] {
 			queued = append(queued, j)
 		}
 	}
@@ -496,10 +520,20 @@ func (m *Manager) Cancel(id string) error {
 		}
 		return nil
 	}
-	if cmd, slot := m.running[id]; job.Status == StatusRunning && slot {
+	if job.Status == StatusPaused {
+		job.Status = StatusCancelled
+		job.FinishedAt = m.now()
+		if err := m.save(); err != nil {
+			job.Status, job.FinishedAt = StatusPaused, ""
+			return notSaved(err)
+		}
+		return nil
+	}
+	if cmd, slot := m.running[id]; (job.Status == StatusRunning || job.Status == StatusPausing) && slot {
+		prev := job.Status
 		job.Status = StatusCancelling
 		if err := m.save(); err != nil {
-			job.Status = StatusRunning
+			job.Status = prev
 			return notSaved(err)
 		}
 		if cmd != nil && cmd.Process != nil {
@@ -510,6 +544,125 @@ func (m *Manager) Cancel(id string) error {
 		return nil
 	}
 	return &NotAllowedError{fmt.Sprintf("Job %s is not cancellable", id)}
+}
+
+// Pause pauses a queued or running job without discarding its progress.
+// A running job receives SIGTERM so it finishes bookkeeping and frees its
+// worker slot for other queued jobs; a paused job stays out of the queue
+// until Resume is called.
+func (m *Manager) Pause(id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	job, ok := m.jobs[id]
+	if !ok {
+		return ErrUnknownJob
+	}
+	if job.Status == StatusQueued {
+		queue := append([]string(nil), m.queue...)
+		m.removeQueued(id)
+		job.Status = StatusPaused
+		if err := m.save(); err != nil {
+			m.queue, job.Status = queue, StatusQueued
+			return notSaved(err)
+		}
+		return nil
+	}
+	if cmd, slot := m.running[id]; job.Status == StatusRunning && slot {
+		job.Status = StatusPausing
+		if err := m.save(); err != nil {
+			job.Status = StatusRunning
+			return notSaved(err)
+		}
+		if cmd != nil && cmd.Process != nil {
+			_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		}
+		return nil
+	}
+	return &NotAllowedError{fmt.Sprintf("Job %s is not pausable", id)}
+}
+
+// Resume re-queues a paused job so it continues from its saved progress.json.
+// When front is true the job is placed at the head of the queue; otherwise
+// it is appended to the back.
+func (m *Manager) Resume(id string, front bool) error {
+	m.mu.Lock()
+	job, ok := m.jobs[id]
+	if !ok {
+		m.mu.Unlock()
+		return ErrUnknownJob
+	}
+	if job.Status != StatusPaused {
+		m.mu.Unlock()
+		return &NotAllowedError{fmt.Sprintf("Job %s is not paused", id)}
+	}
+	queue := append([]string(nil), m.queue...)
+	job.Status = StatusQueued
+	job.ReturnCode = nil
+	job.Error = ""
+	job.FinishedAt = ""
+	if front {
+		m.queue = append([]string{id}, m.queue...)
+	} else {
+		m.queue = append(m.queue, id)
+	}
+	if err := m.save(); err != nil {
+		m.queue = queue
+		job.Status = StatusPaused
+		m.mu.Unlock()
+		return notSaved(err)
+	}
+	m.mu.Unlock()
+	m.signal()
+	return nil
+}
+
+// Prioritize moves a queued job to the given 1-based queue position
+// (position <= 1 moves it to the front; values past the end move it to the
+// back).
+func (m *Manager) Prioritize(id string, position int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	job, ok := m.jobs[id]
+	if !ok {
+		return ErrUnknownJob
+	}
+	if job.Status != StatusQueued {
+		return &NotAllowedError{fmt.Sprintf("Job %s is not queued", id)}
+	}
+	oldIdx := -1
+	for i, q := range m.queue {
+		if q == id {
+			oldIdx = i
+			break
+		}
+	}
+	if oldIdx < 0 {
+		return &NotAllowedError{fmt.Sprintf("Job %s is not queued", id)}
+	}
+	target := position - 1
+	if target < 0 {
+		target = 0
+	}
+	if target >= len(m.queue) {
+		target = len(m.queue) - 1
+	}
+	if target == oldIdx {
+		return nil
+	}
+	prev := append([]string(nil), m.queue...)
+	without := make([]string, 0, len(m.queue)-1)
+	without = append(without, m.queue[:oldIdx]...)
+	without = append(without, m.queue[oldIdx+1:]...)
+	next := make([]string, 0, len(m.queue))
+	next = append(next, without[:target]...)
+	next = append(next, id)
+	next = append(next, without[target:]...)
+	m.queue = next
+	if err := m.save(); err != nil {
+		m.queue = prev
+		return notSaved(err)
+	}
+	return nil
 }
 
 func (m *Manager) removeQueued(id string) {
@@ -638,6 +791,7 @@ func (m *Manager) Command(job *Job) []string {
 		"--output-csv", output,
 		"--progress-file", filepath.Join(m.Dirs.Outputs, job.ID+"_progress.json"),
 		"--log-file", filepath.Join(m.Dirs.Outputs, job.ID+".log"),
+		"--cache-db", m.Dirs.CachePath(),
 	)
 	if job.Mode == "ctv" {
 		args = append(args, "--ctv")
@@ -734,6 +888,13 @@ func (m *Manager) runJob(id string) {
 		m.mu.Unlock()
 		return
 	}
+	if job.Status == StatusPausing {
+		// Paused while the categories file was being written.
+		job.Status = StatusPaused
+		_ = m.save() // best effort; logged
+		m.mu.Unlock()
+		return
+	}
 	if m.stopping {
 		job.Status = StatusQueued
 		m.queue = append([]string{job.ID}, m.queue...)
@@ -757,8 +918,8 @@ func (m *Manager) runJob(id string) {
 	case job.Status == StatusCancelling:
 		// Cancel arrived while the process was starting.
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-	case m.stopping:
-		// Shutdown arrived while the process was starting.
+	case job.Status == StatusPausing || m.stopping:
+		// Pause or shutdown arrived while the process was starting.
 		_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
 	}
 	job.OutputFile = snapshot.ID + "_output.csv"
@@ -794,6 +955,11 @@ func (m *Manager) runJob(id string) {
 		job.Status = StatusCompleted
 		job.Error = ""
 		job.FinishedAt = m.now()
+	case job.Status == StatusPausing:
+		job.Status = StatusPaused
+		job.ReturnCode = nil
+		job.Error = ""
+		job.FinishedAt = ""
 	case m.stopping || isTermExit(code):
 		job.Status = StatusQueued
 		job.ReturnCode = nil

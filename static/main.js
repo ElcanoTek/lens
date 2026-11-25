@@ -451,6 +451,8 @@ applySegmentWidths(document);
     queued: "badge-pending",
     idle: "badge-pending",
     running: "badge-running",
+    pausing: "badge-warning",
+    paused: "badge-warning",
     cancelling: "badge-warning",
     completed: "badge-success",
     failed: "badge-danger",
@@ -491,6 +493,12 @@ applySegmentWidths(document);
     }
     if (normalizedStatus === "queued") {
       return T("Queued");
+    }
+    if (normalizedStatus === "paused") {
+      return T("Paused");
+    }
+    if (normalizedStatus === "pausing") {
+      return T("Pausing…");
     }
 
     const total = Number(progress.total_domains || 0);
@@ -755,7 +763,7 @@ applySegmentWidths(document);
 
   async function pollQueueJobs() {
     const hasActiveRows = document.querySelector(
-      '.panel-runs tbody tr[data-status="queued"], .panel-runs tbody tr[data-status="running"], .panel-runs tbody tr[data-status="cancelling"]',
+      '.panel-runs tbody tr[data-status="queued"], .panel-runs tbody tr[data-status="running"], .panel-runs tbody tr[data-status="pausing"], .panel-runs tbody tr[data-status="cancelling"]',
     );
     if (!hasActiveRows || queuePollInFlight) {
       return;

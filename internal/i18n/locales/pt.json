@@ -255,5 +255,20 @@
   "~{0} min left": "Faltam ~{0} min",
   "~{0}h {1}m remaining": "Faltam ~{0} h {1} min",
   "~{0}m remaining": "Faltam ~{0} min",
-  "· optional · decision model": "· opcional · modelo de decisão"
+  "· optional · decision model": "· opcional · modelo de decisão",
+  "Job paused": "Trabalho pausado",
+  "Job resumed": "Trabalho retomado",
+  "Job moved to front of queue": "Trabalho movido para o início da fila",
+  "Move {0} to front of queue": "Mover {0} para o início da fila",
+  "Run next (move to front of queue)": "Executar a seguir (mover para o início da fila)",
+  "Pause {0}": "Pausar {0}",
+  "Pause (keeps progress)": "Pausar (mantém o progresso)",
+  "Resume {0}": "Retomar {0}",
+  "Resume": "Retomar",
+  "Paused": "Pausado",
+  "Pausing...": "A pausar...",
+  "Pausing…": "A pausar…",
+  "Queued #{0}": "Na fila n.º {0}",
+  "paused": "pausado",
+  "pausing": "a pausar"
 }

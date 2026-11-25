@@ -38,11 +38,12 @@ type ScrapeResult struct {
 	// measures Content itself.
 	ContentLength int
 	// StatusCode is the HTTP status; 0 when not reported.
-	StatusCode  int
-	Mode        string // "direct" or "deep"; "" means the scraper's Mode()
-	ScrapedAt   string // Python isoformat; "" means now
-	RetriesUsed int
-	CacheStatus string
+	StatusCode    int
+	Mode          string // "direct" or "deep"; "" means the scraper's Mode()
+	ScrapedAt     string // Python isoformat; "" means now
+	RetriesUsed   int
+	CacheStatus   string
+	BotProtection string // preserved on cache hits
 }
 
 // Scraper fetches websites through a bounded session pool.

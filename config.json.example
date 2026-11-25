@@ -49,19 +49,19 @@
   "research_max_tokens": 1500,
   "research_max_concurrent": 12,
 
-  "_comment_ios": "iOS App Store (iTunes Search API). Deliberately conservative — the API rate-limits aggressively.",
+  "_comment_ios": "iOS App Store (iTunes Search API, batched up to 50 IDs per request). Stays under Apple's ~20 req/min limit with adaptive backoff on 429/403.",
   "ios_request_timeout": 30,
-  "ios_request_delay": 5.0,
+  "ios_request_delay": 3.0,
   "ios_max_concurrent": 1,
   "ios_max_retries": 3,
   "ios_retry_delay": 3.0,
 
-  "_comment_android": "Google Play Store HTML scraper. Even more conservative — Play blocks fast scrapers.",
+  "_comment_android": "Google Play Store HTML scraper. Polite pacing with jitter and automatic adaptive backoff (up to 30s) on 429/403/block.",
   "android_request_timeout": 30,
-  "android_request_delay": 10.0,
+  "android_request_delay": 3.0,
   "android_max_concurrent": 1,
   "android_max_retries": 3,
-  "android_retry_delay": 5.0,
+  "android_retry_delay": 3.0,
 
   "_comment_ctv": "Connected-TV pipeline (two steps: research the app, then classify the research). CTV apps have no scrapeable page, so research is not a fallback here — it is the only data source.",
   "ctv_research_model": "perplexity/sonar",
@@ -74,5 +74,10 @@
   "ctv_max_concurrent": 5,
   "ctv_request_delay": 1.0,
   "ctv_max_retries": 3,
-  "ctv_retry_delay": 2.0
+  "ctv_retry_delay": 2.0,
+
+  "_comment_cache": "Persistent cross-job SQLite cache so re-scraped websites and apps reuse cached scrape/store data and classifications within cache_ttl_days. The web dashboard passes --cache-db managed-files/cache.db automatically.",
+  "cache_enabled": true,
+  "cache_db_path": "",
+  "cache_ttl_days": 30
 }
